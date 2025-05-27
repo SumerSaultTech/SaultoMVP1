@@ -113,16 +113,14 @@ export default function Setup() {
         title="Setup & Configuration" 
         subtitle="Configure your data warehouse platform"
         actions={
-          !setupStatus?.snowflakeConnected && (
-            <Button 
-              onClick={handleOneClickSetup} 
-              disabled={isProvisioning || provisionMutation.isPending}
-              className="bg-primary-500 hover:bg-primary-600"
-            >
-              <Play className="mr-2 h-4 w-4" />
-              {isProvisioning ? "Setting Up..." : "One-Click Setup"}
-            </Button>
-          )
+          <Button 
+            onClick={handleOneClickSetup} 
+            disabled={isProvisioning || provisionMutation.isPending || setupStatus?.snowflakeConnected}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Play className="mr-2 h-4 w-4" />
+            {isProvisioning ? "Setting Up..." : setupStatus?.snowflakeConnected ? "Setup Complete" : "One-Click Setup"}
+          </Button>
         }
       />
       
