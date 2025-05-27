@@ -46,18 +46,18 @@ export default function SetupStatus() {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Snowflake */}
+          {/* Data Warehouse */}
           <div className={`flex items-center space-x-3 p-4 rounded-lg border ${
-            setupStatus?.snowflakeConnected 
+            setupStatus?.warehouseConnected 
               ? "bg-green-50 border-green-200" 
               : "bg-gray-50 border-gray-200"
           }`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              setupStatus?.snowflakeConnected 
+              setupStatus?.warehouseConnected 
                 ? "bg-green-500" 
                 : "bg-gray-400"
             }`}>
-              {setupStatus?.snowflakeConnected ? (
+              {setupStatus?.warehouseConnected ? (
                 <CheckCircle className="h-5 w-5 text-white" />
               ) : (
                 <AlertTriangle className="h-5 w-5 text-white" />
@@ -65,30 +65,30 @@ export default function SetupStatus() {
             </div>
             <div>
               <p className={`font-medium ${
-                setupStatus?.snowflakeConnected ? "text-green-800" : "text-gray-600"
+                setupStatus?.warehouseConnected ? "text-green-800" : "text-gray-600"
               }`}>
-                {setupStatus?.snowflakeConnected ? "Snowflake Connected" : "Snowflake Pending"}
+                {setupStatus?.warehouseConnected ? "Warehouse Connected" : "Warehouse Pending"}
               </p>
               <p className={`text-sm ${
-                setupStatus?.snowflakeConnected ? "text-green-600" : "text-gray-500"
+                setupStatus?.warehouseConnected ? "text-green-600" : "text-gray-500"
               }`}>
-                {setupStatus?.snowflakeConnected ? "Warehouse: COMPUTE_WH" : "Configuration required"}
+                {setupStatus?.warehouseConnected ? "Data warehouse active" : "Configuration required"}
               </p>
             </div>
           </div>
 
-          {/* Fivetran */}
+          {/* Data Sources */}
           <div className={`flex items-center space-x-3 p-4 rounded-lg border ${
-            setupStatus?.fivetranConfigured 
+            setupStatus?.dataSourcesConfigured 
               ? "bg-blue-50 border-blue-200" 
               : "bg-gray-50 border-gray-200"
           }`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              setupStatus?.fivetranConfigured 
+              setupStatus?.dataSourcesConfigured 
                 ? "bg-blue-500" 
                 : "bg-gray-400"
             }`}>
-              {setupStatus?.fivetranConfigured ? (
+              {setupStatus?.dataSourcesConfigured ? (
                 <CheckCircle className="h-5 w-5 text-white" />
               ) : (
                 <Clock className="h-5 w-5 text-white" />
@@ -96,16 +96,16 @@ export default function SetupStatus() {
             </div>
             <div>
               <p className={`font-medium ${
-                setupStatus?.fivetranConfigured ? "text-blue-800" : "text-gray-600"
+                setupStatus?.dataSourcesConfigured ? "text-blue-800" : "text-gray-600"
               }`}>
-                {setupStatus?.fivetranConfigured ? "Fivetran Syncing" : "Fivetran Pending"}
+                {setupStatus?.dataSourcesConfigured ? "Data Sources Connected" : "Data Sources Pending"}
               </p>
               <p className={`text-sm ${
-                setupStatus?.fivetranConfigured ? "text-blue-600" : "text-gray-500"
+                setupStatus?.dataSourcesConfigured ? "text-blue-600" : "text-gray-500"
               }`}>
-                {setupStatus?.fivetranConfigured 
-                  ? `${connectedSources}/${totalSources} connectors active`
-                  : "Connectors not configured"
+                {setupStatus?.dataSourcesConfigured 
+                  ? `${connectedSources}/${totalSources} sources active`
+                  : "Sources not configured"
                 }
               </p>
             </div>
