@@ -1,494 +1,333 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, AlertCircle, Loader2, Database, Zap, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Header from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { apiRequest } from "@/lib/queryClient";
+import { CheckCircle, Clock, AlertCircle, Play, Database, Zap, BarChart3 } from "lucide-react";
+import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
-
-interface SnowflakeConfig {
-  account: string;
-  username: string;
-  password: string;
-  warehouse: string;
-  database: string;
-  schema: string;
-}
-
-interface FivetranConnectorConfig {
-  salesforce?: {
-    username: string;
-    password: string;
-    securityToken: string;
-    isSandbox: boolean;
-  };
-  hubspot?: {
-    accessToken: string;
-  };
-  quickbooks?: {
-    companyId: string;
-    accessToken: string;
-    refreshToken: string;
-    isSandbox: boolean;
-  };
-}
 
 export default function Setup() {
-  const [activeTab, setActiveTab] = useState("snowflake");
-  const [snowflakeConfig, setSnowflakeConfig] = useState<SnowflakeConfig>({
-    account: "",
-    username: "",
-    password: "",
-    warehouse: "COMPUTE_WH",
-    database: "ANALYTICS_DB",
-    schema: "PUBLIC",
-  });
-  const [fivetranConfig, setFivetranConfig] = useState<FivetranConnectorConfig>({});
-  const [setupProgress, setSetupProgress] = useState(0);
-  const [isSetupComplete, setIsSetupComplete] = useState(false);
-
-  const queryClient = useQueryClient();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isProvisioning, setIsProvisioning] = useState(false);
 
-  const { data: connections = [] } = useQuery({
-    queryKey: ["/api/connections"],
+  const { data: setupStatus, isLoading } = useQuery({
+    queryKey: ["/api/setup-status"],
   });
 
-  const { data: dataSources = [] } = useQuery({
+  const { data: dataSources } = useQuery({
     queryKey: ["/api/data-sources"],
   });
 
-  const snowflakeSetupMutation = useMutation({
-    mutationFn: async (config: SnowflakeConfig) => {
-      const response = await apiRequest("POST", "/api/setup/snowflake", config);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Snowflake Connected",
-        description: "Successfully connected to Snowflake warehouse",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/connections"] });
-      setSetupProgress(50);
-      setActiveTab("fivetran");
-    },
-    onError: (error) => {
-      console.error("Snowflake setup failed:", error);
-      toast({
-        title: "Connection Failed",
-        description: "Failed to connect to Snowflake. Check your credentials.",
-        variant: "destructive",
-      });
-    },
+  const { data: sqlModels } = useQuery({
+    queryKey: ["/api/sql-models"],
   });
 
-  const fivetranSetupMutation = useMutation({
-    mutationFn: async (config: FivetranConnectorConfig) => {
-      const response = await apiRequest("POST", "/api/setup/fivetran-connectors", config);
-      return response.json();
-    },
-    onSuccess: (data) => {
-      const successCount = data.results.filter((r: any) => r.success).length;
+  const provisionMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/setup/provision"),
+    onSuccess: () => {
       toast({
-        title: "Connectors Created",
-        description: `${successCount} data connectors configured successfully`,
+        title: "Setup Complete",
+        description: "Your data warehouse has been successfully provisioned!",
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/setup-status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
-      setSetupProgress(100);
-      setIsSetupComplete(true);
+      setIsProvisioning(false);
     },
-    onError: (error) => {
-      console.error("Fivetran setup failed:", error);
+    onError: (error: any) => {
       toast({
-        title: "Connector Setup Failed",
-        description: "Failed to create Fivetran connectors",
+        title: "Setup Failed",
+        description: error.message || "Failed to provision data warehouse.",
         variant: "destructive",
       });
+      setIsProvisioning(false);
     },
   });
 
   const deployModelsMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/models/deploy");
-      return response.json();
-    },
-    onSuccess: (data) => {
+    mutationFn: () => apiRequest("POST", "/api/sql-models/deploy"),
+    onSuccess: () => {
       toast({
         title: "Models Deployed",
-        description: `${data.deployed.length} SQL models deployed successfully`,
+        description: "SQL models have been successfully deployed to Snowflake.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/models"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sql-models"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/setup-status"] });
     },
-    onError: (error) => {
-      console.error("Model deployment failed:", error);
+    onError: (error: any) => {
       toast({
         title: "Deployment Failed",
-        description: "Failed to deploy SQL models",
+        description: error.message || "Failed to deploy SQL models.",
         variant: "destructive",
       });
     },
   });
 
-  const handleSnowflakeSetup = () => {
-    snowflakeSetupMutation.mutate(snowflakeConfig);
+  const handleOneClickSetup = () => {
+    setIsProvisioning(true);
+    provisionMutation.mutate();
   };
 
-  const handleFivetranSetup = () => {
-    fivetranSetupMutation.mutate(fivetranConfig);
+  const getProgressPercentage = () => {
+    if (!setupStatus) return 0;
+    let progress = 0;
+    if (setupStatus.snowflakeConnected) progress += 33;
+    if (setupStatus.fivetranConfigured) progress += 33;
+    if (setupStatus.modelsDeployed === setupStatus.totalModels && setupStatus.totalModels > 0) progress += 34;
+    return progress;
   };
 
-  const handleDeployModels = () => {
-    deployModelsMutation.mutate();
+  const getStepStatus = (completed: boolean, loading = false) => {
+    if (loading) return { icon: Clock, color: "text-blue-500", bgColor: "bg-blue-100" };
+    if (completed) return { icon: CheckCircle, color: "text-green-500", bgColor: "bg-green-100" };
+    return { icon: AlertCircle, color: "text-gray-400", bgColor: "bg-gray-100" };
   };
 
-  const isSnowflakeConnected = connections.some(c => c.type === "snowflake" && c.status === "connected");
-  const connectedDataSources = dataSources.filter(ds => ds.status === "active").length;
-
-  return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Progress Header */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-800">Setup Progress</h2>
-              <Badge 
-                variant={isSetupComplete ? "default" : "secondary"}
-                className={cn(
-                  isSetupComplete ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-700"
-                )}
-              >
-                {isSetupComplete ? "Complete" : "In Progress"}
-              </Badge>
-            </div>
-            <Progress value={setupProgress} className="w-full" />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="flex items-center space-x-2">
-                {isSnowflakeConnected ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-slate-400" />
-                )}
-                <span className={cn(
-                  isSnowflakeConnected ? "text-green-600" : "text-slate-600"
-                )}>
-                  Snowflake Connection
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                {connectedDataSources > 0 ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-slate-400" />
-                )}
-                <span className={cn(
-                  connectedDataSources > 0 ? "text-green-600" : "text-slate-600"
-                )}>
-                  Data Sources ({connectedDataSources}/3)
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                {isSetupComplete ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-slate-400" />
-                )}
-                <span className={cn(
-                  isSetupComplete ? "text-green-600" : "text-slate-600"
-                )}>
-                  Ready for Analytics
-                </span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Setup Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="snowflake" className="flex items-center space-x-2">
-            <Database className="w-4 h-4" />
-            <span>Snowflake</span>
-          </TabsTrigger>
-          <TabsTrigger value="fivetran" className="flex items-center space-x-2">
-            <Zap className="w-4 h-4" />
-            <span>Data Sources</span>
-          </TabsTrigger>
-          <TabsTrigger value="deploy" className="flex items-center space-x-2">
-            <Settings className="w-4 h-4" />
-            <span>Deploy Models</span>
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Snowflake Setup */}
-        <TabsContent value="snowflake">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Database className="w-5 h-5 text-primary" />
-                <span>Snowflake Data Warehouse Setup</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isSnowflakeConnected ? (
-                <div className="flex items-center justify-center p-8 text-center">
-                  <div className="space-y-4">
-                    <CheckCircle className="w-16 h-16 text-green-600 mx-auto" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-800">Snowflake Connected</h3>
-                      <p className="text-slate-600">Your Snowflake warehouse is ready for data ingestion</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="account">Account</Label>
-                    <Input
-                      id="account"
-                      placeholder="your-account.snowflakecomputing.com"
-                      value={snowflakeConfig.account}
-                      onChange={(e) => setSnowflakeConfig(prev => ({ ...prev, account: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
-                    <Input
-                      id="username"
-                      placeholder="your-username"
-                      value={snowflakeConfig.username}
-                      onChange={(e) => setSnowflakeConfig(prev => ({ ...prev, username: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="your-password"
-                      value={snowflakeConfig.password}
-                      onChange={(e) => setSnowflakeConfig(prev => ({ ...prev, password: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="warehouse">Warehouse</Label>
-                    <Input
-                      id="warehouse"
-                      placeholder="COMPUTE_WH"
-                      value={snowflakeConfig.warehouse}
-                      onChange={(e) => setSnowflakeConfig(prev => ({ ...prev, warehouse: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="database">Database</Label>
-                    <Input
-                      id="database"
-                      placeholder="ANALYTICS_DB"
-                      value={snowflakeConfig.database}
-                      onChange={(e) => setSnowflakeConfig(prev => ({ ...prev, database: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="schema">Schema</Label>
-                    <Input
-                      id="schema"
-                      placeholder="PUBLIC"
-                      value={snowflakeConfig.schema}
-                      onChange={(e) => setSnowflakeConfig(prev => ({ ...prev, schema: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              )}
-              
-              {!isSnowflakeConnected && (
-                <div className="flex justify-end pt-4">
-                  <Button
-                    onClick={handleSnowflakeSetup}
-                    disabled={snowflakeSetupMutation.isPending || !snowflakeConfig.account || !snowflakeConfig.username || !snowflakeConfig.password}
-                    className="flex items-center space-x-2"
-                  >
-                    {snowflakeSetupMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                    <span>Connect to Snowflake</span>
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Fivetran Setup */}
-        <TabsContent value="fivetran">
-          <div className="space-y-6">
+  if (isLoading) {
+    return (
+      <>
+        <Header title="Setup & Configuration" subtitle="Configure your data warehouse platform" />
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-4xl mx-auto">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Zap className="w-5 h-5 text-primary" />
-                  <span>Data Source Connectors</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Salesforce */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-slate-800">Salesforce</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="sf-username">Username</Label>
-                      <Input
-                        id="sf-username"
-                        placeholder="your-salesforce-username"
-                        value={fivetranConfig.salesforce?.username || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          salesforce: { ...prev.salesforce, username: e.target.value } as any
-                        }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="sf-password">Password</Label>
-                      <Input
-                        id="sf-password"
-                        type="password"
-                        placeholder="your-salesforce-password"
-                        value={fivetranConfig.salesforce?.password || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          salesforce: { ...prev.salesforce, password: e.target.value } as any
-                        }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="sf-token">Security Token</Label>
-                      <Input
-                        id="sf-token"
-                        placeholder="your-security-token"
-                        value={fivetranConfig.salesforce?.securityToken || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          salesforce: { ...prev.salesforce, securityToken: e.target.value } as any
-                        }))}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* HubSpot */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-slate-800">HubSpot</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="hs-token">Access Token</Label>
-                      <Input
-                        id="hs-token"
-                        placeholder="your-hubspot-access-token"
-                        value={fivetranConfig.hubspot?.accessToken || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          hubspot: { accessToken: e.target.value }
-                        }))}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* QuickBooks */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-slate-800">QuickBooks</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="qb-company">Company ID</Label>
-                      <Input
-                        id="qb-company"
-                        placeholder="your-company-id"
-                        value={fivetranConfig.quickbooks?.companyId || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          quickbooks: { ...prev.quickbooks, companyId: e.target.value } as any
-                        }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="qb-access">Access Token</Label>
-                      <Input
-                        id="qb-access"
-                        placeholder="your-access-token"
-                        value={fivetranConfig.quickbooks?.accessToken || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          quickbooks: { ...prev.quickbooks, accessToken: e.target.value } as any
-                        }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="qb-refresh">Refresh Token</Label>
-                      <Input
-                        id="qb-refresh"
-                        placeholder="your-refresh-token"
-                        value={fivetranConfig.quickbooks?.refreshToken || ""}
-                        onChange={(e) => setFivetranConfig(prev => ({
-                          ...prev,
-                          quickbooks: { ...prev.quickbooks, refreshToken: e.target.value } as any
-                        }))}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-4">
-                  <Button
-                    onClick={handleFivetranSetup}
-                    disabled={fivetranSetupMutation.isPending || !isSnowflakeConnected}
-                    className="flex items-center space-x-2"
-                  >
-                    {fivetranSetupMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                    <span>Create Connectors</span>
-                  </Button>
+              <CardContent className="p-8">
+                <div className="animate-pulse space-y-4">
+                  <div className="h-8 bg-gray-200 rounded w-1/3" />
+                  <div className="h-4 bg-gray-200 rounded w-2/3" />
+                  <div className="h-32 bg-gray-200 rounded" />
                 </div>
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
+        </main>
+      </>
+    );
+  }
 
-        {/* Deploy Models */}
-        <TabsContent value="deploy">
+  return (
+    <>
+      <Header 
+        title="Setup & Configuration" 
+        subtitle="Configure your data warehouse platform"
+        actions={
+          !setupStatus?.snowflakeConnected && (
+            <Button 
+              onClick={handleOneClickSetup} 
+              disabled={isProvisioning || provisionMutation.isPending}
+              className="bg-primary-500 hover:bg-primary-600"
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {isProvisioning ? "Setting Up..." : "One-Click Setup"}
+            </Button>
+          )
+        }
+      />
+      
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-4xl mx-auto space-y-8">
+          {/* Progress Overview */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Settings className="w-5 h-5 text-primary" />
-                <span>Deploy SQL Models</span>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Setup Progress
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-center p-8">
-                <div className="space-y-4">
-                  <Settings className="w-16 h-16 text-slate-400 mx-auto" />
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-800">Deploy Analytics Models</h3>
-                    <p className="text-slate-600 mb-6">
-                      Deploy staging, intermediate, and core models to start generating KPIs
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Overall Progress</span>
+                  <span className="text-sm text-gray-500">{getProgressPercentage()}%</span>
+                </div>
+                <Progress value={getProgressPercentage()} className="h-2" />
+                <p className="text-sm text-gray-600">
+                  Complete the setup steps below to start analyzing your data.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Setup Steps */}
+          <div className="grid gap-6">
+            {/* Step 1: Snowflake */}
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-start space-x-4">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                    getStepStatus(setupStatus?.snowflakeConnected, isProvisioning).bgColor
+                  }`}>
+                    {isProvisioning ? (
+                      <Clock className="h-6 w-6 text-blue-500 animate-spin" />
+                    ) : (
+                      <Database className={`h-6 w-6 ${getStepStatus(setupStatus?.snowflakeConnected).color}`} />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Snowflake Connection</h3>
+                      <Badge variant={setupStatus?.snowflakeConnected ? "default" : "secondary"}>
+                        {setupStatus?.snowflakeConnected ? "Connected" : "Not Connected"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Connect to your Snowflake data warehouse to store and query your data.
                     </p>
-                    <Button
-                      onClick={handleDeployModels}
-                      disabled={deployModelsMutation.isPending || !isSnowflakeConnected}
-                      size="lg"
-                      className="flex items-center space-x-2"
-                    >
-                      {deployModelsMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                      <span>Deploy All Models</span>
-                    </Button>
+                    {setupStatus?.snowflakeConnected && (
+                      <div className="mt-3 text-sm text-green-600">
+                        ✓ Successfully connected to Snowflake warehouse
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Step 2: Fivetran */}
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-start space-x-4">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                    getStepStatus(setupStatus?.fivetranConfigured, isProvisioning).bgColor
+                  }`}>
+                    {isProvisioning ? (
+                      <Clock className="h-6 w-6 text-blue-500 animate-spin" />
+                    ) : (
+                      <Zap className={`h-6 w-6 ${getStepStatus(setupStatus?.fivetranConfigured).color}`} />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Fivetran Data Connectors</h3>
+                      <Badge variant={setupStatus?.fivetranConfigured ? "default" : "secondary"}>
+                        {setupStatus?.fivetranConfigured ? "Configured" : "Not Configured"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Set up data connectors for Salesforce, HubSpot, and QuickBooks.
+                    </p>
+                    {setupStatus?.fivetranConfigured && (
+                      <div className="mt-3 space-y-1">
+                        {dataSources?.map((source: any) => (
+                          <div key={source.id} className="text-sm text-green-600">
+                            ✓ {source.name} connector configured ({source.tableCount} tables)
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Step 3: SQL Models */}
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-start space-x-4">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                    getStepStatus(
+                      setupStatus?.modelsDeployed === setupStatus?.totalModels && setupStatus?.totalModels > 0,
+                      deployModelsMutation.isPending
+                    ).bgColor
+                  }`}>
+                    {deployModelsMutation.isPending ? (
+                      <Clock className="h-6 w-6 text-blue-500 animate-spin" />
+                    ) : (
+                      <BarChart3 className={`h-6 w-6 ${
+                        getStepStatus(setupStatus?.modelsDeployed === setupStatus?.totalModels && setupStatus?.totalModels > 0).color
+                      }`} />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">SQL Model Deployment</h3>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={setupStatus?.modelsDeployed === setupStatus?.totalModels && setupStatus?.totalModels > 0 ? "default" : "secondary"}>
+                          {setupStatus?.modelsDeployed || 0}/{setupStatus?.totalModels || 0} Deployed
+                        </Badge>
+                        <Button 
+                          size="sm" 
+                          onClick={() => deployModelsMutation.mutate()}
+                          disabled={deployModelsMutation.isPending || !setupStatus?.snowflakeConnected}
+                        >
+                          Deploy Models
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Deploy layered SQL models (staging → intermediate → core) to transform your data.
+                    </p>
+                    {sqlModels && sqlModels.length > 0 && (
+                      <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">Staging:</span> {sqlModels.filter((m: any) => m.layer === 'stg').length} models
+                        </div>
+                        <div>
+                          <span className="font-medium">Intermediate:</span> {sqlModels.filter((m: any) => m.layer === 'int').length} models
+                        </div>
+                        <div>
+                          <span className="font-medium">Core:</span> {sqlModels.filter((m: any) => m.layer === 'core').length} models
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Environment Variables Guide */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Required Environment Variables</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Make sure these environment variables are configured in your Replit secrets:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Snowflake</h4>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>• SNOWFLAKE_ACCOUNT</li>
+                      <li>• SNOWFLAKE_USERNAME</li>
+                      <li>• SNOWFLAKE_PASSWORD</li>
+                      <li>• SNOWFLAKE_WAREHOUSE</li>
+                      <li>• SNOWFLAKE_DATABASE</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Fivetran</h4>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>• FIVETRAN_API_KEY</li>
+                      <li>• FIVETRAN_API_SECRET</li>
+                      <li>• FIVETRAN_GROUP_ID</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Data Sources</h4>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>• SALESFORCE_DOMAIN</li>
+                      <li>• SALESFORCE_CLIENT_ID</li>
+                      <li>• HUBSPOT_API_KEY</li>
+                      <li>• QUICKBOOKS_CONSUMER_KEY</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-medium">AI Assistant</h4>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>• OPENAI_API_KEY</li>
+                    </ul>
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+        </div>
+      </main>
+    </>
   );
 }
