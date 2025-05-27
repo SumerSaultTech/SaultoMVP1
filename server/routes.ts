@@ -1,441 +1,298 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { z } from "zod";
 import { storage } from "./storage";
 import { snowflakeService } from "./services/snowflake";
 import { fivetranService } from "./services/fivetran";
-import { aiAssistantService } from "./services/ai-assistant";
-import { sqlExecutorService } from "./services/sql-executor";
-import { insertConnectionSchema, insertDataSourceSchema, insertKpiSchema, insertChatMessageSchema } from "@shared/schema";
+import { openaiService } from "./services/openai";
+import { sqlRunner } from "./services/sqlRunner";
+import {
+  insertDataSourceSchema,
+  insertSqlModelSchema,
+  insertKpiMetricSchema,
+  insertChatMessageSchema,
+  insertPipelineActivitySchema,
+} from "@shared/schema";
+import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Initialize SQL models from file system
-  await sqlExecutorService.loadSQLFiles();
-
-  // Health check
-  app.get("/api/health", async (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
-  // Dashboard overview
-  app.get("/api/dashboard", async (req, res) => {
+  
+  // Setup Status
+  app.get("/api/setup-status", async (req, res) => {
     try {
-      const [connections, dataSources, kpis, latestRun] = await Promise.all([
-        storage.getConnections(),
-        storage.getDataSources(),
-        storage.getActiveKpis(),
-        storage.getLatestPipelineRun()
-      ]);
-
-      const snowflakeConnection = connections.find(c => c.type === "snowflake");
-      const fivetranConnection = connections.find(c => c.type === "fivetran");
-
-      res.json({
-        status: {
-          snowflake: snowflakeConnection?.status || "disconnected",
-          fivetran: fivetranConnection?.status || "disconnected",
-          lastSync: latestRun?.endTime || null
-        },
-        dataSources: dataSources.map(ds => ({
-          id: ds.id,
-          name: ds.name,
-          type: ds.type,
-          status: ds.status,
-          lastSync: ds.lastSync,
-          recordCount: ds.recordCount
-        })),
-        kpis: kpis.map(kpi => ({
-          id: kpi.id,
-          name: kpi.name,
-          value: kpi.value,
-          changePercent: kpi.changePercent
-        }))
-      });
+      const status = await storage.getSetupStatus();
+      res.json(status);
     } catch (error) {
-      console.error("Failed to get dashboard data:", error);
-      res.status(500).json({ error: "Failed to load dashboard data" });
+      res.status(500).json({ message: "Failed to get setup status" });
     }
   });
 
-  // Connections management
-  app.get("/api/connections", async (req, res) => {
-    try {
-      const connections = await storage.getConnections();
-      res.json(connections);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get connections" });
-    }
-  });
-
-  app.post("/api/connections", async (req, res) => {
-    try {
-      const connectionData = insertConnectionSchema.parse(req.body);
-      const connection = await storage.createConnection(connectionData);
-      
-      // Attempt to connect based on type
-      if (connection.type === "snowflake") {
-        const connected = await snowflakeService.connect(connection);
-        await storage.updateConnection(connection.id, { 
-          status: connected ? "connected" : "error" 
-        });
-      }
-      
-      res.json(connection);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid connection data", details: error.errors });
-      } else {
-        console.error("Failed to create connection:", error);
-        res.status(500).json({ error: "Failed to create connection" });
-      }
-    }
-  });
-
-  app.patch("/api/connections/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const updates = req.body;
-      const connection = await storage.updateConnection(id, updates);
-      
-      if (!connection) {
-        return res.status(404).json({ error: "Connection not found" });
-      }
-      
-      res.json(connection);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update connection" });
-    }
-  });
-
-  // Data sources management
+  // Data Sources
   app.get("/api/data-sources", async (req, res) => {
     try {
       const dataSources = await storage.getDataSources();
       res.json(dataSources);
     } catch (error) {
-      res.status(500).json({ error: "Failed to get data sources" });
+      res.status(500).json({ message: "Failed to get data sources" });
     }
   });
 
   app.post("/api/data-sources", async (req, res) => {
     try {
-      const dataSourceData = insertDataSourceSchema.parse(req.body);
-      const dataSource = await storage.createDataSource(dataSourceData);
+      const validatedData = insertDataSourceSchema.parse(req.body);
+      const dataSource = await storage.createDataSource(validatedData);
+      
+      // Log activity
+      await storage.createPipelineActivity({
+        type: "sync",
+        description: `Created ${dataSource.name} data source`,
+        status: "success",
+      });
+
       res.json(dataSource);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid data source data", details: error.errors });
+        res.status(400).json({ message: "Invalid data", errors: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create data source" });
+        res.status(500).json({ message: "Failed to create data source" });
       }
     }
   });
 
-  // Setup and provisioning
-  app.post("/api/setup/snowflake", async (req, res) => {
+  // One-click setup
+  app.post("/api/setup/provision", async (req, res) => {
     try {
-      const { account, username, password, warehouse, database, schema } = req.body;
-      
-      const connection = await storage.createConnection({
-        name: "Primary Snowflake",
-        type: "snowflake",
-        config: { account, username, password, warehouse, database, schema },
-        status: "connected"
+      // Initialize Snowflake connection
+      const snowflakeResult = await snowflakeService.testConnection();
+      if (!snowflakeResult.success) {
+        throw new Error("Failed to connect to Snowflake");
+      }
+
+      // Setup Fivetran connectors
+      const connectorsResult = await fivetranService.setupConnectors();
+      if (!connectorsResult.success) {
+        throw new Error("Failed to setup Fivetran connectors");
+      }
+
+      // Create default data sources
+      const dataSources = [
+        { name: "Salesforce", type: "salesforce", status: "connected", tableCount: 23 },
+        { name: "HubSpot", type: "hubspot", status: "connected", tableCount: 18 },
+        { name: "QuickBooks", type: "quickbooks", status: "connected", tableCount: 12 },
+      ];
+
+      for (const ds of dataSources) {
+        await storage.createDataSource(ds);
+      }
+
+      // Update setup status
+      await storage.updateSetupStatus({
+        snowflakeConnected: true,
+        fivetranConfigured: true,
       });
 
-      const connected = await snowflakeService.connect(connection);
-      
-      if (connected) {
-        // Create warehouse, database, and schema
-        await snowflakeService.createWarehouse(warehouse);
-        await snowflakeService.createDatabase(database);
-        await snowflakeService.createSchema(database, schema);
-        
-        await storage.updateConnection(connection.id, { status: "connected" });
-        res.json({ success: true, connectionId: connection.id });
-      } else {
-        await storage.updateConnection(connection.id, { status: "error" });
-        res.status(400).json({ error: "Failed to connect to Snowflake" });
-      }
+      // Log activity
+      await storage.createPipelineActivity({
+        type: "sync",
+        description: "One-click setup completed successfully",
+        status: "success",
+      });
+
+      res.json({ success: true, message: "Setup completed successfully" });
     } catch (error) {
-      console.error("Snowflake setup failed:", error);
-      res.status(500).json({ error: "Snowflake setup failed" });
+      await storage.createPipelineActivity({
+        type: "error",
+        description: `Setup failed: ${error.message}`,
+        status: "error",
+      });
+      res.status(500).json({ message: error.message });
     }
   });
 
-  app.post("/api/setup/fivetran-connectors", async (req, res) => {
+  // SQL Models
+  app.get("/api/sql-models", async (req, res) => {
     try {
-      const { salesforce, hubspot, quickbooks } = req.body;
-      const results = [];
-      
-      if (salesforce) {
-        try {
-          const connector = await fivetranService.createSalesforceConnector(salesforce);
-          const dataSource = await storage.createDataSource({
-            name: "Salesforce",
-            type: "salesforce",
-            connectorId: connector.id,
-            status: "active"
-          });
-          results.push({ type: "salesforce", success: true, dataSourceId: dataSource.id });
-        } catch (error) {
-          results.push({ type: "salesforce", success: false, error: error instanceof Error ? error.message : "Unknown error" });
-        }
-      }
-      
-      if (hubspot) {
-        try {
-          const connector = await fivetranService.createHubSpotConnector(hubspot);
-          const dataSource = await storage.createDataSource({
-            name: "HubSpot",
-            type: "hubspot",
-            connectorId: connector.id,
-            status: "active"
-          });
-          results.push({ type: "hubspot", success: true, dataSourceId: dataSource.id });
-        } catch (error) {
-          results.push({ type: "hubspot", success: false, error: error instanceof Error ? error.message : "Unknown error" });
-        }
-      }
-      
-      if (quickbooks) {
-        try {
-          const connector = await fivetranService.createQuickBooksConnector(quickbooks);
-          const dataSource = await storage.createDataSource({
-            name: "QuickBooks",
-            type: "quickbooks",
-            connectorId: connector.id,
-            status: "active"
-          });
-          results.push({ type: "quickbooks", success: true, dataSourceId: dataSource.id });
-        } catch (error) {
-          results.push({ type: "quickbooks", success: false, error: error instanceof Error ? error.message : "Unknown error" });
-        }
-      }
-      
-      res.json({ results });
-    } catch (error) {
-      console.error("Fivetran setup failed:", error);
-      res.status(500).json({ error: "Fivetran setup failed" });
-    }
-  });
-
-  // SQL Models and deployment
-  app.get("/api/models", async (req, res) => {
-    try {
-      const models = await storage.getSqlModels();
+      const layer = req.query.layer as string;
+      const models = layer 
+        ? await storage.getSqlModelsByLayer(layer)
+        : await storage.getSqlModels();
       res.json(models);
     } catch (error) {
-      res.status(500).json({ error: "Failed to get models" });
+      res.status(500).json({ message: "Failed to get SQL models" });
     }
   });
 
-  app.get("/api/models/layer/:layer", async (req, res) => {
+  app.post("/api/sql-models", async (req, res) => {
     try {
-      const layer = req.params.layer;
-      const models = await storage.getSqlModelsByLayer(layer);
-      res.json(models);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get models by layer" });
-    }
-  });
-
-  app.post("/api/models/deploy", async (req, res) => {
-    try {
-      const { layers } = req.body;
-      const result = await sqlExecutorService.deployModels(layers);
-      res.json(result);
-    } catch (error) {
-      console.error("Model deployment failed:", error);
-      res.status(500).json({ error: "Model deployment failed" });
-    }
-  });
-
-  app.post("/api/models", async (req, res) => {
-    try {
-      const { name, layer, sql, description } = req.body;
-      const model = await sqlExecutorService.createModelFromSQL(name, layer, sql, description);
+      const validatedData = insertSqlModelSchema.parse(req.body);
+      const model = await storage.createSqlModel(validatedData);
       res.json(model);
     } catch (error) {
-      console.error("Failed to create model:", error);
-      res.status(500).json({ error: "Failed to create model" });
-    }
-  });
-
-  // KPIs management
-  app.get("/api/kpis", async (req, res) => {
-    try {
-      const kpis = await storage.getKpis();
-      res.json(kpis);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get KPIs" });
-    }
-  });
-
-  app.post("/api/kpis", async (req, res) => {
-    try {
-      const kpiData = insertKpiSchema.parse(req.body);
-      const kpi = await storage.createKpi(kpiData);
-      res.json(kpi);
-    } catch (error) {
       if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid KPI data", details: error.errors });
+        res.status(400).json({ message: "Invalid data", errors: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create KPI" });
+        res.status(500).json({ message: "Failed to create SQL model" });
       }
     }
   });
 
-  app.post("/api/kpis/:id/refresh", async (req, res) => {
+  // Deploy models
+  app.post("/api/sql-models/deploy", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const kpi = await storage.getKpi(id);
+      const result = await sqlRunner.deployModels();
       
-      if (!kpi) {
-        return res.status(404).json({ error: "KPI not found" });
-      }
-      
-      const result = await snowflakeService.getQueryResult(kpi.sqlQuery);
-      const value = Object.values(result)[0] as string;
-      
-      const updatedKpi = await storage.updateKpi(id, { 
-        value: value.toString(),
-        updatedAt: new Date()
+      // Update setup status
+      const models = await storage.getSqlModels();
+      const deployedCount = models.filter(m => m.status === "deployed").length;
+      await storage.updateSetupStatus({
+        modelsDeployed: deployedCount,
+        totalModels: models.length,
       });
-      
-      res.json(updatedKpi);
-    } catch (error) {
-      console.error("Failed to refresh KPI:", error);
-      res.status(500).json({ error: "Failed to refresh KPI" });
-    }
-  });
 
-  // AI Assistant
-  app.post("/api/ai/suggest-kpis", async (req, res) => {
-    try {
-      const { businessType, schema } = req.body;
-      const suggestions = await aiAssistantService.suggestKPIs(businessType, schema);
-      res.json({ suggestions });
-    } catch (error) {
-      console.error("Failed to get KPI suggestions:", error);
-      res.status(500).json({ error: "Failed to get KPI suggestions" });
-    }
-  });
-
-  app.post("/api/ai/generate-sql", async (req, res) => {
-    try {
-      const { request, schema } = req.body;
-      const result = await aiAssistantService.generateSQL(request, schema);
       res.json(result);
     } catch (error) {
-      console.error("Failed to generate SQL:", error);
-      res.status(500).json({ error: "Failed to generate SQL" });
-    }
-  });
-
-  app.post("/api/ai/chat", async (req, res) => {
-    try {
-      const { message, context } = req.body;
-      
-      // Save user message
-      await storage.createChatMessage({
-        content: message,
-        role: "user"
+      await storage.createPipelineActivity({
+        type: "error",
+        description: `Model deployment failed: ${error.message}`,
+        status: "error",
       });
-      
-      const response = await aiAssistantService.chatWithAssistant(message, context);
-      
-      // Save AI response
-      await storage.createChatMessage({
-        content: response,
-        role: "assistant"
-      });
-      
-      res.json({ response });
-    } catch (error) {
-      console.error("AI chat failed:", error);
-      res.status(500).json({ error: "AI chat failed" });
+      res.status(500).json({ message: error.message });
     }
   });
 
-  app.get("/api/chat/messages", async (req, res) => {
+  // KPI Metrics
+  app.get("/api/kpi-metrics", async (req, res) => {
     try {
-      const messages = await storage.getChatMessages();
-      res.json(messages);
+      const metrics = await storage.getKpiMetrics();
+      res.json(metrics);
     } catch (error) {
-      res.status(500).json({ error: "Failed to get chat messages" });
+      res.status(500).json({ message: "Failed to get KPI metrics" });
     }
   });
 
-  // Table browser
-  app.get("/api/tables", async (req, res) => {
+  app.post("/api/kpi-metrics", async (req, res) => {
     try {
-      const { schema } = req.query;
-      const tables = await snowflakeService.getTables(schema as string);
-      res.json(tables);
+      const validatedData = insertKpiMetricSchema.parse(req.body);
+      const metric = await storage.createKpiMetric(validatedData);
+      res.json(metric);
     } catch (error) {
-      console.error("Failed to get tables:", error);
-      res.status(500).json({ error: "Failed to get tables" });
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid data", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Failed to create KPI metric" });
+      }
     }
   });
 
-  // Pipeline operations
-  app.post("/api/pipeline/sync", async (req, res) => {
+  app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
-      const run = await storage.createPipelineRun({
-        type: "full_sync",
-        status: "running"
-      });
+      const metrics = await storage.getKpiMetrics();
+      const results = [];
 
-      // Trigger sync for all connectors
-      const dataSources = await storage.getDataSources();
-      const syncResults = [];
-      
-      for (const dataSource of dataSources) {
-        if (dataSource.connectorId) {
-          const success = await fivetranService.syncConnector(dataSource.connectorId);
-          syncResults.push({ dataSource: dataSource.name, success });
-          
-          if (success) {
-            await storage.updateDataSource(dataSource.id, { 
-              status: "syncing",
-              lastSync: new Date()
+      for (const metric of metrics) {
+        if (metric.sqlQuery) {
+          try {
+            const result = await snowflakeService.executeQuery(metric.sqlQuery);
+            await storage.updateKpiMetric(metric.id, {
+              value: result.value,
+              lastCalculatedAt: new Date(),
             });
+            results.push({ id: metric.id, value: result.value, status: "success" });
+          } catch (error) {
+            results.push({ id: metric.id, status: "error", error: error.message });
           }
         }
       }
 
-      await storage.updatePipelineRun(run.id, {
-        status: "completed",
-        endTime: new Date(),
-        metadata: { syncResults }
+      res.json({ results });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to calculate KPIs" });
+    }
+  });
+
+  // Chat Messages
+  app.get("/api/chat-messages", async (req, res) => {
+    try {
+      const messages = await storage.getChatMessages();
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get chat messages" });
+    }
+  });
+
+  app.post("/api/chat-messages", async (req, res) => {
+    try {
+      const validatedData = insertChatMessageSchema.parse(req.body);
+      const userMessage = await storage.createChatMessage(validatedData);
+
+      // Get AI response
+      const aiResponse = await openaiService.getChatResponse(validatedData.content);
+      const assistantMessage = await storage.createChatMessage({
+        role: "assistant",
+        content: aiResponse.content,
+        metadata: aiResponse.metadata,
       });
 
-      res.json({ success: true, runId: run.id, results: syncResults });
+      res.json({ userMessage, assistantMessage });
     } catch (error) {
-      console.error("Pipeline sync failed:", error);
-      res.status(500).json({ error: "Pipeline sync failed" });
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid data", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Failed to process chat message" });
+      }
     }
   });
 
-  app.get("/api/pipeline/runs", async (req, res) => {
+  // KPI Assistant
+  app.post("/api/assistant/suggest-kpis", async (req, res) => {
     try {
-      const runs = await storage.getPipelineRuns();
-      res.json(runs);
+      const { businessType } = req.body;
+      const suggestions = await openaiService.suggestKPIs(businessType);
+      res.json(suggestions);
     } catch (error) {
-      res.status(500).json({ error: "Failed to get pipeline runs" });
+      res.status(500).json({ message: "Failed to get KPI suggestions" });
     }
   });
 
-  // Execute custom SQL
-  app.post("/api/sql/execute", async (req, res) => {
+  app.post("/api/assistant/generate-sql", async (req, res) => {
     try {
-      const { sql } = req.body;
-      const result = await sqlExecutorService.executeCustomSQL(sql);
+      const { kpiDescription, tables } = req.body;
+      const sql = await openaiService.generateSQL(kpiDescription, tables);
+      res.json({ sql });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate SQL" });
+    }
+  });
+
+  // Pipeline Activities
+  app.get("/api/pipeline-activities", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const activities = await storage.getPipelineActivities(limit);
+      res.json(activities);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get pipeline activities" });
+    }
+  });
+
+  // Manual sync trigger
+  app.post("/api/sync/trigger", async (req, res) => {
+    try {
+      const result = await fivetranService.triggerSync();
+      
+      await storage.createPipelineActivity({
+        type: "sync",
+        description: "Manual sync triggered",
+        status: "success",
+      });
+
       res.json(result);
     } catch (error) {
-      console.error("SQL execution failed:", error);
-      res.status(500).json({ error: "SQL execution failed" });
+      await storage.createPipelineActivity({
+        type: "error",
+        description: `Manual sync failed: ${error.message}`,
+        status: "error",
+      });
+      res.status(500).json({ message: error.message });
     }
   });
 

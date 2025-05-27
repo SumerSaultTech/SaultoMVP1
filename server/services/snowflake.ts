@@ -1,5 +1,3 @@
-import { Connection } from "@shared/schema";
-
 interface SnowflakeConfig {
   account: string;
   username: string;
@@ -9,156 +7,122 @@ interface SnowflakeConfig {
   schema: string;
 }
 
-export class SnowflakeService {
-  private config: SnowflakeConfig | null = null;
+interface QueryResult {
+  success: boolean;
+  data?: any[];
+  value?: string;
+  error?: string;
+}
 
-  async connect(connection: Connection): Promise<boolean> {
+class SnowflakeService {
+  private config: SnowflakeConfig;
+
+  constructor() {
+    this.config = {
+      account: process.env.SNOWFLAKE_ACCOUNT || "",
+      username: process.env.SNOWFLAKE_USERNAME || "",
+      password: process.env.SNOWFLAKE_PASSWORD || "",
+      warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
+      database: process.env.SNOWFLAKE_DATABASE || "DATASYNC_PRO",
+      schema: process.env.SNOWFLAKE_SCHEMA || "PUBLIC",
+    };
+  }
+
+  async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      this.config = connection.config as SnowflakeConfig;
-      
-      // In a real implementation, this would use the Snowflake SDK
-      // For now, we'll validate the config structure
       if (!this.config.account || !this.config.username || !this.config.password) {
-        throw new Error("Invalid Snowflake configuration");
+        throw new Error("Missing Snowflake credentials in environment variables");
       }
 
-      console.log(`Connected to Snowflake account: ${this.config.account}`);
-      return true;
-    } catch (error) {
-      console.error("Failed to connect to Snowflake:", error);
-      return false;
-    }
-  }
-
-  async executeQuery(query: string): Promise<any[]> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
-    try {
-      // In a real implementation, this would execute the query using Snowflake SDK
-      console.log(`Executing Snowflake query: ${query}`);
+      // In a real implementation, you would use the Snowflake SDK to test the connection
+      // For now, we'll simulate a successful connection if credentials are present
+      console.log("Testing Snowflake connection...");
       
-      // Mock response for demonstration
-      return [
-        { column1: "value1", column2: "value2" },
-        { column1: "value3", column2: "value4" }
-      ];
-    } catch (error) {
-      console.error("Failed to execute Snowflake query:", error);
-      throw error;
-    }
-  }
-
-  async createWarehouse(name: string): Promise<boolean> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
-    try {
-      const query = `CREATE WAREHOUSE IF NOT EXISTS ${name} 
-                     WITH WAREHOUSE_SIZE = 'XSMALL' 
-                     AUTO_SUSPEND = 60 
-                     AUTO_RESUME = TRUE`;
+      // Simulate async operation
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      await this.executeQuery(query);
-      console.log(`Warehouse ${name} created successfully`);
-      return true;
+      return { success: true };
     } catch (error) {
-      console.error(`Failed to create warehouse ${name}:`, error);
-      return false;
+      return { success: false, error: error.message };
     }
   }
 
-  async createDatabase(name: string): Promise<boolean> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
+  async executeQuery(sql: string): Promise<QueryResult> {
     try {
-      const query = `CREATE DATABASE IF NOT EXISTS ${name}`;
-      await this.executeQuery(query);
-      console.log(`Database ${name} created successfully`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to create database ${name}:`, error);
-      return false;
-    }
-  }
+      if (!this.config.account) {
+        throw new Error("Snowflake not configured");
+      }
 
-  async createSchema(database: string, schema: string): Promise<boolean> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
-    try {
-      const query = `CREATE SCHEMA IF NOT EXISTS ${database}.${schema}`;
-      await this.executeQuery(query);
-      console.log(`Schema ${database}.${schema} created successfully`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to create schema ${database}.${schema}:`, error);
-      return false;
-    }
-  }
-
-  async getTables(schema?: string): Promise<Array<{ name: string; rowCount: number; lastUpdated: string }>> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
-    try {
-      const schemaFilter = schema || this.config.schema;
-      const query = `
-        SELECT 
-          table_name as name,
-          row_count,
-          last_altered as last_updated
-        FROM information_schema.tables 
-        WHERE table_schema = '${schemaFilter.toUpperCase()}'
-        ORDER BY table_name
-      `;
+      console.log(`Executing Snowflake query: ${sql.substring(0, 100)}...`);
       
-      const result = await this.executeQuery(query);
-      return result.map(row => ({
-        name: row.name,
-        rowCount: row.row_count || 0,
-        lastUpdated: row.last_updated || new Date().toISOString()
-      }));
+      // In a real implementation, you would execute the actual SQL query
+      // For now, we'll return mock data based on common KPI queries
+      if (sql.toLowerCase().includes("arr") || sql.toLowerCase().includes("revenue")) {
+        return { success: true, value: "$2.4M", data: [{ value: 2400000 }] };
+      } else if (sql.toLowerCase().includes("churn")) {
+        return { success: true, value: "3.2%", data: [{ value: 0.032 }] };
+      } else if (sql.toLowerCase().includes("ltv") || sql.toLowerCase().includes("lifetime")) {
+        return { success: true, value: "$18,750", data: [{ value: 18750 }] };
+      }
+
+      // Simulate async operation
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      return { success: true, data: [], value: "0" };
     } catch (error) {
-      console.error("Failed to get tables:", error);
-      return [];
+      return { success: false, error: error.message };
     }
   }
 
-  async deployView(name: string, sql: string): Promise<boolean> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
+  async createView(name: string, sql: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const query = `CREATE OR REPLACE VIEW ${this.config.database}.${this.config.schema}.${name} AS ${sql}`;
-      await this.executeQuery(query);
-      console.log(`View ${name} deployed successfully`);
-      return true;
+      const createViewSQL = `CREATE OR REPLACE VIEW ${this.config.database}.${this.config.schema}.${name} AS ${sql}`;
+      const result = await this.executeQuery(createViewSQL);
+      
+      if (!result.success) {
+        throw new Error(result.error || "Failed to create view");
+      }
+
+      return { success: true };
     } catch (error) {
-      console.error(`Failed to deploy view ${name}:`, error);
-      return false;
+      return { success: false, error: error.message };
     }
   }
 
-  async getQueryResult(sql: string): Promise<any> {
-    if (!this.config) {
-      throw new Error("Snowflake not connected");
-    }
-
+  async listTables(): Promise<{ success: boolean; tables?: string[]; error?: string }> {
     try {
+      const sql = `SHOW TABLES IN ${this.config.database}.${this.config.schema}`;
       const result = await this.executeQuery(sql);
-      return result[0]; // Return first row for KPI values
+      
+      if (!result.success) {
+        throw new Error(result.error || "Failed to list tables");
+      }
+
+      // Mock table list
+      const tables = [
+        "salesforce_accounts",
+        "salesforce_opportunities",
+        "salesforce_contacts",
+        "hubspot_companies",
+        "hubspot_deals",
+        "hubspot_contacts",
+        "quickbooks_customers",
+        "quickbooks_invoices",
+        "quickbooks_payments",
+      ];
+
+      return { success: true, tables };
     } catch (error) {
-      console.error("Failed to get query result:", error);
-      throw error;
+      return { success: false, error: error.message };
     }
+  }
+
+  getConnectionInfo() {
+    return {
+      warehouse: this.config.warehouse,
+      database: this.config.database,
+      schema: this.config.schema,
+    };
   }
 }
 
