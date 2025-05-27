@@ -1,7 +1,7 @@
-interface FivetranConfig {
+interface DataConnectorConfig {
   apiKey: string;
   apiSecret: string;
-  groupId: string;
+  workspaceId: string;
 }
 
 interface ConnectorConfig {

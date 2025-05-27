@@ -58,8 +58,8 @@ export const pipelineActivities = pgTable("pipeline_activities", {
 
 export const setupStatus = pgTable("setup_status", {
   id: serial("id").primaryKey(),
-  snowflakeConnected: boolean("snowflake_connected").default(false),
-  fivetranConfigured: boolean("fivetran_configured").default(false),
+  warehouseConnected: boolean("warehouse_connected").default(false),
+  dataSourcesConfigured: boolean("data_sources_configured").default(false),
   modelsDeployed: integer("models_deployed").default(0),
   totalModels: integer("total_models").default(0),
   lastUpdated: timestamp("last_updated").defaultNow(),
