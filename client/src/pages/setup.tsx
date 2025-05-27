@@ -115,11 +115,11 @@ export default function Setup() {
         actions={
           <Button 
             onClick={handleOneClickSetup} 
-            disabled={isProvisioning || provisionMutation.isPending || setupStatus?.snowflakeConnected}
+            disabled={isProvisioning || provisionMutation.isPending || setupStatus?.warehouseConnected}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Play className="mr-2 h-4 w-4" />
-            {isProvisioning ? "Setting Up..." : setupStatus?.snowflakeConnected ? "Setup Complete" : "One-Click Setup"}
+            {isProvisioning ? "Setting Up..." : setupStatus?.warehouseConnected ? "Setup Complete" : "One-Click Setup"}
           </Button>
         }
       />
