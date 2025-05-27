@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 248 250 252; /* #F8FAFC */
+  --foreground: 15 23 42; /* #0F172A */
+  --muted: 241 245 249; /* #F1F5F9 */
+  --muted-foreground: 100 116 139; /* #64748B */
+  --popover: 255 255 255; /* #FFFFFF */
+  --popover-foreground: 15 23 42; /* #0F172A */
+  --card: 255 255 255; /* #FFFFFF */
+  --card-foreground: 15 23 42; /* #0F172A */
+  --border: 226 232 240; /* #E2E8F0 */
+  --input: 226 232 240; /* #E2E8F0 */
+  --primary: 37 99 235; /* #2563EB */
+  --primary-foreground: 248 250 252; /* #F8FAFC */
+  --secondary: 241 245 249; /* #F1F5F9 */
+  --secondary-foreground: 15 23 42; /* #0F172A */
+  --accent: 241 245 249; /* #F1F5F9 */
+  --accent-foreground: 15 23 42; /* #0F172A */
+  --destructive: 239 68 68; /* #EF4444 */
+  --destructive-foreground: 248 250 252; /* #F8FAFC */
+  --ring: 37 99 235; /* #2563EB */
+  --radius: 0.5rem;
+  
+  /* Chart colors */
+  --chart-1: 37 99 235; /* #2563EB */
+  --chart-2: 16 185 129; /* #10B981 */
+  --chart-3: 245 158 11; /* #F59E0B */
+  --chart-4: 139 92 246; /* #8B5CF6 */
+  --chart-5: 236 72 153; /* #EC4899 */
+  
+  /* Custom data pipeline colors */
+  --success: 34 197 94; /* #22C55E */
+  --warning: 245 158 11; /* #F59E0B */
+  --error: 239 68 68; /* #EF4444 */
+  --info: 59 130 246; /* #3B82F6 */
+}
+
+.dark {
+  --background: 2 6 23; /* #020617 */
+  --foreground: 248 250 252; /* #F8FAFC */
+  --muted: 30 41 59; /* #1E293B */
+  --muted-foreground: 148 163 184; /* #94A3B8 */
+  --popover: 2 6 23; /* #020617 */
+  --popover-foreground: 248 250 252; /* #F8FAFC */
+  --card: 2 6 23; /* #020617 */
+  --card-foreground: 248 250 252; /* #F8FAFC */
+  --border: 30 41 59; /* #1E293B */
+  --input: 30 41 59; /* #1E293B */
+  --primary: 37 99 235; /* #2563EB */
+  --primary-foreground: 248 250 252; /* #F8FAFC */
+  --secondary: 30 41 59; /* #1E293B */
+  --secondary-foreground: 248 250 252; /* #F8FAFC */
+  --accent: 30 41 59; /* #1E293B */
+  --accent-foreground: 248 250 252; /* #F8FAFC */
+  --destructive: 220 38 38; /* #DC2626 */
+  --destructive-foreground: 248 250 252; /* #F8FAFC */
+  --ring: 37 99 235; /* #2563EB */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  }
+}
+
+@layer components {
+  .status-indicator {
+    @apply w-2 h-2 rounded-full;
+  }
+  
+  .status-connected {
+    @apply bg-green-500;
+  }
+  
+  .status-disconnected {
+    @apply bg-red-500;
+  }
+  
+  .status-warning {
+    @apply bg-yellow-500;
+  }
+  
+  .status-syncing {
+    @apply bg-blue-500 animate-pulse;
+  }
+  
+  .kpi-card {
+    @apply bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition-shadow;
+  }
+  
+  .nav-item {
+    @apply flex items-center space-x-3 px-3 py-2 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors;
+  }
+  
+  .nav-item-active {
+    @apply bg-primary text-primary-foreground hover:bg-primary;
+  }
+  
+  .sidebar-section {
+    @apply space-y-2;
+  }
+  
+  .data-card {
+    @apply bg-white rounded-xl border border-slate-200 p-6;
+  }
+  
+  .quick-action-button {
+    @apply p-4 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-left w-full;
+  }
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgb(241 245 249);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139);
+}
+
+/* Loading animations */
+.pulse-blue {
+  animation: pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-blue {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .8;
+    background-color: rgb(59 130 246);
+  }
+}
+
+/* Chat message styles */
+.chat-message {
+  @apply max-w-xs lg:max-w-md;
+}
+
+.chat-message-user {
+  @apply ml-auto bg-primary text-primary-foreground;
+}
+
+.chat-message-assistant {
+  @apply bg-white border border-slate-200;
+}
+
+/* Code block styling */
+.code-block {
+  @apply bg-slate-900 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto;
+}
+
+/* Status badges */
+.status-badge {
+  @apply px-2 py-1 text-xs font-medium rounded-full;
+}
+
+.status-badge-success {
+  @apply bg-green-100 text-green-700;
+}
+
+.status-badge-error {
+  @apply bg-red-100 text-red-700;
+}
+
+.status-badge-warning {
+  @apply bg-yellow-100 text-yellow-700;
+}
+
+.status-badge-info {
+  @apply bg-blue-100 text-blue-700;
+}
+
+.status-badge-neutral {
+  @apply bg-slate-100 text-slate-700;
+}
