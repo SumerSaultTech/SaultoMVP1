@@ -183,30 +183,30 @@ export default function Setup() {
               </CardContent>
             </Card>
 
-            {/* Step 2: Fivetran */}
+            {/* Step 2: Data Sources */}
             <Card>
               <CardContent className="p-6">
                 <div className="flex items-start space-x-4">
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    getStepStatus(setupStatus?.fivetranConfigured, isProvisioning).bgColor
+                    getStepStatus(setupStatus?.dataSourcesConfigured, isProvisioning).bgColor
                   }`}>
                     {isProvisioning ? (
                       <Clock className="h-6 w-6 text-blue-500 animate-spin" />
                     ) : (
-                      <Zap className={`h-6 w-6 ${getStepStatus(setupStatus?.fivetranConfigured).color}`} />
+                      <Zap className={`h-6 w-6 ${getStepStatus(setupStatus?.dataSourcesConfigured).color}`} />
                     )}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">Fivetran Data Connectors</h3>
-                      <Badge variant={setupStatus?.fivetranConfigured ? "default" : "secondary"}>
-                        {setupStatus?.fivetranConfigured ? "Configured" : "Not Configured"}
+                      <h3 className="text-lg font-semibold">Data Source Integration</h3>
+                      <Badge variant={setupStatus?.dataSourcesConfigured ? "default" : "secondary"}>
+                        {setupStatus?.dataSourcesConfigured ? "Connected" : "Pending"}
                       </Badge>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
-                      Set up data connectors for Salesforce, HubSpot, and QuickBooks.
+                      Automatically connect your Salesforce, HubSpot, and QuickBooks data.
                     </p>
-                    {setupStatus?.fivetranConfigured && (
+                    {setupStatus?.dataSourcesConfigured && (
                       <div className="mt-3 space-y-1">
                         {dataSources?.map((source: any) => (
                           <div key={source.id} className="text-sm text-green-600">
