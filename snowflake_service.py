@@ -21,10 +21,19 @@ def create_snowflake_db():
     try:
         print(f"Creating Snowflake connection for {db_name}...")
         
+        # Clean account identifier - remove .snowflakecomputing.com if present
+        account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
+        if ".snowflakecomputing.com" in account_id:
+            account_id = account_id.replace(".snowflakecomputing.com", "")
+        
+        print(f"Connecting with account: {account_id}")
+        print(f"User: {os.getenv('SNOWFLAKE_USERNAME')}")
+        print(f"Warehouse: {os.getenv('SNOWFLAKE_WAREHOUSE')}")
+        
         conn = snowflake.connector.connect(
             user=os.getenv("SNOWFLAKE_USERNAME"),
             password=os.getenv("SNOWFLAKE_PASSWORD"),
-            account=os.getenv("SNOWFLAKE_ACCOUNT"),
+            account=account_id,
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
             role='SYSADMIN'
         )
@@ -63,10 +72,15 @@ def create_snowflake_db():
 @app.route('/api/test-snowflake-connection', methods=['GET'])
 def test_snowflake_connection():
     try:
+        # Clean account identifier - remove .snowflakecomputing.com if present
+        account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
+        if ".snowflakecomputing.com" in account_id:
+            account_id = account_id.replace(".snowflakecomputing.com", "")
+        
         conn = snowflake.connector.connect(
             user=os.getenv("SNOWFLAKE_USERNAME"),
             password=os.getenv("SNOWFLAKE_PASSWORD"),
-            account=os.getenv("SNOWFLAKE_ACCOUNT"),
+            account=account_id,
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
             role='SYSADMIN'
         )
