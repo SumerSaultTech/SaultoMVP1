@@ -34,16 +34,51 @@ class SnowflakeService {
         throw new Error("Missing Snowflake credentials in environment variables");
       }
 
-      // In a real implementation, you would use the Snowflake SDK to test the connection
-      // For now, we'll simulate a successful connection if credentials are present
       console.log("Testing Snowflake connection...");
       
-      // Simulate async operation
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Test basic connection first
+      const testQuery = 'SELECT CURRENT_VERSION()';
+      const result = await this.executeQuery(testQuery);
       
-      return { success: true };
+      return result.success ? { success: true } : { success: false, error: result.error };
     } catch (error) {
       return { success: false, error: error.message };
+    }
+  }
+
+  async createDatabaseAndSchema(): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`Creating database ${this.config.database} and schema ${this.config.schema}...`);
+      
+      // Create database if it doesn't exist
+      const createDbQuery = `CREATE DATABASE IF NOT EXISTS ${this.config.database}`;
+      const dbResult = await this.executeQuery(createDbQuery);
+      
+      if (!dbResult.success) {
+        return { success: false, error: `Failed to create database: ${dbResult.error}` };
+      }
+
+      // Use the database
+      const useDbQuery = `USE DATABASE ${this.config.database}`;
+      const useDbResult = await this.executeQuery(useDbQuery);
+      
+      if (!useDbResult.success) {
+        return { success: false, error: `Failed to use database: ${useDbResult.error}` };
+      }
+
+      // Create schema if it doesn't exist
+      const createSchemaQuery = `CREATE SCHEMA IF NOT EXISTS ${this.config.schema}`;
+      const schemaResult = await this.executeQuery(createSchemaQuery);
+      
+      if (!schemaResult.success) {
+        return { success: false, error: `Failed to create schema: ${schemaResult.error}` };
+      }
+
+      console.log(`Successfully created database ${this.config.database} and schema ${this.config.schema}`);
+      return { success: true };
+        
+    } catch (error) {
+      return { success: false, error: `Database/schema creation failed: ${error.message}` };
     }
   }
 
