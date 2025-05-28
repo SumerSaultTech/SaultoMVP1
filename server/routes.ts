@@ -14,6 +14,19 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
+// Global company storage to persist across hot reloads
+const companiesArray: any[] = [
+  {
+    id: 1,
+    name: "Demo Company", 
+    slug: "demo_company",
+    databaseName: "DEMO_COMPANY_DB",
+    createdAt: "2024-01-15",
+    userCount: 5,
+    status: "active"
+  }
+];
+
 export async function registerRoutes(app: Express): Promise<Server> {
   
   // Setup Status
@@ -306,18 +319,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin API endpoints for multi-tenant management
-  // Simple in-memory array for immediate fix
-  const companiesArray: any[] = [
-    {
-      id: 1,
-      name: "Demo Company", 
-      slug: "demo_company",
-      databaseName: "DEMO_COMPANY_DB",
-      createdAt: "2024-01-15",
-      userCount: 5,
-      status: "active"
-    }
-  ];
 
   app.get("/api/admin/companies", async (req, res) => {
     try {
