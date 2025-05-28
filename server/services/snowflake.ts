@@ -32,39 +32,26 @@ class SnowflakeService {
   }
 
   private async getConnection(): Promise<any> {
-    if (this.connection) {
-      return this.connection;
-    }
-
     return new Promise((resolve, reject) => {
-      console.log('Creating Snowflake connection with config:');
-      console.log('- Account:', this.config.account);
-      console.log('- Username:', this.config.username);
-      console.log('- Warehouse:', this.config.warehouse);
+      console.log('Creating Snowflake connection...');
+      console.log('Account:', this.config.account);
+      console.log('Username:', this.config.username);
+      console.log('Warehouse:', this.config.warehouse);
       
-      this.connection = snowflake.createConnection({
+      const connection = snowflake.createConnection({
         account: this.config.account,
         username: this.config.username,
         password: this.config.password,
         warehouse: this.config.warehouse,
-        database: this.config.database,
-        schema: this.config.schema,
-        // Add additional connection options for better debugging
-        timeout: 60000,
-        clientSessionKeepAlive: true,
-        clientSessionKeepAliveHeartbeatFrequency: 3600
+        role: 'SYSADMIN' // Adding role like ChatGPT example
       });
 
-      this.connection.connect((err: any, conn: any) => {
+      connection.connect((err: any, conn: any) => {
         if (err) {
           console.error('❌ Failed to connect to Snowflake:', err);
-          console.error('Error code:', err.code);
-          console.error('Error message:', err.message);
-          console.error('Error response:', err.response);
           reject(err);
         } else {
           console.log('✅ Successfully connected to Snowflake');
-          console.log('Connection ID:', conn.getId());
           resolve(conn);
         }
       });
