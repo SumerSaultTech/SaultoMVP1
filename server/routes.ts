@@ -306,12 +306,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin API endpoints for multi-tenant management
-  let createdCompanies: any[] = []; // In-memory storage for created companies
+  // Use global storage to persist across hot reloads
+  if (!global.companies) {
+    global.companies = new Map<number, any>();
+    // Add default demo company
+    global.companies.set(1, {
+      id: 1,
+      name: "Demo Company", 
+      slug: "demo_company",
+      databaseName: "DEMO_COMPANY_DB",
+      createdAt: "2024-01-15",
+      userCount: 5,
+      status: "active"
+    });
+  }
+  const companies = global.companies;
 
   app.get("/api/admin/companies", async (req, res) => {
     try {
-      console.log("Fetching companies, current list:", createdCompanies);
-      res.json(createdCompanies);
+      const companiesList = Array.from(companies.values());
+      console.log("Fetching companies, current list:", companiesList);
+      res.json(companiesList);
     } catch (error: any) {
       console.error("Failed to get companies:", error);
       res.status(500).json({ message: "Failed to get companies" });
@@ -354,10 +369,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Store the created company
-      createdCompanies.push(newCompany);
+      companies.set(newCompany.id, newCompany);
       
       console.log("Returning company:", newCompany);
-      console.log("Updated companies list:", createdCompanies);
+      console.log("Updated companies list:", Array.from(companies.values()));
       res.json(newCompany);
       
     } catch (error: any) {
