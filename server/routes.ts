@@ -305,6 +305,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin API endpoints for multi-tenant management
+  app.get("/api/admin/companies", async (req, res) => {
+    try {
+      // For now, return mock data showing existing companies
+      // In production, this would query the companies table
+      const companies = [
+        {
+          id: 1,
+          name: "Demo Company",
+          slug: "demo_company",
+          databaseName: "DEMO_COMPANY_DB",
+          createdAt: "2024-01-15",
+          userCount: 5,
+          status: "active"
+        }
+      ];
+
+      res.json(companies);
+    } catch (error: any) {
+      console.error("Failed to get companies:", error);
+      res.status(500).json({ message: "Failed to get companies" });
+    }
+  });
+
+  app.post("/api/admin/companies", async (req, res) => {
+    try {
+      const { name, slug } = req.body;
+      
+      if (!name || !slug) {
+        return res.status(400).json({ message: "Company name and slug are required" });
+      }
+
+      // Create company database in Snowflake
+      const dbCreation = await snowflakeService.createCompanyDatabase(slug);
+      if (!dbCreation.success) {
+        throw new Error(`Failed to create company database: ${dbCreation.error}`);
+      }
+
+      console.log(`Created new company database: ${dbCreation.databaseName}`);
+
+      // In production, you would also save to companies table here
+      const newCompany = {
+        id: Date.now(), // Mock ID
+        name,
+        slug,
+        databaseName: dbCreation.databaseName!,
+        createdAt: new Date().toISOString().split('T')[0],
+        userCount: 0,
+        status: "active"
+      };
+
+      res.json(newCompany);
+    } catch (error: any) {
+      console.error("Failed to create company:", error);
+      res.status(500).json({ message: error.message || "Failed to create company" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
