@@ -67,6 +67,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error("Failed to connect to Snowflake");
       }
 
+      // Create company database automatically (using demo company for now)
+      const companySlug = "demo_company";
+      const dbCreation = await snowflakeService.createCompanyDatabase(companySlug);
+      if (!dbCreation.success) {
+        throw new Error(`Failed to create company database: ${dbCreation.error}`);
+      }
+
+      console.log(`Created company database: ${dbCreation.databaseName}`);
+
       // Setup data connectors using Airbyte
       const connectorsResult = await dataConnectorService.setupConnectors();
       if (!connectorsResult.success) {
