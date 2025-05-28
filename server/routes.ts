@@ -330,39 +330,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/admin/companies", async (req, res) => {
+    console.log("=== COMPANY CREATION REQUEST ===");
+    console.log("Request body:", req.body);
+    
     try {
       const { name, slug } = req.body;
       
       if (!name || !slug) {
+        console.log("Missing name or slug");
         return res.status(400).json({ message: "Company name and slug are required" });
       }
 
-      console.log(`Creating company database for: ${name} (${slug})`);
-
-      // Create company database in Snowflake
-      const dbCreation = await snowflakeService.createCompanyDatabase(slug);
+      console.log(`Testing Snowflake connection first...`);
       
-      if (!dbCreation.success) {
-        console.error("Database creation failed:", dbCreation.error);
-        return res.status(500).json({ message: `Database creation failed: ${dbCreation.error}` });
+      // Test connection first
+      const connectionTest = await snowflakeService.testConnection();
+      if (!connectionTest.success) {
+        console.error("Snowflake connection test failed:", connectionTest.error);
+        return res.status(500).json({ message: `Snowflake connection failed: ${connectionTest.error}` });
       }
+      
+      console.log("Snowflake connection test passed");
 
-      console.log(`Successfully created company database: ${dbCreation.databaseName}`);
-
-      // Return success response
+      // For now, return a mock company without trying to create the database
+      // This will let us verify the API flow works
       const newCompany = {
         id: Date.now(),
         name,
         slug,
-        databaseName: dbCreation.databaseName!,
+        databaseName: `${slug.toUpperCase()}_DB`,
         createdAt: new Date().toISOString().split('T')[0],
         userCount: 0,
         status: "active"
       };
 
+      console.log("Returning company:", newCompany);
       res.json(newCompany);
+      
     } catch (error: any) {
-      console.error("Failed to create company:", error);
+      console.error("=== ERROR IN COMPANY CREATION ===");
+      console.error("Error:", error);
+      console.error("Stack:", error.stack);
       res.status(500).json({ message: error.message || "Failed to create company" });
     }
   });
