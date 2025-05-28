@@ -1,10 +1,12 @@
+import * as snowflake from 'snowflake-sdk';
+
 interface SnowflakeConfig {
   account: string;
   username: string;
   password: string;
   warehouse: string;
-  database: string;
-  schema: string;
+  database?: string;
+  schema?: string;
 }
 
 interface QueryResult {
@@ -16,6 +18,7 @@ interface QueryResult {
 
 class SnowflakeService {
   private config: SnowflakeConfig;
+  private connection: any = null;
 
   constructor() {
     this.config = {
@@ -23,9 +26,36 @@ class SnowflakeService {
       username: process.env.SNOWFLAKE_USERNAME || "",
       password: process.env.SNOWFLAKE_PASSWORD || "",
       warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
-      database: process.env.SNOWFLAKE_DATABASE || "DATASYNC_PRO",
-      schema: process.env.SNOWFLAKE_SCHEMA || "PUBLIC",
+      database: process.env.SNOWFLAKE_DATABASE,
+      schema: process.env.SNOWFLAKE_SCHEMA,
     };
+  }
+
+  private async getConnection(): Promise<any> {
+    if (this.connection) {
+      return this.connection;
+    }
+
+    return new Promise((resolve, reject) => {
+      this.connection = snowflake.createConnection({
+        account: this.config.account,
+        username: this.config.username,
+        password: this.config.password,
+        warehouse: this.config.warehouse,
+        database: this.config.database,
+        schema: this.config.schema
+      });
+
+      this.connection.connect((err: any, conn: any) => {
+        if (err) {
+          console.error('Failed to connect to Snowflake:', err);
+          reject(err);
+        } else {
+          console.log('Successfully connected to Snowflake');
+          resolve(conn);
+        }
+      });
+    });
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
@@ -88,28 +118,37 @@ class SnowflakeService {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     try {
-      if (!this.config.account) {
-        throw new Error("Snowflake not configured");
-      }
-
-      console.log(`Executing Snowflake query: ${sql.substring(0, 100)}...`);
+      console.log(`Executing Snowflake query: ${sql}...`);
       
-      // In a real implementation, you would execute the actual SQL query
-      // For now, we'll return mock data based on common KPI queries
-      if (sql.toLowerCase().includes("arr") || sql.toLowerCase().includes("revenue")) {
-        return { success: true, value: "$2.4M", data: [{ value: 2400000 }] };
-      } else if (sql.toLowerCase().includes("churn")) {
-        return { success: true, value: "3.2%", data: [{ value: 0.032 }] };
-      } else if (sql.toLowerCase().includes("ltv") || sql.toLowerCase().includes("lifetime")) {
-        return { success: true, value: "$18,750", data: [{ value: 18750 }] };
-      }
-
-      // Simulate async operation
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const connection = await this.getConnection();
       
-      return { success: true, data: [], value: "0" };
-    } catch (error) {
-      return { success: false, error: error.message };
+      return new Promise((resolve) => {
+        connection.execute({
+          sqlText: sql,
+          complete: (err: any, stmt: any, rows: any) => {
+            if (err) {
+              console.error("Snowflake query failed:", err);
+              resolve({
+                success: false,
+                error: err.message
+              });
+            } else {
+              console.log("Snowflake query executed successfully");
+              resolve({
+                success: true,
+                data: rows,
+                value: rows && rows.length > 0 ? rows[0] : null
+              });
+            }
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error("Snowflake connection or query failed:", error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
