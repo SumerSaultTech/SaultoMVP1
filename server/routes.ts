@@ -372,17 +372,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userCount: 0,
           status: "active"
         };
+
+        // Store the created company
+        companiesArray.push(newCompany);
+        
+        console.log("Stored new company. Total companies:", companiesArray.length);
+        console.log("All companies:", companiesArray);
+        res.json(newCompany);
+        
       } catch (pythonError: any) {
         console.error("Failed to connect to Python service:", pythonError);
         return res.status(500).json({ message: "Database service unavailable. Please ensure Snowflake credentials are configured." });
       }
-
-      // Store the created company
-      companiesArray.push(newCompany);
-      
-      console.log("Stored new company. Total companies:", companiesArray.length);
-      console.log("All companies:", companiesArray);
-      res.json(newCompany);
       
     } catch (error: any) {
       console.error("=== ERROR IN COMPANY CREATION ===");
