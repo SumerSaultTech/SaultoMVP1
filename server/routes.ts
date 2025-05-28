@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { snowflakeService } from "./services/snowflake";
-import { fivetranService } from "./services/fivetran";
+import { dataConnectorService } from "./services/data-connector";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
 import {
@@ -67,10 +67,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error("Failed to connect to Snowflake");
       }
 
-      // Setup Fivetran connectors
-      const connectorsResult = await fivetranService.setupConnectors();
+      // Setup data connectors using Airbyte
+      const connectorsResult = await dataConnectorService.setupConnectors();
       if (!connectorsResult.success) {
-        throw new Error("Failed to setup Fivetran connectors");
+        throw new Error("Failed to setup data connectors");
       }
 
       // Create default data sources
@@ -86,8 +86,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update setup status
       await storage.updateSetupStatus({
-        snowflakeConnected: true,
-        fivetranConfigured: true,
+        warehouseConnected: true,
+        dataSourcesConfigured: true,
       });
 
       // Log activity
