@@ -353,27 +353,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log("Snowflake connection test passed");
 
-      // Create the actual Snowflake database for this company
-      const databaseName = `${slug.toUpperCase()}_DB`;
-      console.log(`Creating Snowflake database: ${databaseName}`);
+      // Use Python service to create the actual Snowflake database
+      console.log(`Creating Snowflake database using Python service...`);
       
-      const dbCreation = await snowflakeService.createCompanyDatabase(slug);
-      if (!dbCreation.success) {
-        console.error("Database creation failed:", dbCreation.error);
-        return res.status(500).json({ message: `Database creation failed: ${dbCreation.error}` });
-      }
-      
-      console.log(`Successfully created database: ${dbCreation.databaseName}`);
+      try {
+        const pythonResponse = await fetch('http://localhost:5001/api/create-snowflake-db', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            company_name: name,
+            company_slug: slug
+          })
+        });
 
-      const newCompany = {
-        id: Date.now(),
-        name,
-        slug,
-        databaseName: dbCreation.databaseName || databaseName,
-        createdAt: new Date().toISOString().split('T')[0],
-        userCount: 0,
-        status: "active"
-      };
+        const dbResult = await pythonResponse.json();
+        
+        if (!dbResult.success) {
+          console.error("Python service database creation failed:", dbResult.error);
+          return res.status(500).json({ message: `Database creation failed: ${dbResult.error}` });
+        }
+        
+        console.log(`Successfully created database: ${dbResult.databaseName}`);
+
+        const newCompany = {
+          id: Date.now(),
+          name,
+          slug,
+          databaseName: dbResult.databaseName,
+          createdAt: new Date().toISOString().split('T')[0],
+          userCount: 0,
+          status: "active"
+        };
+      } catch (pythonError: any) {
+        console.error("Failed to connect to Python service:", pythonError);
+        return res.status(500).json({ message: "Database service unavailable" });
+      }
 
       // Store the created company
       companiesArray.push(newCompany);
