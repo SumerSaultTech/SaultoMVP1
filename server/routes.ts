@@ -337,17 +337,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Company name and slug are required" });
       }
 
+      console.log(`Creating company database for: ${name} (${slug})`);
+
       // Create company database in Snowflake
       const dbCreation = await snowflakeService.createCompanyDatabase(slug);
+      
       if (!dbCreation.success) {
-        throw new Error(`Failed to create company database: ${dbCreation.error}`);
+        console.error("Database creation failed:", dbCreation.error);
+        return res.status(500).json({ message: `Database creation failed: ${dbCreation.error}` });
       }
 
-      console.log(`Created new company database: ${dbCreation.databaseName}`);
+      console.log(`Successfully created company database: ${dbCreation.databaseName}`);
 
-      // In production, you would also save to companies table here
+      // Return success response
       const newCompany = {
-        id: Date.now(), // Mock ID
+        id: Date.now(),
         name,
         slug,
         databaseName: dbCreation.databaseName!,
