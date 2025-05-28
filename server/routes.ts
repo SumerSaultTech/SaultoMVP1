@@ -342,18 +342,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Company name and slug are required" });
       }
 
-      console.log(`Testing Snowflake connection first...`);
-      
-      // Test connection first
-      const connectionTest = await snowflakeService.testConnection();
-      if (!connectionTest.success) {
-        console.error("Snowflake connection test failed:", connectionTest.error);
-        return res.status(500).json({ message: `Snowflake connection failed: ${connectionTest.error}` });
-      }
-      
-      console.log("Snowflake connection test passed");
-
-      // Use Python service to create the actual Snowflake database
+      // Use Python service to create the actual Snowflake database (bypasses Node.js SDK issues)
       console.log(`Creating Snowflake database using Python service...`);
       
       try {

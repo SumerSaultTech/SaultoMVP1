@@ -38,10 +38,12 @@ def create_snowflake_db():
         print(f"Executing: {create_db_sql}")
         cs.execute(create_db_sql)
         
-        # Create schema
-        create_schema_sql = f'CREATE SCHEMA IF NOT EXISTS {db_name}.{schema_name}'
-        print(f"Executing: {create_schema_sql}")
-        cs.execute(create_schema_sql)
+        # Create standard data warehouse schemas for proper layered architecture
+        schemas = ['RAW', 'STG', 'INT', 'CORE']
+        for schema in schemas:
+            create_schema_sql = f'CREATE SCHEMA IF NOT EXISTS {db_name}.{schema}'
+            print(f"Executing: {create_schema_sql}")
+            cs.execute(create_schema_sql)
         
         cs.close()
         conn.close()
