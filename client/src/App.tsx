@@ -10,6 +10,7 @@ import TableBrowser from "@/pages/table-browser";
 import ModelRegistry from "@/pages/model-registry";
 import KpiAssistant from "@/pages/kpi-assistant";
 import PipelineLogs from "@/pages/pipeline-logs";
+import AdminPage from "@/pages/admin";
 import Sidebar from "@/components/layout/sidebar";
 
 function Router() {
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/models" component={ModelRegistry} />
       <Route path="/assistant" component={KpiAssistant} />
       <Route path="/logs" component={PipelineLogs} />
+      <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
   );
