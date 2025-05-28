@@ -113,14 +113,33 @@ export default function Setup() {
         title="Setup & Configuration" 
         subtitle="Configure your data warehouse platform"
         actions={
-          <Button 
-            onClick={handleOneClickSetup} 
-            disabled={isProvisioning || provisionMutation.isPending || setupStatus?.warehouseConnected}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Play className="mr-2 h-4 w-4" />
-            {isProvisioning ? "Setting Up..." : setupStatus?.warehouseConnected ? "Setup Complete" : "One-Click Setup"}
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/test/snowflake', { method: 'POST' });
+                  const result = await response.json();
+                  console.log('Snowflake test result:', result);
+                  alert(result.success ? `Success! ${result.message}` : `Error: ${result.message}`);
+                } catch (error) {
+                  console.error('Test failed:', error);
+                  alert('Test failed: ' + error.message);
+                }
+              }}
+              variant="outline"
+              className="border-green-600 text-green-600 hover:bg-green-50"
+            >
+              Test Snowflake
+            </Button>
+            <Button 
+              onClick={handleOneClickSetup} 
+              disabled={isProvisioning || provisionMutation.isPending || setupStatus?.warehouseConnected}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {isProvisioning ? "Setting Up..." : setupStatus?.warehouseConnected ? "Setup Complete" : "One-Click Setup"}
+            </Button>
+          </div>
         }
       />
       

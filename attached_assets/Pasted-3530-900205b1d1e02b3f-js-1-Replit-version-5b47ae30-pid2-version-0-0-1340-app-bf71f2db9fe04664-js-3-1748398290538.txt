@@ -1,0 +1,122 @@
+3530-900205b1d1e02b3f.js:1 Replit version 5b47ae30, pid2 version 0.0.1340
+_app-bf71f2db9fe04664.js:38 
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] LaunchDarkly client initialized
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Opening stream connection to https://clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0
+9Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.Understand this error
+framework-2198afd487306206.js:1 Unrecognized feature: 'ambient-light-sensor'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'battery'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'execution-while-not-rendered'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'execution-while-out-of-viewport'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'layout-animations'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'legacy-image-formats'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'navigation-override'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'oversized-images'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'publickey-credentials'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'speaker-selection'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'unoptimized-images'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'unsized-media'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Unrecognized feature: 'pointer-lock'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Allow attribute will take precedence over 'allowfullscreen'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+framework-2198afd487306206.js:1 Allow attribute will take precedence over 'allowpaymentrequest'.
+_ @ framework-2198afd487306206.js:1Understand this warning
+DataWarehouseDashboard:1 Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner.
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Error on stream connection: {"isTrusted":true}, will continue retrying after 824 milliseconds.
+(anonymous) @ _app-bf71f2db9fe04664.js:38Understand this warning
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Closing stream connection
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Opening stream connection to https://clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Error on stream connection: {"isTrusted":true}, will continue retrying after 896 milliseconds.
+(anonymous) @ _app-bf71f2db9fe04664.js:38Understand this warning
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Closing stream connection
+clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0:1 
+            
+            
+           Failed to load resource: net::ERR_NETWORK_IO_SUSPENDEDUnderstand this error
+4899-4326b1e4324c1d00.js:1 WebSocket connection to 'wss://eval.janeway.platform.replit.com/wsv2/v2.public.Q2dZSXV2ell3UVlTQmdqWm1ObkJCaUlIYW1GdVpYZGhlVEFBT293Q0NpUmlOR1kzWkRNME9TMDBNek0wTFRSa05UQXRPVEptWWkwNE1HTXdPR1UzWmpNNE5ETVNBMjVwZUJvWmNtVndiR2wwTFhKbGNHd3RabWxzWlhNdGFtRnVaWGRoZVNJV1JHRjBZVmRoY21Wb2IzVnpaVVJoYzJoaWIyRnlaQ29LYm5Cb2FXeHNhWEJ6TkVKWENocHlaWEJzYVhRdGNtVndiQzFpYkc5amEzTXRhbUZ1WlhkaGVSSVljbVZ3YkdsMExYSmxjR3d0YldWMFlTMXFZVzVsZDJGNUdoOXlaWEJzYVhRdGJXRnlaMkZ5YVc1bExXSnNiMk5yY3kxcVlXNWxkMkY1U2djSWdmYUNGQkFCVUFCYUQybHVkR1Z1ZEY5aWRYTnBibVZ6YzFvVGIyN...NU9HZFVVR2REZEdrelVUWTVhU1V5Um1OclVVcGtlV0ZvY2xob00yeFVSSEpPWlhsVlprbGlXRUZNZEZGVFV6VmxWa3hZYmlVeVFrZFNaVWxCY1VsaGJHeFVWMjFwUzFseFFWUjJTRWt3SlRKR1NHSm5VemhZVjA5SlEwb3pXR2xrU0VGTWJUZEVTVWR2TTBsMlluSnZSbnA2Y0VWbFZuSndlR2xOVTFwU1EwZG9WRTlxVEhsQ1pqa3hVemRETlRoR2MzaEpNbTFLTmxVM1kxaHBjRFp1Vm1kemFsRndiMXBFUVZsRVRFaHBPWFZSY0dwRGVqZzVSbWRFU0dZd0pUSkdhM0JFTldodVRuRktjMjVqZERaVWJtOW5KVE5FSlRORertO7QGEWdHoQmlH9-t1xUN-bF8KuutrjfjUG456DBJuMGCliBwonL9yzJG7zM0wVmZ4F8_u1C_GeRQ8EHZeQY.Q2dad2NtOWtPak1pQ25KbGNHeHBkQzVqYjIwPQ' failed: 
+connect @ 4899-4326b1e4324c1d00.js:1Understand this error
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Opening stream connection to https://clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0
+stallwart.build.js:1 stallwart: failed ping 1
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Error on stream connection: {"isTrusted":true}, will continue retrying after 857 milliseconds.
+(anonymous) @ _app-bf71f2db9fe04664.js:38Understand this warning
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Closing stream connection
+clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0:1 
+            
+            
+           Failed to load resource: net::ERR_NETWORK_IO_SUSPENDEDUnderstand this error
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Opening stream connection to https://clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Error on stream connection: {"isTrusted":true}, will continue retrying after 525 milliseconds.
+(anonymous) @ _app-bf71f2db9fe04664.js:38Understand this warning
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Closing stream connection
+clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0:1 
+            
+            
+           Failed to load resource: net::ERR_NETWORK_IO_SUSPENDEDUnderstand this error
+_app-bf71f2db9fe04664.js:38 [LaunchDarkly] Opening stream connection to https://clientstream.launchdarkly.com/eval/62b35a865152ab14c5942820/eyJrZXkiOiI0MTk5MDkxMyIsImtpbmQiOiJ1c2VyIiwibmFtZSI6Im5waGlsbGlwczQiLCJyb2xlcyI6WyJpbnRlbnRfYnVzaW5lc3MiLCJvbmJvYXJkaW5nX2pvYl9kYXRhIiwib25ib2FyZGluZ19yb2xlX2V4ZWMiXSwiZW1haWwiOiJucGhpbGxpcHNAc3VtZXJzYXVsdHRlY2guY29tIiwidGltZV9jcmVhdGVkIjoxNzQ1NzIzNTY0ODI5LCJfbWV0YSI6eyJwcml2YXRlQXR0cmlidXRlcyI6WyJlbWFpbCJdfX0
+workspace_iframe.html:32 Unrecognized feature: 'ambient-light-sensor'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'battery'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'execution-while-not-rendered'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'execution-while-out-of-viewport'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'layout-animations'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'legacy-image-formats'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'navigation-override'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'oversized-images'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'publickey-credentials'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'speaker-selection'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'unoptimized-images'.Understand this warning
+workspace_iframe.html:32 Unrecognized feature: 'unsized-media'.Understand this warning
+workspace_iframe.html:32 Allow attribute will take precedence over 'allowfullscreen'.Understand this warning
+workspace_iframe.html:32 Allow attribute will take precedence over 'allowpaymentrequest'.Understand this warning
+b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/api/setup/provision:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/api/setup/provision:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+Console.js:61 Warning: validateDOMNesting(...): <a> cannot appear as a descendant of <a>.
+    at a
+    at a
+    at https://b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=fba18571:337:18
+    at nav
+    at div
+    at Sidebar (https://b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/src/components/layout/sidebar.tsx:23:22)
+    at div
+    at Provider (https://b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-PLT6GTVM.js?v=fba18571:38:15)
+    at TooltipProvider (https://b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=fba18571:62:5)
+    at QueryClientProvider (https://b4f7d349-4334-4d50-92fb-80c08e7f3843-00-3k5cki9er0ll0.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=fba18571:2805:3)
+    at App
+Mt.forEach.n.<computed> @ Console.js:61Understand this error
+
+                
+          
+          
+          
+         Chrome is moving towards a new experience that allows users to choose to browse without third-party cookies.

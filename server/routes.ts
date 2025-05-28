@@ -305,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual sync trigger
   app.post("/api/sync/trigger", async (req, res) => {
     try {
-      const result = await fivetranService.triggerSync();
+      const result = await dataConnectorService.triggerSync();
       
       await storage.createPipelineActivity({
         type: "sync",
