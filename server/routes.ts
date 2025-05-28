@@ -353,13 +353,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log("Snowflake connection test passed");
 
-      // For now, return a mock company without trying to create the database
-      // This will let us verify the API flow works
+      // Create the actual Snowflake database for this company
+      const databaseName = `${slug.toUpperCase()}_DB`;
+      console.log(`Creating Snowflake database: ${databaseName}`);
+      
+      const dbCreation = await snowflakeService.createCompanyDatabase(slug);
+      if (!dbCreation.success) {
+        console.error("Database creation failed:", dbCreation.error);
+        return res.status(500).json({ message: `Database creation failed: ${dbCreation.error}` });
+      }
+      
+      console.log(`Successfully created database: ${dbCreation.databaseName}`);
+
       const newCompany = {
         id: Date.now(),
         name,
         slug,
-        databaseName: `${slug.toUpperCase()}_DB`,
+        databaseName: dbCreation.databaseName || databaseName,
         createdAt: new Date().toISOString().split('T')[0],
         userCount: 0,
         status: "active"
