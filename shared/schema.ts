@@ -2,10 +2,21 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const companies = pgTable("companies", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").unique().notNull(), // Used for database naming: company_slug_db
+  snowflakeDatabase: text("snowflake_database").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  isActive: boolean("is_active").default(true),
+});
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
+  role: text("role").default("user"), // 'admin', 'user', 'viewer'
 });
 
 export const dataSources = pgTable("data_sources", {
