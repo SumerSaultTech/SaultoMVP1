@@ -89,17 +89,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // One-click setup
   app.post("/api/setup/provision", async (req, res) => {
     try {
-      // Initialize Snowflake connection
+      // Test Snowflake connection with your real credentials
+      console.log("Testing Snowflake connection with real credentials...");
       const snowflakeResult = await snowflakeService.testConnection();
       if (!snowflakeResult.success) {
-        throw new Error("Failed to connect to Snowflake");
+        throw new Error(`Snowflake connection failed: ${snowflakeResult.error}`);
       }
+      console.log("✓ Snowflake connection successful!");
 
-      // Setup data connectors using Airbyte
-      const connectorsResult = await dataConnectorService.setupConnectors();
-      if (!connectorsResult.success) {
-        throw new Error("Failed to setup data connectors");
+      // Create test company database
+      const dbResult = await snowflakeService.createCompanyDatabase("demo_company");
+      if (!dbResult.success) {
+        throw new Error(`Database creation failed: ${dbResult.error}`);
       }
+      console.log(`✓ Database created: ${dbResult.databaseName}`);
+
+      // Skip data connectors for now to focus on Snowflake testing
+      // const connectorsResult = await dataConnectorService.setupConnectors();
+      // if (!connectorsResult.success) {
+      //   throw new Error("Failed to setup data connectors");
+      // }
 
       // Create default data sources
       const dataSources = [
