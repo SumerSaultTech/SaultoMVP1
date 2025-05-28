@@ -1,10 +1,11 @@
-const snowflake = require('snowflake-sdk');
+import { Connection, createConnection, ConnectionOptions } from 'snowflake-sdk';
 
 interface SnowflakeConfig {
   account: string;
   username: string;
   password: string;
   warehouse: string;
+  role: string;
   database?: string;
   schema?: string;
 }
@@ -26,29 +27,34 @@ class SnowflakeService {
       username: process.env.SNOWFLAKE_USERNAME || "",
       password: process.env.SNOWFLAKE_PASSWORD || "",
       warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
+      role: "SYSADMIN",
       database: process.env.SNOWFLAKE_DATABASE,
       schema: process.env.SNOWFLAKE_SCHEMA,
     };
   }
 
-  private async getConnection(): Promise<any> {
+  private async getConnection(): Promise<Connection> {
     return new Promise((resolve, reject) => {
-      console.log('Creating Snowflake connection...');
+      console.log('🔄 Creating Snowflake connection...');
       console.log('Account:', this.config.account);
       console.log('Username:', this.config.username);
       console.log('Warehouse:', this.config.warehouse);
+      console.log('Role:', this.config.role);
       
-      const connection = snowflake.createConnection({
+      const connectionOptions: ConnectionOptions = {
         account: this.config.account,
         username: this.config.username,
         password: this.config.password,
         warehouse: this.config.warehouse,
-        role: 'SYSADMIN' // Adding role like ChatGPT example
-      });
+        role: this.config.role
+      };
 
-      connection.connect((err: any, conn: any) => {
+      const connection = createConnection(connectionOptions);
+
+      connection.connect((err: any, conn: Connection) => {
         if (err) {
           console.error('❌ Failed to connect to Snowflake:', err);
+          console.error('Error details:', err.message);
           reject(err);
         } else {
           console.log('✅ Successfully connected to Snowflake');
@@ -128,23 +134,12 @@ class SnowflakeService {
           complete: (err: any, stmt: any, rows: any) => {
             if (err) {
               console.error("❌ Snowflake query failed:", err);
-              console.error("Query that failed:", sql);
-              console.error("Error details:", {
-                code: err.code,
-                message: err.message,
-                sqlState: err.sqlState
-              });
               resolve({
                 success: false,
-                error: `${err.code}: ${err.message}`
+                error: err.message
               });
             } else {
               console.log("✅ Snowflake query executed successfully");
-              console.log("Query:", sql);
-              console.log("Rows returned:", rows ? rows.length : 0);
-              if (rows && rows.length > 0) {
-                console.log("Sample result:", rows[0]);
-              }
               resolve({
                 success: true,
                 data: rows,
@@ -155,11 +150,10 @@ class SnowflakeService {
         });
       });
     } catch (error: any) {
-      console.error("❌ Snowflake connection or query failed:", error);
-      console.error("Error stack:", error.stack);
+      console.error("❌ Snowflake connection failed:", error);
       return {
         success: false,
-        error: `Connection error: ${error.message}`
+        error: error.message
       };
     }
   }
