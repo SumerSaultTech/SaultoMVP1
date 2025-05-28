@@ -117,7 +117,25 @@ export default function Setup() {
             <Button 
               onClick={async () => {
                 try {
-                  const response = await fetch('/api/test/snowflake', { method: 'POST' });
+                  const response = await fetch('/api/test/snowflake', { 
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json'
+                    }
+                  });
+                  
+                  const contentType = response.headers.get('content-type');
+                  console.log('Response content type:', contentType);
+                  console.log('Response status:', response.status);
+                  
+                  if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    console.log('Non-JSON response:', text.substring(0, 200));
+                    alert('Server returned HTML instead of JSON - API routing issue detected');
+                    return;
+                  }
+                  
                   const result = await response.json();
                   console.log('Snowflake test result:', result);
                   alert(result.success ? `Success! ${result.message}` : `Error: ${result.message}`);
