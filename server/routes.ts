@@ -58,6 +58,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test Snowflake connection only
+  app.post("/api/test/snowflake", async (_req, res) => {
+    try {
+      console.log("Testing Snowflake connection only...");
+      
+      // Test basic connection
+      const connectionResult = await snowflakeService.testConnection();
+      if (!connectionResult.success) {
+        throw new Error(`Snowflake connection failed: ${connectionResult.error}`);
+      }
+
+      // Test database creation
+      const dbResult = await snowflakeService.createCompanyDatabase("test_company");
+      if (!dbResult.success) {
+        throw new Error(`Database creation failed: ${dbResult.error}`);
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Snowflake connection and database creation successful!",
+        databaseName: dbResult.databaseName 
+      });
+    } catch (error: any) {
+      console.error("Snowflake test failed:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // One-click setup
   app.post("/api/setup/provision", async (req, res) => {
     try {
