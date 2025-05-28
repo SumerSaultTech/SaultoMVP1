@@ -113,51 +113,14 @@ export default function Setup() {
         title="Setup & Configuration" 
         subtitle="Configure your data warehouse platform"
         actions={
-          <div className="flex gap-2">
-            <Button 
-              onClick={async () => {
-                try {
-                  const response = await fetch('/api/test/snowflake', { 
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Accept': 'application/json'
-                    }
-                  });
-                  
-                  const contentType = response.headers.get('content-type');
-                  console.log('Response content type:', contentType);
-                  console.log('Response status:', response.status);
-                  
-                  if (!contentType || !contentType.includes('application/json')) {
-                    const text = await response.text();
-                    console.log('Non-JSON response:', text.substring(0, 200));
-                    alert('Server returned HTML instead of JSON - API routing issue detected');
-                    return;
-                  }
-                  
-                  const result = await response.json();
-                  console.log('Snowflake test result:', result);
-                  alert(result.success ? `Success! ${result.message}` : `Error: ${result.message}`);
-                } catch (error) {
-                  console.error('Test failed:', error);
-                  alert('Test failed: ' + error.message);
-                }
-              }}
-              variant="outline"
-              className="border-green-600 text-green-600 hover:bg-green-50"
-            >
-              Test Snowflake
-            </Button>
-            <Button 
-              onClick={handleOneClickSetup} 
-              disabled={isProvisioning || provisionMutation.isPending || setupStatus?.warehouseConnected}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Play className="mr-2 h-4 w-4" />
-              {isProvisioning ? "Setting Up..." : setupStatus?.warehouseConnected ? "Setup Complete" : "One-Click Setup"}
-            </Button>
-          </div>
+          <Button 
+            onClick={handleOneClickSetup} 
+            disabled={isProvisioning || provisionMutation.isPending || setupStatus?.warehouseConnected}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Play className="mr-2 h-4 w-4" />
+            {isProvisioning ? "Setting Up..." : setupStatus?.warehouseConnected ? "Setup Complete" : "One-Click Setup"}
+          </Button>
         }
       />
       

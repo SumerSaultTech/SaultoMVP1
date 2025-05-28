@@ -58,57 +58,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Test Snowflake connection only
-  app.post("/api/test/snowflake", async (_req, res) => {
-    try {
-      console.log("Testing Snowflake connection only...");
-      
-      // Test basic connection
-      const connectionResult = await snowflakeService.testConnection();
-      if (!connectionResult.success) {
-        throw new Error(`Snowflake connection failed: ${connectionResult.error}`);
-      }
-
-      // Test database creation
-      const dbResult = await snowflakeService.createCompanyDatabase("test_company");
-      if (!dbResult.success) {
-        throw new Error(`Database creation failed: ${dbResult.error}`);
-      }
-
-      res.json({ 
-        success: true, 
-        message: "Snowflake connection and database creation successful!",
-        databaseName: dbResult.databaseName 
-      });
-    } catch (error: any) {
-      console.error("Snowflake test failed:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-
   // One-click setup
   app.post("/api/setup/provision", async (req, res) => {
     try {
-      // Test Snowflake connection with your real credentials
-      console.log("Testing Snowflake connection with real credentials...");
+      // Initialize Snowflake connection
       const snowflakeResult = await snowflakeService.testConnection();
       if (!snowflakeResult.success) {
-        throw new Error(`Snowflake connection failed: ${snowflakeResult.error}`);
+        throw new Error("Failed to connect to Snowflake");
       }
-      console.log("✓ Snowflake connection successful!");
 
-      // Create test company database
-      const dbResult = await snowflakeService.createCompanyDatabase("demo_company");
-      if (!dbResult.success) {
-        throw new Error(`Database creation failed: ${dbResult.error}`);
+      // Setup data connectors using Airbyte
+      const connectorsResult = await dataConnectorService.setupConnectors();
+      if (!connectorsResult.success) {
+        throw new Error("Failed to setup data connectors");
       }
-      console.log(`✓ Database created: ${dbResult.databaseName}`);
-
-      // Skip data connectors for now to focus on Snowflake testing
-      // const connectorsResult = await dataConnectorService.setupConnectors();
-      // if (!connectorsResult.success) {
-      //   throw new Error("Failed to setup data connectors");
-      // }
 
       // Create default data sources
       const dataSources = [
@@ -314,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual sync trigger
   app.post("/api/sync/trigger", async (req, res) => {
     try {
-      const result = await dataConnectorService.triggerSync();
+      const result = await fivetranService.triggerSync();
       
       await storage.createPipelineActivity({
         type: "sync",
