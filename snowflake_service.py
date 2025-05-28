@@ -48,11 +48,12 @@ def create_snowflake_db():
         cs.close()
         conn.close()
 
-        print(f"✅ Successfully created {db_name} with {schema_name} schema")
+        print(f"✅ Successfully created {db_name} with layered schemas: {', '.join(schemas)}")
         return jsonify({
             'success': True, 
-            'message': f'Database {db_name} and schema {schema_name} created successfully.',
-            'databaseName': db_name
+            'message': f'Database {db_name} created with layered architecture (RAW → STG → INT → CORE)',
+            'databaseName': db_name,
+            'schemas': schemas
         })
 
     except Exception as e:
