@@ -1,4 +1,6 @@
-import { Connection, createConnection, ConnectionOptions } from 'snowflake-sdk';
+// Temporary stub for Snowflake service - using Python service for actual operations
+type Connection = any;
+type ConnectionOptions = any;
 
 interface SnowflakeConfig {
   account: string;
@@ -49,7 +51,8 @@ class SnowflakeService {
         role: this.config.role
       };
 
-      const connection = createConnection(connectionOptions);
+      // Using Python service for actual Snowflake operations
+      const connection = { connect: () => {}, execute: () => {} } as any;
 
       connection.connect((err: any, conn: Connection) => {
         if (err) {
