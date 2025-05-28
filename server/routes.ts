@@ -306,23 +306,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin API endpoints for multi-tenant management
+  let createdCompanies: any[] = []; // In-memory storage for created companies
+
   app.get("/api/admin/companies", async (req, res) => {
     try {
-      // For now, return mock data showing existing companies
-      // In production, this would query the companies table
-      const companies = [
-        {
-          id: 1,
-          name: "Demo Company",
-          slug: "demo_company",
-          databaseName: "DEMO_COMPANY_DB",
-          createdAt: "2024-01-15",
-          userCount: 5,
-          status: "active"
-        }
-      ];
-
-      res.json(companies);
+      console.log("Fetching companies, current list:", createdCompanies);
+      res.json(createdCompanies);
     } catch (error: any) {
       console.error("Failed to get companies:", error);
       res.status(500).json({ message: "Failed to get companies" });
@@ -364,7 +353,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "active"
       };
 
+      // Store the created company
+      createdCompanies.push(newCompany);
+      
       console.log("Returning company:", newCompany);
+      console.log("Updated companies list:", createdCompanies);
       res.json(newCompany);
       
     } catch (error: any) {

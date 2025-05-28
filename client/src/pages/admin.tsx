@@ -26,31 +26,15 @@ export default function AdminPage() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const { toast } = useToast();
 
-  // Mock data for now - we'll connect to real API later
+  // Fetch real companies from API
   const { data: companies = [], isLoading } = useQuery({
     queryKey: ["/api/admin/companies"],
-    queryFn: () => {
-      // Return mock data for now
-      return [
-        {
-          id: 1,
-          name: "Demo Company",
-          slug: "demo_company", 
-          databaseName: "DEMO_COMPANY_DB",
-          createdAt: "2024-01-15",
-          userCount: 5,
-          status: "active" as const
-        },
-        {
-          id: 2,
-          name: "Acme Corp",
-          slug: "acme_corp",
-          databaseName: "ACME_CORP_DB", 
-          createdAt: "2024-01-20",
-          userCount: 12,
-          status: "active" as const
-        }
-      ];
+    queryFn: async () => {
+      const response = await fetch("/api/admin/companies");
+      if (!response.ok) {
+        throw new Error("Failed to fetch companies");
+      }
+      return response.json();
     }
   });
 
