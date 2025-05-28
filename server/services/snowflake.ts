@@ -46,12 +46,16 @@ class SnowflakeService {
     }
   }
 
-  async createDatabaseAndSchema(): Promise<{ success: boolean; error?: string }> {
+  async createCompanyDatabase(companySlug: string): Promise<{ success: boolean; databaseName?: string; error?: string }> {
     try {
-      console.log(`Creating database ${this.config.database} and schema ${this.config.schema}...`);
+      // Generate unique database name for the company
+      const databaseName = `${companySlug.toUpperCase()}_DB`;
+      const schemaName = "ANALYTICS";
+      
+      console.log(`Creating company database ${databaseName} with schema ${schemaName}...`);
       
       // Create database if it doesn't exist
-      const createDbQuery = `CREATE DATABASE IF NOT EXISTS ${this.config.database}`;
+      const createDbQuery = `CREATE DATABASE IF NOT EXISTS ${databaseName}`;
       const dbResult = await this.executeQuery(createDbQuery);
       
       if (!dbResult.success) {
@@ -59,7 +63,7 @@ class SnowflakeService {
       }
 
       // Use the database
-      const useDbQuery = `USE DATABASE ${this.config.database}`;
+      const useDbQuery = `USE DATABASE ${databaseName}`;
       const useDbResult = await this.executeQuery(useDbQuery);
       
       if (!useDbResult.success) {
@@ -67,18 +71,18 @@ class SnowflakeService {
       }
 
       // Create schema if it doesn't exist
-      const createSchemaQuery = `CREATE SCHEMA IF NOT EXISTS ${this.config.schema}`;
+      const createSchemaQuery = `CREATE SCHEMA IF NOT EXISTS ${schemaName}`;
       const schemaResult = await this.executeQuery(createSchemaQuery);
       
       if (!schemaResult.success) {
         return { success: false, error: `Failed to create schema: ${schemaResult.error}` };
       }
 
-      console.log(`Successfully created database ${this.config.database} and schema ${this.config.schema}`);
-      return { success: true };
+      console.log(`Successfully created company database ${databaseName} with schema ${schemaName}`);
+      return { success: true, databaseName };
         
     } catch (error) {
-      return { success: false, error: `Database/schema creation failed: ${error.message}` };
+      return { success: false, error: `Database creation failed: ${error.message}` };
     }
   }
 
