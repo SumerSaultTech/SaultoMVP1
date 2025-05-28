@@ -1,4 +1,4 @@
-import * as snowflake from 'snowflake-sdk';
+const snowflake = require('snowflake-sdk');
 
 interface SnowflakeConfig {
   account: string;
@@ -37,21 +37,34 @@ class SnowflakeService {
     }
 
     return new Promise((resolve, reject) => {
+      console.log('Creating Snowflake connection with config:');
+      console.log('- Account:', this.config.account);
+      console.log('- Username:', this.config.username);
+      console.log('- Warehouse:', this.config.warehouse);
+      
       this.connection = snowflake.createConnection({
         account: this.config.account,
         username: this.config.username,
         password: this.config.password,
         warehouse: this.config.warehouse,
         database: this.config.database,
-        schema: this.config.schema
+        schema: this.config.schema,
+        // Add additional connection options for better debugging
+        timeout: 60000,
+        clientSessionKeepAlive: true,
+        clientSessionKeepAliveHeartbeatFrequency: 3600
       });
 
       this.connection.connect((err: any, conn: any) => {
         if (err) {
-          console.error('Failed to connect to Snowflake:', err);
+          console.error('❌ Failed to connect to Snowflake:', err);
+          console.error('Error code:', err.code);
+          console.error('Error message:', err.message);
+          console.error('Error response:', err.response);
           reject(err);
         } else {
-          console.log('Successfully connected to Snowflake');
+          console.log('✅ Successfully connected to Snowflake');
+          console.log('Connection ID:', conn.getId());
           resolve(conn);
         }
       });
@@ -118,7 +131,7 @@ class SnowflakeService {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     try {
-      console.log(`Executing Snowflake query: ${sql}...`);
+      console.log(`🔄 Executing Snowflake query: ${sql}...`);
       
       const connection = await this.getConnection();
       
@@ -127,13 +140,24 @@ class SnowflakeService {
           sqlText: sql,
           complete: (err: any, stmt: any, rows: any) => {
             if (err) {
-              console.error("Snowflake query failed:", err);
+              console.error("❌ Snowflake query failed:", err);
+              console.error("Query that failed:", sql);
+              console.error("Error details:", {
+                code: err.code,
+                message: err.message,
+                sqlState: err.sqlState
+              });
               resolve({
                 success: false,
-                error: err.message
+                error: `${err.code}: ${err.message}`
               });
             } else {
-              console.log("Snowflake query executed successfully");
+              console.log("✅ Snowflake query executed successfully");
+              console.log("Query:", sql);
+              console.log("Rows returned:", rows ? rows.length : 0);
+              if (rows && rows.length > 0) {
+                console.log("Sample result:", rows[0]);
+              }
               resolve({
                 success: true,
                 data: rows,
@@ -144,10 +168,11 @@ class SnowflakeService {
         });
       });
     } catch (error: any) {
-      console.error("Snowflake connection or query failed:", error);
+      console.error("❌ Snowflake connection or query failed:", error);
+      console.error("Error stack:", error.stack);
       return {
         success: false,
-        error: error.message
+        error: `Connection error: ${error.message}`
       };
     }
   }
