@@ -24,6 +24,15 @@ const companiesArray: any[] = [
     createdAt: "2024-01-15",
     userCount: 5,
     status: "active"
+  },
+  {
+    id: 1748544793859,
+    name: "MIAS_DATA",
+    slug: "mias_data", 
+    databaseName: "MIAS_DATA_DB",
+    createdAt: "2025-05-29",
+    userCount: 0,
+    status: "active"
   }
 ];
 
