@@ -47,6 +47,7 @@ export interface IStorage {
   getKpiMetric(id: number): Promise<KpiMetric | undefined>;
   createKpiMetric(metric: InsertKpiMetric): Promise<KpiMetric>;
   updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined>;
+  deleteKpiMetric(id: number): Promise<boolean>;
 
   // Chat Messages
   getChatMessages(): Promise<ChatMessage[]>;
@@ -188,6 +189,10 @@ export class MemStorage implements IStorage {
     const updated: KpiMetric = { ...existing, ...updates };
     this.kpiMetrics.set(id, updated);
     return updated;
+  }
+
+  async deleteKpiMetric(id: number): Promise<boolean> {
+    return this.kpiMetrics.delete(id);
   }
 
   // Chat Messages

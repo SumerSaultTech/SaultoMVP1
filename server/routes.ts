@@ -234,15 +234,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/kpi-metrics/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const metric = await storage.getKpiMetric(id);
+      const deleted = await storage.deleteKpiMetric(id);
       
-      if (!metric) {
+      if (!deleted) {
         res.status(404).json({ message: "Metric not found" });
         return;
       }
       
-      // For in-memory storage, we need to implement deleteKpiMetric
-      // For now, we'll return success - this would need implementation in storage
       res.json({ message: "Metric deleted successfully" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete KPI metric" });

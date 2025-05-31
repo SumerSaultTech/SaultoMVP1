@@ -56,6 +56,8 @@ export default function MetricsManagement() {
     queryKey: ["/api/kpi-metrics"],
   });
 
+  const metricsArray = Array.isArray(metrics) ? metrics : [];
+
   const createMetricMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/kpi-metrics", data),
     onSuccess: () => {
@@ -344,7 +346,7 @@ export default function MetricsManagement() {
           <CardTitle>Business Metrics Configuration</CardTitle>
         </CardHeader>
         <CardContent>
-          {metrics.length === 0 ? (
+          {metricsArray.length === 0 ? (
             <div className="text-center py-12">
               <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No metrics configured</h3>
@@ -371,7 +373,7 @@ export default function MetricsManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {metrics
+                  {metricsArray
                     .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
                     .map((metric: any) => {
                       const categoryInfo = getCategoryInfo(metric.category);
