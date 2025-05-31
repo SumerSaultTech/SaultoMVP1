@@ -27,9 +27,14 @@ function generateYTDData(metric: Partial<KpiMetric>) {
   const currentValueStr = metric.value || "0";
   const yearlyGoalStr = metric.yearlyGoal || "0";
   
-  // Extract numeric values (remove currency symbols, commas, etc.)
-  const currentValue = parseFloat(currentValueStr.replace(/[$,%]/g, '')) || 0;
-  const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%]/g, '')) || 100;
+  // Extract numeric values (remove currency symbols, commas, percentages, etc.)
+  const currentValue = parseFloat(currentValueStr.replace(/[$,%\s]/g, '')) || 0;
+  const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
+  
+  // Ensure we have valid numbers
+  if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
+    return [];
+  }
   
   // Create realistic performance patterns based on metric type
   const getPerformancePattern = (metricName: string) => {
@@ -148,6 +153,9 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
   const currentData = ytdData[ytdData.length - 1];
   const goalProgress = parseFloat(metric.goalProgress || "0");
   
+  // Debug logging
+  console.log('Metric:', metric.name, 'Value:', metric.value, 'Goal:', metric.yearlyGoal, 'YTD Length:', ytdData.length);
+  
   if (!currentData) return null;
 
   const progressStatus = getProgressStatus(currentData.actual, currentData.goal);
@@ -227,41 +235,50 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
             
             {/* Simple chart using CSS */}
             <div className="relative h-16 md:h-20 bg-gray-50 rounded-lg p-1.5 md:p-2">
-              <div className="h-full flex items-end justify-between gap-0.5 md:gap-1">
-                {ytdData.map((point, index) => {
-                  const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
-                  const actualHeight = (point.actual / maxValue) * 100;
-                  const goalHeight = (point.goal / maxValue) * 100;
+              {ytdData.length > 0 ? (
+                <>
+                  <div className="h-full flex items-end justify-between gap-0.5 md:gap-1">
+                    {ytdData.map((point, index) => {
+                      const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
+                      // Ensure minimum height for visibility
+                      const actualHeight = Math.max(4, (point.actual / maxValue) * 100);
+                      const goalHeight = Math.max(4, (point.goal / maxValue) * 100);
+                      
+                      return (
+                        <div key={point.month} className="flex-1 flex items-end justify-center gap-0.5">
+                          {/* Goal bar (background) */}
+                          <div 
+                            className="w-0.5 md:w-1 bg-gray-300 rounded-sm opacity-60"
+                            style={{ height: `${goalHeight}%` }}
+                            title={`${point.month} Goal: ${formatValue(point.goal, metric.format)}`}
+                          />
+                          {/* Actual bar */}
+                          <div 
+                            className={`w-1 md:w-1.5 rounded-sm ${
+                              point.actual >= point.goal ? 'bg-green-500' : 'bg-red-400'
+                            } ${point.isCurrentMonth ? 'ring-1 md:ring-2 ring-blue-400' : ''}`}
+                            style={{ height: `${actualHeight}%` }}
+                            title={`${point.month} Actual: ${formatValue(point.actual, metric.format)}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                   
-                  return (
-                    <div key={point.month} className="flex-1 flex items-end justify-center gap-0.5">
-                      {/* Goal bar (background) */}
-                      <div 
-                        className="w-0.5 md:w-1 bg-gray-300 rounded-sm opacity-60"
-                        style={{ height: `${goalHeight}%` }}
-                        title={`${point.month} Goal: ${formatValue(point.goal, metric.format)}`}
-                      />
-                      {/* Actual bar */}
-                      <div 
-                        className={`w-1 md:w-1.5 rounded-sm ${
-                          point.actual >= point.goal ? 'bg-green-500' : 'bg-red-400'
-                        } ${point.isCurrentMonth ? 'ring-1 md:ring-2 ring-blue-400' : ''}`}
-                        style={{ height: `${actualHeight}%` }}
-                        title={`${point.month} Actual: ${formatValue(point.actual, metric.format)}`}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {/* Month labels */}
-              <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-400 mt-1">
-                {ytdData.map((point) => (
-                  <span key={point.month} className="flex-1 text-center text-xs">
-                    {point.month.substring(0, 1)}
-                  </span>
-                ))}
-              </div>
+                  {/* Month labels */}
+                  <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-400 mt-1">
+                    {ytdData.map((point) => (
+                      <span key={point.month} className="flex-1 text-center text-xs">
+                        {point.month.substring(0, 1)}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-gray-400">
+                  No YTD data available
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
