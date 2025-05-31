@@ -232,31 +232,31 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
               <span className="sm:hidden">YTD Progress</span>
             </div>
             
-            {/* Simple chart using CSS */}
-            <div className="relative h-16 md:h-20 bg-gray-50 rounded-lg p-1.5 md:p-2">
+            {/* YTD Chart using fixed heights */}
+            <div className="relative bg-gray-50 rounded-lg p-2 h-20">
               {ytdData.length > 0 ? (
                 <>
-                  <div className="h-full flex items-end justify-between gap-0.5 md:gap-1">
+                  <div className="flex items-end justify-between gap-1 h-14">
                     {ytdData.map((point, index) => {
                       const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
-                      // Calculate heights with minimum visibility
-                      const actualHeight = Math.max(8, (point.actual / maxValue) * 90);
-                      const goalHeight = Math.max(8, (point.goal / maxValue) * 90);
+                      // Calculate pixel heights for more reliable rendering
+                      const actualHeightPx = Math.max(4, Math.round((point.actual / maxValue) * 48)); // Max 48px
+                      const goalHeightPx = Math.max(4, Math.round((point.goal / maxValue) * 48)); // Max 48px
                       
                       return (
                         <div key={point.month} className="flex-1 flex items-end justify-center gap-0.5">
                           {/* Goal bar (background) */}
                           <div 
-                            className="w-1 md:w-1.5 bg-gray-300 rounded-sm opacity-70"
-                            style={{ height: `${goalHeight}%` }}
+                            className="w-1 bg-gray-400 rounded-sm"
+                            style={{ height: `${goalHeightPx}px` }}
                             title={`${point.month} Goal: ${formatValue(point.goal, metric.format)}`}
                           />
                           {/* Actual bar */}
                           <div 
-                            className={`w-1.5 md:w-2 rounded-sm ${
-                              point.actual >= point.goal ? 'bg-green-500' : 'bg-red-400'
-                            } ${point.isCurrentMonth ? 'ring-1 md:ring-2 ring-blue-400' : ''}`}
-                            style={{ height: `${actualHeight}%` }}
+                            className={`w-1.5 rounded-sm ${
+                              point.actual >= point.goal ? 'bg-green-500' : 'bg-red-500'
+                            } ${point.isCurrentMonth ? 'shadow-lg border border-blue-400' : ''}`}
+                            style={{ height: `${actualHeightPx}px` }}
                             title={`${point.month} Actual: ${formatValue(point.actual, metric.format)}`}
                           />
                         </div>
@@ -265,9 +265,9 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
                   </div>
                   
                   {/* Month labels */}
-                  <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-400 mt-1">
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
                     {ytdData.map((point) => (
-                      <span key={point.month} className="flex-1 text-center text-xs">
+                      <span key={point.month} className="flex-1 text-center">
                         {point.month.substring(0, 1)}
                       </span>
                     ))}
@@ -275,7 +275,7 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
                 </>
               ) : (
                 <div className="h-full flex items-center justify-center text-xs text-gray-400">
-                  No YTD data available
+                  No data available
                 </div>
               )}
             </div>
