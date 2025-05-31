@@ -342,11 +342,17 @@ export default function MetricsManagement() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Business Metrics Configuration</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Metrics Management */}
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Business Metrics Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
           {metricsArray.length === 0 ? (
             <div className="text-center py-12">
               <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -439,8 +445,28 @@ export default function MetricsManagement() {
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* AI Assistant */}
+        <div className="lg:col-span-1">
+          <MetricsAssistant 
+            onMetricCreate={(metric) => {
+              setFormData({
+                name: metric.name,
+                description: metric.description,
+                yearlyGoal: metric.yearlyGoal || "",
+                category: metric.category,
+                format: metric.format,
+                isIncreasing: true,
+                priority: 1
+              });
+              setIsDialogOpen(true);
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
