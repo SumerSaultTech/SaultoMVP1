@@ -47,11 +47,13 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const response = await apiRequest("/api/metrics/ai/chat", {
+      const response = await fetch("/api/metrics/ai/chat", {
         method: "POST",
-        body: { message }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message })
       });
-      return response;
+      if (!response.ok) throw new Error("Failed to get AI response");
+      return response.json();
     },
     onSuccess: (data) => {
       const assistantMessage: ChatMessage = {
@@ -76,11 +78,13 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
 
   const defineMetricMutation = useMutation({
     mutationFn: async ({ metricName, businessContext }: { metricName: string; businessContext?: string }) => {
-      const response = await apiRequest("/api/metrics/ai/define", {
+      const response = await fetch("/api/metrics/ai/define", {
         method: "POST",
-        body: { metricName, businessContext }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metricName, businessContext })
       });
-      return response;
+      if (!response.ok) throw new Error("Failed to define metric");
+      return response.json();
     },
     onSuccess: (data) => {
       const suggestion: MetricSuggestion = data;
@@ -125,11 +129,13 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
 
   const suggestMetricsMutation = useMutation({
     mutationFn: async (businessType: string) => {
-      const response = await apiRequest("/api/metrics/ai/suggest", {
+      const response = await fetch("/api/metrics/ai/suggest", {
         method: "POST",
-        body: { businessType }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessType })
       });
-      return response;
+      if (!response.ok) throw new Error("Failed to get suggestions");
+      return response.json();
     },
     onSuccess: (suggestions: MetricSuggestion[]) => {
       const assistantMessage: ChatMessage = {
