@@ -9,9 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save } from "lucide-react";
+import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Bot } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
 import type { KpiMetric } from "@/../../shared/schema";
 
 interface MetricFormData {

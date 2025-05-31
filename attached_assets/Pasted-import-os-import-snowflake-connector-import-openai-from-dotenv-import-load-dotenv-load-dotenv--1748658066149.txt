@@ -1,0 +1,100 @@
+import os
+import snowflake.connector
+import openai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# OpenAI setup
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Snowflake connection setup
+def connect_to_snowflake():
+    return snowflake.connector.connect(
+        user=os.getenv("SNOWFLAKE_USER"),
+        password=os.getenv("SNOWFLAKE_PASSWORD"),
+        account=os.getenv("SNOWFLAKE_ACCOUNT"),
+        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
+        database=os.getenv("SNOWFLAKE_DATABASE"),
+        schema=os.getenv("SNOWFLAKE_SCHEMA")
+    )
+
+# Get schema metadata
+def get_table_schema(cursor):
+    query = """
+    SELECT table_name, column_name, data_type
+    FROM information_schema.columns
+    WHERE table_schema = %s
+    """
+    cursor.execute(query, (os.getenv("SNOWFLAKE_SCHEMA"),))
+    results = cursor.fetchall()
+
+    schema_dict = {}
+    for table, column, dtype in results:
+        schema_dict.setdefault(table, []).append(f"{column} {dtype}")
+    return schema_dict
+
+# Format schema as prompt
+def format_schema_for_prompt(schema_dict):
+    formatted = []
+    for table, columns in schema_dict.items():
+        formatted.append(f"- {table}({', '.join(columns)})")
+    return "\n".join(formatted)
+
+# Ask GPT-4o to define the metric and write SQL
+def ask_gpt_for_metric(metric_name, formatted_schema):
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are a data analyst. Based on the database schema provided, define the business metric "
+            f"'{metric_name}', and return a brief definition and a SQL query to calculate it."
+        )
+    }
+    user_message = {
+        "role": "user",
+        "content": f"Schema:\n{formatted_schema}\n\nMetric: {metric_name}"
+    }
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4o",
+        messages=[system_message, user_message],
+        temperature=0.2
+    )
+    return response['choices'][0]['message']['content']
+
+# Optionally: Execute the SQL
+def execute_sql(conn, sql):
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        return cursor.fetchall()
+    except Exception as e:
+        return f"Error executing SQL: {e}"
+
+# Main app logic
+def main():
+    metric_name = input("Enter the KPI you'd like to define: ")
+
+    conn = connect_to_snowflake()
+    cursor = conn.cursor()
+
+    schema = get_table_schema(cursor)
+    formatted_schema = format_schema_for_prompt(schema)
+
+    print("\n📨 Sending prompt to GPT-4o...")
+    result = ask_gpt_for_metric(metric_name, formatted_schema)
+
+    print("\n🤖 GPT-4o Response:\n")
+    print(result)
+
+    if "SELECT" in result.upper():
+        choice = input("\nWould you like to run this SQL in Snowflake? (y/n): ")
+        if choice.lower() == "y":
+            sql = result.split("```sql")[1].split("```")[0] if "```sql" in result else result
+            output = execute_sql(conn, sql)
+            print("\n📊 Query Result:")
+            for row in output:
+                print(row)
+
+if __name__ == "__main__":
+    main()

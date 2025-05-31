@@ -5,6 +5,7 @@ import { snowflakeService } from "./services/snowflake-stub";
 import { dataConnectorService } from "./services/data-connector";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
+import { metricsAIService } from "./services/metrics-ai";
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -435,6 +436,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error:", error);
       console.error("Stack:", error.stack);
       res.status(500).json({ message: error.message || "Failed to create company" });
+    }
+  });
+
+  // AI Metrics Assistant Routes
+  app.post("/api/metrics/ai/define", async (req, res) => {
+    try {
+      const { metricName, businessContext } = req.body;
+      
+      if (!metricName) {
+        return res.status(400).json({ error: "Metric name is required" });
+      }
+
+      const definition = await metricsAIService.defineMetric(metricName, businessContext);
+      res.json(definition);
+    } catch (error) {
+      console.error("AI metric definition error:", error);
+      res.status(500).json({ error: `Failed to define metric: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  });
+
+  app.post("/api/metrics/ai/suggest", async (req, res) => {
+    try {
+      const { businessType = "saas" } = req.body;
+      
+      const suggestions = await metricsAIService.suggestMetrics(businessType);
+      res.json(suggestions);
+    } catch (error) {
+      console.error("AI metric suggestions error:", error);
+      res.status(500).json({ error: `Failed to suggest metrics: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  });
+
+  app.post("/api/metrics/ai/calculate", async (req, res) => {
+    try {
+      const { sqlQuery } = req.body;
+      
+      if (!sqlQuery) {
+        return res.status(400).json({ error: "SQL query is required" });
+      }
+
+      const result = await metricsAIService.calculateMetric(sqlQuery);
+      res.json(result);
+    } catch (error) {
+      console.error("AI metric calculation error:", error);
+      res.status(500).json({ error: `Failed to calculate metric: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  });
+
+  app.post("/api/metrics/ai/chat", async (req, res) => {
+    try {
+      const { message, context } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      const response = await metricsAIService.chatWithAssistant(message, context);
+      res.json({ response });
+    } catch (error) {
+      console.error("AI chat error:", error);
+      res.status(500).json({ error: `Failed to process chat: ${error instanceof Error ? error.message : 'Unknown error'}` });
     }
   });
 
