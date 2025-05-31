@@ -233,78 +233,102 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
             </div>
             
             {/* YTD Running Line Chart */}
-            <div className="relative bg-gray-50 rounded-lg p-3 h-24">
+            <div className="relative bg-gray-50 rounded-lg p-3 h-32">
               {ytdData.length > 0 ? (
                 <>
-                  <svg className="w-full h-16" viewBox="0 0 400 64" preserveAspectRatio="none">
-                    {/* Grid lines */}
-                    <defs>
-                      <pattern id="grid" width="40" height="16" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 16" fill="none" stroke="#e5e7eb" strokeWidth="0.5"/>
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
+                  <div className="flex">
+                    {/* Y-axis labels */}
+                    <div className="w-12 h-20 flex flex-col justify-between text-xs text-gray-500 mr-2">
+                      {(() => {
+                        const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
+                        const yLabels = [
+                          formatValue(maxValue, metric.format),
+                          formatValue(maxValue * 0.75, metric.format),
+                          formatValue(maxValue * 0.5, metric.format),
+                          formatValue(maxValue * 0.25, metric.format),
+                          formatValue(0, metric.format)
+                        ];
+                        return yLabels.map((label, index) => (
+                          <span key={index} className="text-right text-xs">
+                            {label}
+                          </span>
+                        ));
+                      })()}
+                    </div>
                     
-                    {(() => {
-                      const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
-                      const stepX = 400 / (ytdData.length - 1);
-                      
-                      // Goal line points
-                      const goalPoints = ytdData.map((point, index) => ({
-                        x: index * stepX,
-                        y: 64 - (point.goal / maxValue) * 56 // Invert Y and leave space for padding
-                      }));
-                      
-                      // Actual line points  
-                      const actualPoints = ytdData.map((point, index) => ({
-                        x: index * stepX,
-                        y: 64 - (point.actual / maxValue) * 56 // Invert Y and leave space for padding
-                      }));
-                      
-                      const goalPath = `M ${goalPoints.map(p => `${p.x},${p.y}`).join(' L ')}`;
-                      const actualPath = `M ${actualPoints.map(p => `${p.x},${p.y}`).join(' L ')}`;
-                      
-                      return (
-                        <>
-                          {/* Goal line */}
-                          <path
-                            d={goalPath}
-                            fill="none"
-                            stroke="#9ca3af"
-                            strokeWidth="2"
-                            strokeDasharray="4,4"
-                          />
+                    {/* Chart area */}
+                    <div className="flex-1">
+                      <svg className="w-full h-20" viewBox="0 0 400 80" preserveAspectRatio="none">
+                        {/* Grid lines */}
+                        <defs>
+                          <pattern id="grid" width="40" height="20" patternUnits="userSpaceOnUse">
+                            <path d="M 40 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" strokeWidth="0.5"/>
+                          </pattern>
+                        </defs>
+                        <rect width="100%" height="100%" fill="url(#grid)" />
+                        
+                        {(() => {
+                          const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
+                          const stepX = 400 / (ytdData.length - 1);
                           
-                          {/* Actual line */}
-                          <path
-                            d={actualPath}
-                            fill="none"
-                            stroke="#3b82f6"
-                            strokeWidth="3"
-                          />
+                          // Goal line points
+                          const goalPoints = ytdData.map((point, index) => ({
+                            x: index * stepX,
+                            y: 80 - (point.goal / maxValue) * 70 // Invert Y and leave space for padding
+                          }));
                           
-                          {/* Data points */}
-                          {actualPoints.map((point, index) => (
-                            <circle
-                              key={index}
-                              cx={point.x}
-                              cy={point.y}
-                              r={ytdData[index].isCurrentMonth ? "4" : "2.5"}
-                              fill={ytdData[index].actual >= ytdData[index].goal ? "#10b981" : "#ef4444"}
-                              stroke="white"
-                              strokeWidth="1"
-                            />
-                          ))}
-                        </>
-                      );
-                    })()}
-                  </svg>
+                          // Actual line points  
+                          const actualPoints = ytdData.map((point, index) => ({
+                            x: index * stepX,
+                            y: 80 - (point.actual / maxValue) * 70 // Invert Y and leave space for padding
+                          }));
+                          
+                          const goalPath = `M ${goalPoints.map(p => `${p.x},${p.y}`).join(' L ')}`;
+                          const actualPath = `M ${actualPoints.map(p => `${p.x},${p.y}`).join(' L ')}`;
+                          
+                          return (
+                            <>
+                              {/* Goal line */}
+                              <path
+                                d={goalPath}
+                                fill="none"
+                                stroke="#9ca3af"
+                                strokeWidth="2"
+                                strokeDasharray="4,4"
+                              />
+                              
+                              {/* Actual line */}
+                              <path
+                                d={actualPath}
+                                fill="none"
+                                stroke="#3b82f6"
+                                strokeWidth="3"
+                              />
+                              
+                              {/* Data points */}
+                              {actualPoints.map((point, index) => (
+                                <circle
+                                  key={index}
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={ytdData[index].isCurrentMonth ? "4" : "2.5"}
+                                  fill={ytdData[index].actual >= ytdData[index].goal ? "#10b981" : "#ef4444"}
+                                  stroke="white"
+                                  strokeWidth="1"
+                                />
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </svg>
+                    </div>
+                  </div>
                   
                   {/* Month labels */}
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <div className="flex justify-between text-xs text-gray-500 mt-2 ml-14">
                     {ytdData.map((point) => (
                       <span key={point.month} className="flex-1 text-center">
-                        {point.month.substring(0, 1)}
+                        {point.month}
                       </span>
                     ))}
                   </div>
