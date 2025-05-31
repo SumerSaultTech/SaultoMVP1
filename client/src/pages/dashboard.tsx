@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/layout/header";
 import SetupStatus from "@/components/dashboard/setup-status";
-import KpiCards from "@/components/dashboard/kpi-cards";
+import MetricsOverview from "@/components/dashboard/metrics-overview";
 import DataSources from "@/components/dashboard/data-sources";
 import ModelRegistryCard from "@/components/dashboard/model-registry-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,9 +68,9 @@ export default function Dashboard() {
           <SetupStatus />
         </div>
 
-        {/* KPI Dashboard */}
+        {/* Business Metrics Dashboard */}
         <div className="mb-8">
-          <KpiCards onRefresh={handleRefreshKPIs} />
+          <MetricsOverview onRefresh={handleRefreshKPIs} />
         </div>
 
         {/* Data Sources & Model Registry */}
