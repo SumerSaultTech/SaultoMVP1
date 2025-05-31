@@ -16,7 +16,7 @@ import {
   PieChart,
   Activity
 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+// Charts removed temporarily due to compatibility issues
 import type { KpiMetric } from "@/../../shared/schema";
 
 interface MetricsOverviewProps {
@@ -183,20 +183,16 @@ const defaultMetrics: Partial<KpiMetric>[] = [
   }
 ];
 
-// Sample trend data for charts
-const generateTrendData = (metricName: string) => {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return months.map((month, index) => ({
-    month,
-    current: Math.floor(Math.random() * 100) + 50,
-    goal: 80 + Math.floor(Math.random() * 20),
-    actual: 60 + Math.floor(Math.random() * 40)
-  }));
+// Simple trend indicator without charts for now
+const getTrendDirection = (changePercent: string | undefined) => {
+  if (!changePercent) return 'neutral';
+  return changePercent.startsWith('+') ? 'up' : 'down';
 };
 
 function MetricCard({ metric }: { metric: Partial<KpiMetric> }) {
   const goalProgress = parseFloat(metric.goalProgress || "0");
-  const isPositiveChange = metric.changePercent?.startsWith('+');
+  const changePercent = metric.changePercent || "";
+  const isPositiveChange = changePercent.startsWith('+');
   const isGoodDirection = metric.isIncreasing ? isPositiveChange : !isPositiveChange;
   
   const getIcon = (category: string) => {
@@ -210,7 +206,6 @@ function MetricCard({ metric }: { metric: Partial<KpiMetric> }) {
   };
 
   const Icon = getIcon(metric.category || 'revenue');
-  const trendData = generateTrendData(metric.name || '');
 
   return (
     <Card className="h-full">
@@ -258,30 +253,16 @@ function MetricCard({ metric }: { metric: Partial<KpiMetric> }) {
             </div>
           </div>
 
-          {/* Mini Trend Chart */}
-          <div className="h-20">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData.slice(-6)}>
-                <Area 
-                  type="monotone" 
-                  dataKey="actual" 
-                  stroke="#3b82f6" 
-                  fill="#3b82f6" 
-                  fillOpacity={0.1}
-                  strokeWidth={2}
-                />
-                <XAxis dataKey="month" hide />
-                <YAxis hide />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '12px'
-                  }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+          {/* Trend Indicator */}
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>Trend</span>
+            <div className="flex items-center space-x-1">
+              <div className={`w-2 h-2 rounded-full ${
+                getTrendDirection(metric.changePercent || undefined) === 'up' ? 'bg-green-500' :
+                getTrendDirection(metric.changePercent || undefined) === 'down' ? 'bg-red-500' : 'bg-gray-400'
+              }`} />
+              <span className="capitalize">{getTrendDirection(metric.changePercent || undefined)}</span>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -294,15 +275,15 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     queryKey: ["/api/kpi-metrics"],
   });
 
-  const metrics = kpiMetrics && kpiMetrics.length > 0 ? kpiMetrics : defaultMetrics;
+  const metrics = (kpiMetrics && Array.isArray(kpiMetrics) && kpiMetrics.length > 0) ? kpiMetrics : defaultMetrics;
 
   // Group metrics by category
-  const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
+  const metricsByCategory = Array.isArray(metrics) ? metrics.reduce((acc: any, metric: any) => {
     const category = metric.category || 'other';
     if (!acc[category]) acc[category] = [];
     acc[category].push(metric);
     return acc;
-  }, {});
+  }, {}) : {};
 
   if (isLoading) {
     return (
