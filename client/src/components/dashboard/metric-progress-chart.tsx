@@ -57,15 +57,57 @@ function generateYTDData(metric: Partial<KpiMetric>) {
 
 function formatValue(value: number, format: string | null | undefined): string {
   if (format === 'currency') {
+    return formatCurrency(value);
+  } else if (format === 'percentage') {
+    return `${value}%`;
+  } else {
+    return formatNumber(value);
+  }
+}
+
+function formatCurrency(value: number): string {
+  const absValue = Math.abs(value);
+  
+  if (absValue >= 1000000000) {
+    // Billions
+    const formatted = (value / 1000000000).toFixed(1);
+    return `$${formatted}B`;
+  } else if (absValue >= 1000000) {
+    // Millions
+    const formatted = (value / 1000000).toFixed(1);
+    return `$${formatted}M`;
+  } else if (absValue >= 1000) {
+    // Thousands
+    const formatted = (value / 1000).toFixed(1);
+    return `$${formatted}K`;
+  } else {
+    // Less than 1000
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(value);
-  } else if (format === 'percentage') {
-    return `${value}%`;
+  }
+}
+
+function formatNumber(value: number): string {
+  const absValue = Math.abs(value);
+  
+  if (absValue >= 1000000000) {
+    // Billions
+    const formatted = (value / 1000000000).toFixed(1);
+    return `${formatted}B`;
+  } else if (absValue >= 1000000) {
+    // Millions
+    const formatted = (value / 1000000).toFixed(1);
+    return `${formatted}M`;
+  } else if (absValue >= 1000) {
+    // Thousands
+    const formatted = (value / 1000).toFixed(1);
+    return `${formatted}K`;
   } else {
+    // Less than 1000
     return new Intl.NumberFormat('en-US').format(value);
   }
 }
