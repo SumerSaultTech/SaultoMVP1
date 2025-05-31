@@ -67,11 +67,16 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
     },
     onError: (error) => {
       console.error("Chat error:", error);
-      toast({
-        title: "Chat Error",
-        description: "Failed to get response from AI assistant. Please try again.",
-        variant: "destructive"
-      });
+      
+      // Provide helpful fallback responses when AI is unavailable
+      const fallbackMessage: ChatMessage = {
+        id: Date.now().toString(),
+        role: "assistant", 
+        content: "I'm currently unable to connect to my AI service. However, I can still help you with metric guidance:\n\n**Common Business Metrics:**\n• Monthly Recurring Revenue (MRR)\n• Customer Acquisition Cost (CAC)\n• Customer Lifetime Value (CLV)\n• Churn Rate\n• Net Promoter Score (NPS)\n• Gross Revenue Retention\n\nUse the 'Add Metric' button above to create any of these manually. What type of business metric would you like to track?",
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, fallbackMessage]);
       setIsTyping(false);
     }
   });
