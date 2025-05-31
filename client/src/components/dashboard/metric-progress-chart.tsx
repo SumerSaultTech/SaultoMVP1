@@ -31,6 +31,30 @@ function generateYTDData(metric: Partial<KpiMetric>) {
   const currentValue = parseFloat(currentValueStr.replace(/[$,%]/g, '')) || 0;
   const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%]/g, '')) || 100;
   
+  // Create realistic performance patterns based on metric type
+  const getPerformancePattern = (metricName: string) => {
+    const name = metricName.toLowerCase();
+    
+    if (name.includes('revenue') || name.includes('arr') || name.includes('mrr')) {
+      // Revenue typically shows steady growth with some seasonal variation
+      return [0.85, 0.88, 0.92, 0.95, 0.98, 1.02, 1.05, 1.08, 1.12, 1.15, 1.18, 1.20];
+    } else if (name.includes('churn') || name.includes('cost') || name.includes('cac')) {
+      // Metrics where lower is better - show improvement over time
+      return [1.15, 1.12, 1.08, 1.05, 1.02, 0.98, 0.95, 0.92, 0.90, 0.88, 0.85, 0.82];
+    } else if (name.includes('conversion') || name.includes('retention') || name.includes('satisfaction')) {
+      // Conversion metrics show gradual improvement with some fluctuation
+      return [0.82, 0.85, 0.89, 0.92, 0.95, 0.98, 1.01, 1.04, 1.06, 1.08, 1.10, 1.12];
+    } else if (name.includes('users') || name.includes('adoption')) {
+      // User metrics show strong growth in early months, then steady growth
+      return [0.75, 0.82, 0.90, 0.96, 1.02, 1.08, 1.12, 1.16, 1.19, 1.22, 1.24, 1.26];
+    } else {
+      // Default pattern for other metrics
+      return [0.88, 0.91, 0.94, 0.97, 1.00, 1.03, 1.06, 1.09, 1.11, 1.13, 1.15, 1.17];
+    }
+  };
+  
+  const performancePattern = getPerformancePattern(metric.name || '');
+  
   // Generate monthly data points
   const monthlyData = months.slice(0, currentMonth).map((month, index) => {
     const monthNumber = index + 1;
@@ -38,10 +62,9 @@ function generateYTDData(metric: Partial<KpiMetric>) {
     // Goal trajectory (linear progression through the year)
     const goalProgress = (yearlyGoal / 12) * monthNumber;
     
-    // Simulated actual values with some variance around the goal
-    // In a real app, this would come from your data source
-    const variance = 0.8 + (Math.random() * 0.4); // 80% to 120% of goal pace
-    const actualValue = goalProgress * variance;
+    // Use performance pattern to create realistic actual values
+    const performanceMultiplier = performancePattern[index] || 1.0;
+    const actualValue = goalProgress * performanceMultiplier;
     
     return {
       month,
