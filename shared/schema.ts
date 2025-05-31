@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -47,7 +47,22 @@ export const kpiMetrics = pgTable("kpi_metrics", {
   value: text("value"),
   changePercent: text("change_percent"),
   sqlQuery: text("sql_query"),
+  yearlyGoal: text("yearly_goal"),
+  currentProgress: text("current_progress"),
+  goalProgress: text("goal_progress"), // percentage as string
+  category: text("category").notNull().default("revenue"), // revenue, growth, retention, efficiency
+  priority: integer("priority").default(1), // 1-12 for ordering
+  format: text("format").default("currency"), // currency, percentage, number
+  isIncreasing: boolean("is_increasing").default(true), // whether higher values are better
   lastCalculatedAt: timestamp("last_calculated_at"),
+});
+
+export const metricHistory = pgTable("metric_history", {
+  id: serial("id").primaryKey(),
+  metricId: integer("metric_id").references(() => kpiMetrics.id),
+  value: text("value").notNull(),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+  period: text("period").notNull(), // daily, weekly, monthly, quarterly
 });
 
 export const chatMessages = pgTable("chat_messages", {
@@ -92,6 +107,11 @@ export const insertKpiMetricSchema = createInsertSchema(kpiMetrics).omit({
   lastCalculatedAt: true,
 });
 
+export const insertMetricHistorySchema = createInsertSchema(metricHistory).omit({
+  id: true,
+  recordedAt: true,
+});
+
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
   id: true,
   timestamp: true,
@@ -116,6 +136,9 @@ export type SqlModel = typeof sqlModels.$inferSelect;
 
 export type InsertKpiMetric = z.infer<typeof insertKpiMetricSchema>;
 export type KpiMetric = typeof kpiMetrics.$inferSelect;
+
+export type InsertMetricHistory = z.infer<typeof insertMetricHistorySchema>;
+export type MetricHistory = typeof metricHistory.$inferSelect;
 
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
