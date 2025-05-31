@@ -27,12 +27,19 @@ interface SchemaInfo {
 export class MetricsAIService {
   async getSchemaInfo(): Promise<SchemaInfo> {
     try {
-      const result = await snowflakeService.executeQuery(`
+      // Add timeout for Snowflake connection
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Schema query timeout')), 5000)
+      );
+      
+      const queryPromise = snowflakeService.executeQuery(`
         SELECT table_name, column_name, data_type
         FROM information_schema.columns
         WHERE table_schema = CURRENT_SCHEMA()
         ORDER BY table_name, ordinal_position
       `);
+
+      const result = await Promise.race([queryPromise, timeoutPromise]) as any;
 
       if (!result.success || !result.data) {
         return { tables: [] };
@@ -122,8 +129,8 @@ Please define this metric and provide the SQL query to calculate it.`;
   }
 
   async suggestMetrics(businessType: string = "saas"): Promise<MetricDefinition[]> {
-    const schema = await this.getSchemaInfo();
-    const formattedSchema = this.formatSchemaForPrompt(schema);
+    // Skip database schema lookup for suggestions to avoid timeout
+    const formattedSchema = "No specific database schema available - provide general metric suggestions.";
 
     const systemPrompt = `You are a business intelligence expert. Based on the database schema, suggest 5-8 key business metrics that would be most valuable for a ${businessType} business.
 
@@ -201,9 +208,9 @@ You can:
 - Help define new metrics based on business goals
 - Suggest improvements to existing metrics
 - Provide insights about metric interpretation
-- Help with SQL queries for metric calculations
+- Help with general guidance on metric calculations
 
-Keep responses concise, actionable, and business-focused.`;
+Keep responses concise, actionable, and business-focused. Focus on metric concepts rather than specific database implementations.`;
 
     try {
       const response = await openai.chat.completions.create({
