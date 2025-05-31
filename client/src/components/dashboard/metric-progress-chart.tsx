@@ -153,8 +153,7 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
   const currentData = ytdData[ytdData.length - 1];
   const goalProgress = parseFloat(metric.goalProgress || "0");
   
-  // Debug logging
-  console.log('Metric:', metric.name, 'Value:', metric.value, 'Goal:', metric.yearlyGoal, 'YTD Length:', ytdData.length);
+
   
   if (!currentData) return null;
 
@@ -240,21 +239,21 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
                   <div className="h-full flex items-end justify-between gap-0.5 md:gap-1">
                     {ytdData.map((point, index) => {
                       const maxValue = Math.max(...ytdData.map(d => Math.max(d.actual, d.goal)));
-                      // Ensure minimum height for visibility
-                      const actualHeight = Math.max(4, (point.actual / maxValue) * 100);
-                      const goalHeight = Math.max(4, (point.goal / maxValue) * 100);
+                      // Calculate heights with minimum visibility
+                      const actualHeight = Math.max(8, (point.actual / maxValue) * 90);
+                      const goalHeight = Math.max(8, (point.goal / maxValue) * 90);
                       
                       return (
                         <div key={point.month} className="flex-1 flex items-end justify-center gap-0.5">
                           {/* Goal bar (background) */}
                           <div 
-                            className="w-0.5 md:w-1 bg-gray-300 rounded-sm opacity-60"
+                            className="w-1 md:w-1.5 bg-gray-300 rounded-sm opacity-70"
                             style={{ height: `${goalHeight}%` }}
                             title={`${point.month} Goal: ${formatValue(point.goal, metric.format)}`}
                           />
                           {/* Actual bar */}
                           <div 
-                            className={`w-1 md:w-1.5 rounded-sm ${
+                            className={`w-1.5 md:w-2 rounded-sm ${
                               point.actual >= point.goal ? 'bg-green-500' : 'bg-red-400'
                             } ${point.isCurrentMonth ? 'ring-1 md:ring-2 ring-blue-400' : ''}`}
                             style={{ height: `${actualHeight}%` }}
