@@ -253,15 +253,29 @@ function MetricCard({ metric }: { metric: Partial<KpiMetric> }) {
             </div>
           </div>
 
+          {/* Change Indicator */}
+          {changePercent && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-600">vs last quarter</span>
+              <span className={`text-sm px-2 py-1 rounded-full font-medium ${
+                isGoodDirection 
+                  ? "bg-green-100 text-green-800" 
+                  : "bg-red-100 text-red-800"
+              }`}>
+                {changePercent}
+              </span>
+            </div>
+          )}
+
           {/* Trend Indicator */}
           <div className="flex items-center justify-between text-xs text-gray-500">
             <span>Trend</span>
             <div className="flex items-center space-x-1">
               <div className={`w-2 h-2 rounded-full ${
-                getTrendDirection(metric.changePercent || undefined) === 'up' ? 'bg-green-500' :
-                getTrendDirection(metric.changePercent || undefined) === 'down' ? 'bg-red-500' : 'bg-gray-400'
+                getTrendDirection(changePercent) === 'up' ? 'bg-green-500' :
+                getTrendDirection(changePercent) === 'down' ? 'bg-red-500' : 'bg-gray-400'
               }`} />
-              <span className="capitalize">{getTrendDirection(metric.changePercent || undefined)}</span>
+              <span className="capitalize">{getTrendDirection(changePercent)}</span>
             </div>
           </div>
         </div>

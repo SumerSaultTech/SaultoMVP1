@@ -102,7 +102,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {activities?.slice(0, 5).map((activity: any) => (
+                {(activities && Array.isArray(activities) ? activities.slice(0, 5) : []).map((activity: any) => (
                   <div key={activity.id} className="flex items-center space-x-4 p-3 hover:bg-gray-50 rounded-lg transition-colors">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                       activity.status === 'success' ? 'bg-green-100' :
@@ -121,7 +121,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
-                {(!activities || activities.length === 0) && (
+                {(!activities || (Array.isArray(activities) && activities.length === 0)) && (
                   <p className="text-sm text-gray-500 py-8 text-center">No recent activity</p>
                 )}
               </div>
