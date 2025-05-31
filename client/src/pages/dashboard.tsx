@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/layout/header";
-import SetupStatus from "@/components/dashboard/setup-status";
+
 import MetricsOverview from "@/components/dashboard/metrics-overview";
 import DataSources from "@/components/dashboard/data-sources";
 import ModelRegistryCard from "@/components/dashboard/model-registry-card";
@@ -63,11 +63,6 @@ export default function Dashboard() {
       />
       
       <main className="flex-1 overflow-y-auto p-6">
-        {/* Setup Status */}
-        <div className="mb-8">
-          <SetupStatus />
-        </div>
-
         {/* Business Metrics Dashboard */}
         <div className="mb-8">
           <MetricsOverview onRefresh={handleRefreshKPIs} />
