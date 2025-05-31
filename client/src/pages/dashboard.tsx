@@ -63,66 +63,8 @@ export default function Dashboard() {
       />
       
       <main className="flex-1 overflow-y-auto p-6">
-        {/* Business Metrics Dashboard */}
-        <div className="mb-8">
-          <MetricsOverview onRefresh={handleRefreshKPIs} />
-        </div>
-
-        {/* Data Sources & Model Registry */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          <DataSources />
-          <ModelRegistryCard />
-        </div>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle className="text-lg font-semibold">Recent Pipeline Activity</CardTitle>
-            <Button variant="ghost" size="sm">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {activitiesLoading ? (
-              <div className="space-y-3">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="flex items-center space-x-4 p-3">
-                    <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
-                    <div className="flex-1">
-                      <div className="h-4 bg-gray-200 rounded animate-pulse mb-2" />
-                      <div className="h-3 bg-gray-200 rounded animate-pulse w-1/3" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {(activities && Array.isArray(activities) ? activities.slice(0, 5) : []).map((activity: any) => (
-                  <div key={activity.id} className="flex items-center space-x-4 p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      activity.status === 'success' ? 'bg-green-100' :
-                      activity.status === 'error' ? 'bg-red-100' : 'bg-amber-100'
-                    }`}>
-                      <div className={`w-2 h-2 rounded-full ${
-                        activity.status === 'success' ? 'bg-green-600' :
-                        activity.status === 'error' ? 'bg-red-600' : 'bg-amber-600'
-                      }`} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">{activity.description}</p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(activity.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {(!activities || (Array.isArray(activities) && activities.length === 0)) && (
-                  <p className="text-sm text-gray-500 py-8 text-center">No recent activity</p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Business Metrics Dashboard - Full Width */}
+        <MetricsOverview onRefresh={handleRefreshKPIs} />
       </main>
     </>
   );
