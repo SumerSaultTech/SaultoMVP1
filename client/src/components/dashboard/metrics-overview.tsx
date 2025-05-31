@@ -1,42 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  DollarSign, 
-  TrendingUp, 
-  Users, 
-  Target, 
-  ArrowUpIcon, 
-  ArrowDownIcon,
-  RefreshCw,
-  BarChart3,
-  PieChart,
-  Activity
-} from "lucide-react";
-// Charts removed temporarily due to compatibility issues
+import { RefreshCw } from "lucide-react";
+import MetricProgressChart from "./metric-progress-chart";
 import type { KpiMetric } from "@/../../shared/schema";
 
 interface MetricsOverviewProps {
   onRefresh: () => void;
 }
 
-// Default comprehensive business metrics
-const defaultMetrics: Partial<KpiMetric>[] = [
+// Default metrics for initial display
+const defaultMetrics = [
   {
     id: 1,
     name: "Annual Recurring Revenue",
     value: "$2,400,000",
     yearlyGoal: "$3,000,000",
     goalProgress: "80",
-    changePercent: "+12.5%",
+    changePercent: "+12%",
     category: "revenue",
-    priority: 1,
     format: "currency",
+    priority: 1,
     isIncreasing: true,
-    description: "Total ARR from subscription revenue"
+    description: "Total yearly recurring revenue from subscriptions"
   },
   {
     id: 2,
@@ -44,51 +31,51 @@ const defaultMetrics: Partial<KpiMetric>[] = [
     value: "$200,000",
     yearlyGoal: "$250,000",
     goalProgress: "80",
-    changePercent: "+8.2%",
+    changePercent: "+8%",
     category: "revenue",
-    priority: 2,
     format: "currency",
+    priority: 2,
     isIncreasing: true,
-    description: "Monthly subscription revenue"
+    description: "Monthly recurring revenue from subscriptions"
   },
   {
     id: 3,
     name: "Customer Acquisition Cost",
-    value: "$1,250",
-    yearlyGoal: "$1,000",
+    value: "$150",
+    yearlyGoal: "$120",
     goalProgress: "75",
-    changePercent: "-5.1%",
+    changePercent: "-5%",
     category: "efficiency",
-    priority: 3,
     format: "currency",
+    priority: 3,
     isIncreasing: false,
-    description: "Cost to acquire new customers"
+    description: "Average cost to acquire a new customer"
   },
   {
     id: 4,
     name: "Customer Lifetime Value",
-    value: "$18,750",
-    yearlyGoal: "$22,000",
-    goalProgress: "85",
-    changePercent: "+6.3%",
+    value: "$2,400",
+    yearlyGoal: "$3,000",
+    goalProgress: "80",
+    changePercent: "+15%",
     category: "revenue",
-    priority: 4,
     format: "currency",
+    priority: 4,
     isIncreasing: true,
-    description: "Average customer lifetime value"
+    description: "Average revenue per customer over their lifetime"
   },
   {
     id: 5,
     name: "Monthly Churn Rate",
     value: "3.2%",
     yearlyGoal: "2.5%",
-    goalProgress: "72",
+    goalProgress: "78",
     changePercent: "-0.3%",
     category: "retention",
-    priority: 5,
     format: "percentage",
+    priority: 5,
     isIncreasing: false,
-    description: "Percentage of customers lost per month"
+    description: "Percentage of customers who cancel each month"
   },
   {
     id: 6,
@@ -96,77 +83,77 @@ const defaultMetrics: Partial<KpiMetric>[] = [
     value: "115%",
     yearlyGoal: "120%",
     goalProgress: "96",
-    changePercent: "+2.1%",
-    category: "retention",
-    priority: 6,
+    changePercent: "+3%",
+    category: "growth",
     format: "percentage",
+    priority: 6,
     isIncreasing: true,
-    description: "Revenue expansion from existing customers"
+    description: "Revenue growth from existing customers"
   },
   {
     id: 7,
-    name: "Gross Margin",
-    value: "78%",
-    yearlyGoal: "80%",
-    goalProgress: "97",
-    changePercent: "+1.5%",
-    category: "efficiency",
+    name: "Monthly Active Users",
+    value: "12,500",
+    yearlyGoal: "15,000",
+    goalProgress: "83",
+    changePercent: "+7%",
+    category: "growth",
+    format: "number",
     priority: 7,
-    format: "percentage",
     isIncreasing: true,
-    description: "Revenue minus cost of goods sold"
+    description: "Users who actively used the product this month"
   },
   {
     id: 8,
-    name: "Monthly Active Users",
-    value: "8,450",
-    yearlyGoal: "10,000",
-    goalProgress: "85",
-    changePercent: "+15.2%",
-    category: "growth",
-    priority: 8,
-    format: "number",
-    isIncreasing: true,
-    description: "Active users in the last 30 days"
-  },
-  {
-    id: 9,
     name: "Lead Conversion Rate",
-    value: "12.5%",
-    yearlyGoal: "15%",
-    goalProgress: "83",
-    changePercent: "+2.8%",
-    category: "growth",
-    priority: 9,
+    value: "4.2%",
+    yearlyGoal: "5.0%",
+    goalProgress: "84",
+    changePercent: "+0.5%",
+    category: "efficiency",
     format: "percentage",
+    priority: 8,
     isIncreasing: true,
     description: "Percentage of leads that convert to customers"
   },
   {
-    id: 10,
+    id: 9,
     name: "Average Deal Size",
-    value: "$4,200",
-    yearlyGoal: "$5,000",
-    goalProgress: "84",
-    changePercent: "+7.1%",
+    value: "$8,500",
+    yearlyGoal: "$10,000",
+    goalProgress: "85",
+    changePercent: "+10%",
     category: "revenue",
-    priority: 10,
     format: "currency",
+    priority: 9,
     isIncreasing: true,
     description: "Average value of closed deals"
   },
   {
-    id: 11,
+    id: 10,
     name: "Sales Cycle Length",
     value: "45 days",
     yearlyGoal: "35 days",
     goalProgress: "78",
-    changePercent: "-3.2%",
+    changePercent: "-3 days",
     category: "efficiency",
-    priority: 11,
     format: "number",
+    priority: 10,
     isIncreasing: false,
-    description: "Average time from lead to close"
+    description: "Average time from lead to closed deal"
+  },
+  {
+    id: 11,
+    name: "Customer Satisfaction Score",
+    value: "4.3/5",
+    yearlyGoal: "4.5/5",
+    goalProgress: "96",
+    changePercent: "+0.2",
+    category: "retention",
+    format: "number",
+    priority: 11,
+    isIncreasing: true,
+    description: "Average customer satisfaction rating"
   },
   {
     id: 12,
@@ -174,115 +161,14 @@ const defaultMetrics: Partial<KpiMetric>[] = [
     value: "68%",
     yearlyGoal: "75%",
     goalProgress: "91",
-    changePercent: "+4.6%",
+    changePercent: "+5%",
     category: "growth",
-    priority: 12,
     format: "percentage",
+    priority: 12,
     isIncreasing: true,
     description: "Percentage of users actively using key features"
   }
 ];
-
-// Simple trend indicator without charts for now
-const getTrendDirection = (changePercent: string | undefined) => {
-  if (!changePercent) return 'neutral';
-  return changePercent.startsWith('+') ? 'up' : 'down';
-};
-
-function MetricCard({ metric }: { metric: Partial<KpiMetric> }) {
-  const goalProgress = parseFloat(metric.goalProgress || "0");
-  const changePercent = metric.changePercent || "";
-  const isPositiveChange = changePercent.startsWith('+');
-  const isGoodDirection = metric.isIncreasing ? isPositiveChange : !isPositiveChange;
-  
-  const getIcon = (category: string) => {
-    switch (category) {
-      case 'revenue': return DollarSign;
-      case 'growth': return TrendingUp;
-      case 'retention': return Users;
-      case 'efficiency': return Target;
-      default: return BarChart3;
-    }
-  };
-
-  const Icon = getIcon(metric.category || 'revenue');
-
-  return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Icon className="h-5 w-5 text-blue-600" />
-            <Badge variant="outline" className="text-xs">
-              {metric.category}
-            </Badge>
-          </div>
-          <div className="flex items-center space-x-1">
-            {isGoodDirection ? (
-              <ArrowUpIcon className="h-4 w-4 text-green-500" />
-            ) : (
-              <ArrowDownIcon className="h-4 w-4 text-red-500" />
-            )}
-            <span className={`text-sm font-medium ${isGoodDirection ? 'text-green-600' : 'text-red-600'}`}>
-              {metric.changePercent}
-            </span>
-          </div>
-        </div>
-        <CardTitle className="text-sm font-medium text-gray-700 line-clamp-2">
-          {metric.name}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="space-y-3">
-          {/* Current Value */}
-          <div>
-            <div className="text-2xl font-bold text-gray-900">{metric.value}</div>
-            <div className="text-xs text-gray-500">{metric.description}</div>
-          </div>
-
-          {/* Goal Progress */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Goal Progress</span>
-              <span className="font-medium">{goalProgress}%</span>
-            </div>
-            <Progress value={goalProgress} className="h-2" />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>Current: {metric.value}</span>
-              <span>Goal: {metric.yearlyGoal}</span>
-            </div>
-          </div>
-
-          {/* Change Indicator */}
-          {changePercent && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-600">vs last quarter</span>
-              <span className={`text-sm px-2 py-1 rounded-full font-medium ${
-                isGoodDirection 
-                  ? "bg-green-100 text-green-800" 
-                  : "bg-red-100 text-red-800"
-              }`}>
-                {changePercent}
-              </span>
-            </div>
-          )}
-
-          {/* Trend Indicator */}
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>Trend</span>
-            <div className="flex items-center space-x-1">
-              <div className={`w-2 h-2 rounded-full ${
-                getTrendDirection(changePercent) === 'up' ? 'bg-green-500' :
-                getTrendDirection(changePercent) === 'down' ? 'bg-red-500' : 'bg-gray-400'
-              }`} />
-              <span className="capitalize">{getTrendDirection(changePercent)}</span>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const { data: kpiMetrics, isLoading } = useQuery({
@@ -292,95 +178,114 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const metrics = (kpiMetrics && Array.isArray(kpiMetrics) && kpiMetrics.length > 0) ? kpiMetrics : defaultMetrics;
 
   // Group metrics by category
-  const metricsByCategory = Array.isArray(metrics) ? metrics.reduce((acc: any, metric: any) => {
+  const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
     const category = metric.category || 'other';
     if (!acc[category]) acc[category] = [];
     acc[category].push(metric);
     return acc;
-  }, {}) : {};
+  }, {});
+
+  // Calculate overall performance
+  const overallProgress = metrics.length > 0 ? 
+    Math.round(metrics.reduce((sum: number, metric: any) => 
+      sum + parseFloat(metric.goalProgress || "0"), 0) / metrics.length) : 0;
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
-          <CardTitle className="text-xl font-semibold">Business Metrics Dashboard</CardTitle>
-          <Button variant="ghost" size="sm" disabled>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold">Business Metrics</h2>
+          <Button variant="outline" size="sm" disabled>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Loading...
           </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[...Array(12)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="bg-gray-50 rounded-lg p-6 border h-64">
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <div className="h-4 bg-gray-200 rounded w-1/3" />
-                      <div className="h-4 bg-gray-200 rounded w-1/4" />
-                    </div>
-                    <div className="h-6 bg-gray-200 rounded w-3/4" />
-                    <div className="h-8 bg-gray-200 rounded w-1/2" />
-                    <div className="h-2 bg-gray-200 rounded w-full" />
-                    <div className="h-16 bg-gray-200 rounded" />
-                  </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {[...Array(8)].map((_, i) => (
+            <Card key={i} className="h-64 animate-pulse">
+              <CardContent className="p-6">
+                <div className="space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-2 bg-gray-200 rounded"></div>
+                  <div className="h-4 bg-gray-200 rounded w-2/3"></div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
-          <div>
-            <CardTitle className="text-xl font-semibold">Business Metrics Dashboard</CardTitle>
-            <p className="text-sm text-gray-600 mt-1">
-              Track progress against yearly goals across all key metrics
-            </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Business Metrics Dashboard</h2>
+          <p className="text-gray-600 mt-1">
+            Track your key performance indicators and goal progress
+          </p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <div className="text-right">
+            <div className="text-sm text-gray-600">Overall Goal Progress</div>
+            <div className="text-2xl font-bold text-green-600">{overallProgress}%</div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onRefresh}>
-            <RefreshCw className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={onRefresh}>
+            <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-        </CardHeader>
-      </Card>
+        </div>
+      </div>
 
-      <Tabs defaultValue="all" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="all">All Metrics</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="growth">Growth</TabsTrigger>
-          <TabsTrigger value="retention">Retention</TabsTrigger>
-          <TabsTrigger value="efficiency">Efficiency</TabsTrigger>
-        </TabsList>
+      {metrics.length === 0 ? (
+        <Card className="p-12 text-center">
+          <CardHeader>
+            <CardTitle className="text-gray-500">No Metrics Configured</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-gray-400 mb-4">
+              Set up your business metrics to start tracking performance against goals.
+            </p>
+            <Button onClick={() => window.location.href = '/metrics-management'}>
+              Configure Metrics
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Tabs defaultValue="all" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="all">All Metrics ({metrics.length})</TabsTrigger>
+            <TabsTrigger value="revenue">Revenue ({metricsByCategory.revenue?.length || 0})</TabsTrigger>
+            <TabsTrigger value="growth">Growth ({metricsByCategory.growth?.length || 0})</TabsTrigger>
+            <TabsTrigger value="retention">Retention ({metricsByCategory.retention?.length || 0})</TabsTrigger>
+            <TabsTrigger value="efficiency">Efficiency ({metricsByCategory.efficiency?.length || 0})</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="all" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {metrics
-              .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
-              .map((metric: any) => (
-                <MetricCard key={metric.id || metric.name} metric={metric} />
-              ))}
-          </div>
-        </TabsContent>
-
-        {Object.entries(metricsByCategory).map(([category, categoryMetrics]: [string, any]) => (
-          <TabsContent key={category} value={category} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(categoryMetrics as any[])
+          <TabsContent value="all" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {Array.isArray(metrics) ? metrics
                 .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
                 .map((metric: any) => (
-                  <MetricCard key={metric.id || metric.name} metric={metric} />
-                ))}
+                  <MetricProgressChart key={metric.id || metric.name} metric={metric} />
+                )) : null}
             </div>
           </TabsContent>
-        ))}
-      </Tabs>
+
+          {Object.entries(metricsByCategory).map(([category, categoryMetrics]: [string, any]) => (
+            <TabsContent key={category} value={category} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {(categoryMetrics as any[])
+                  .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
+                  .map((metric: any) => (
+                    <MetricProgressChart key={metric.id || metric.name} metric={metric} />
+                  ))}
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
     </div>
   );
 }
