@@ -169,27 +169,27 @@ export default function MetricProgressChart({ metric }: MetricProgressChartProps
         
         <CardContent className="pt-0 space-y-3 md:space-y-4">
           {/* Current Values with Annual Progress */}
-          <div className="grid grid-cols-3 gap-2 md:gap-4">
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">Current (YTD)</div>
-              <div className="text-sm md:text-lg font-bold truncate">
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2 md:gap-4 items-start">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">Current (YTD)</div>
+              <div className="text-sm md:text-lg font-bold truncate" title={formatValue(currentData.actual, metric.format)}>
                 {formatValue(currentData.actual, metric.format)}
               </div>
             </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">Goal (YTD)</div>
-              <div className="text-sm md:text-lg font-medium text-gray-700 truncate">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-gray-500 mb-1 whitespace-nowrap">Goal (YTD)</div>
+              <div className="text-sm md:text-lg font-medium text-gray-700 truncate" title={formatValue(currentData.goal, metric.format)}>
                 {formatValue(currentData.goal, metric.format)}
               </div>
             </div>
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500 mb-1">
+            <div className="min-w-0 w-20 md:w-24 flex-shrink-0">
+              <div className="text-xs text-gray-500 mb-1 text-center">
                 <span className="hidden sm:inline">Annual Progress</span>
                 <span className="sm:hidden">Progress</span>
               </div>
               <div className="space-y-1">
-                <div className="text-sm md:text-base font-medium">{goalProgress}%</div>
-                <Progress value={goalProgress} className="h-1.5 md:h-2" />
+                <div className="text-sm md:text-base font-medium text-center">{goalProgress}%</div>
+                <Progress value={goalProgress} className="h-1.5 md:h-2 w-full" />
               </div>
             </div>
           </div>
