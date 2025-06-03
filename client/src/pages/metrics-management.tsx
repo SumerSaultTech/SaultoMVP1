@@ -567,18 +567,44 @@ export default function MetricsManagement() {
                   </div>
 
                   {/* SQL Query Section */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">SQL Query (Optional)</label>
-                    <Textarea
-                      value={formData.sqlQuery || ""}
-                      onChange={(e) => {
-                        setFormData({ ...formData, sqlQuery: e.target.value });
-                        setSqlQuery(e.target.value);
-                      }}
-                      placeholder="Enter custom SQL query to calculate current value (leave blank for AI generation)"
-                      rows={4}
-                      className="font-mono text-sm"
-                    />
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">SQL Query (Optional)</label>
+                      <Textarea
+                        value={formData.sqlQuery || ""}
+                        onChange={(e) => {
+                          setFormData({ ...formData, sqlQuery: e.target.value });
+                          setSqlQuery(e.target.value);
+                        }}
+                        placeholder="Enter custom SQL query to calculate current value (leave blank for AI generation)"
+                        rows={4}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                    
+                    {/* Calculation Buttons */}
+                    <div className="flex space-x-2">
+                      <Button
+                        type="button"
+                        onClick={calculateWithCortex}
+                        disabled={isCortexAnalyzing || !formData.name || !formData.description}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Calculator className="w-4 h-4 mr-2" />
+                        {isCortexAnalyzing ? "Analyzing..." : "Calculate with Cortex Analyst"}
+                      </Button>
+                      
+                      <Button
+                        type="button"
+                        onClick={runSQLQuery}
+                        disabled={isRunningSQL || !formData.sqlQuery}
+                        variant="outline"
+                        className="border-green-600 text-green-600 hover:bg-green-50"
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        {isRunningSQL ? "Running..." : "Calculate with Custom SQL"}
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Calculation Results */}
@@ -625,28 +651,18 @@ export default function MetricsManagement() {
                   Cancel
                 </Button>
                 
-                <div className="flex space-x-2">
-                  <Button
-                    type="button"
-                    onClick={calculateWithCortex}
-                    disabled={isCortexAnalyzing || !formData.name || !formData.description}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Calculator className="w-4 h-4 mr-2" />
-                    {isCortexAnalyzing ? "Analyzing..." : "Calculate with Cortex Analyst"}
-                  </Button>
-                  
-                  <Button
-                    type="button"
-                    onClick={runSQLQuery}
-                    disabled={isRunningSQL || !formData.sqlQuery}
-                    variant="outline"
-                    className="border-green-600 text-green-600 hover:bg-green-50"
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    {isRunningSQL ? "Running..." : "Calculate with Custom SQL"}
-                  </Button>
-                </div>
+                <Button
+                  type="submit"
+                  onClick={handleSubmit}
+                  disabled={createMetricMutation.isPending || updateMetricMutation.isPending}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {editingMetric ? 
+                    (updateMetricMutation.isPending ? "Updating..." : "Update Metric") :
+                    (createMetricMutation.isPending ? "Creating..." : "Save Metric")
+                  }
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
