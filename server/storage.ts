@@ -32,6 +32,7 @@ export interface IStorage {
   createCompany(company: InsertCompany): Promise<Company>;
 
   // Users
+  getUsers(): Promise<User[]>;
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
@@ -101,6 +102,10 @@ export class MemStorage implements IStorage {
   }
 
   // Users
+  async getUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+
   async getUser(id: number): Promise<User | undefined> {
     return this.users.get(id);
   }
@@ -111,7 +116,12 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentId++;
-    const user: User = { ...insertUser, id };
+    const user: User = { 
+      ...insertUser, 
+      id,
+      companyId: insertUser.companyId || null,
+      role: insertUser.role || "user"
+    };
     this.users.set(id, user);
     return user;
   }
