@@ -439,56 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Snowflake metrics endpoints for MIAS_DATA
-  app.get("/api/metrics/north-star", async (req, res) => {
-    try {
-      // First, let's check what tables exist in your MIAS_DATA database
-      const schemaQuery = `USE DATABASE MIAS_DATA_DB; SHOW TABLES;`;
-      
-      // Execute the query directly using your existing Python service
-      const pythonResponse = await fetch('http://localhost:5001/api/snowflake/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query: schemaQuery })
-      });
 
-      let tablesResult = [];
-      if (pythonResponse.ok) {
-        const result = await pythonResponse.json();
-        tablesResult = result.data || [];
-        console.log('Available tables in MIAS_DATA_DB:', tablesResult);
-      }
-
-      // Return structured metrics data from your MIAS_DATA database
-      const metrics = [
-        {
-          id: 'annual-revenue',
-          name: 'Annual Revenue',
-          currentValue: 2850000, // Will be replaced with actual Snowflake data
-          yearlyGoal: 3500000,
-          format: 'currency',
-          description: 'Total revenue for the current fiscal year from MIAS_DATA',
-          category: 'revenue'
-        },
-        {
-          id: 'annual-profit',
-          name: 'Annual Profit', 
-          currentValue: 485000,  // Will be replaced with actual Snowflake data
-          yearlyGoal: 700000,
-          format: 'currency',
-          description: 'Net profit after all expenses for the current fiscal year from MIAS_DATA',
-          category: 'profit'
-        }
-      ];
-
-      res.json(metrics);
-    } catch (error) {
-      console.error("Error fetching North Star metrics:", error);
-      res.status(500).json({ message: "Failed to fetch North Star metrics from MIAS_DATA Snowflake" });
-    }
-  });
 
   app.get("/api/metrics/kpi", async (req, res) => {
     try {
