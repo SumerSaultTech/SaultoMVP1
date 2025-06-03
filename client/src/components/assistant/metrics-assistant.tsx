@@ -294,7 +294,7 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                       : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                   }`}
                 >
-                  <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                  <div className="break-words text-sm">{message.content}</div>
                   
                   {/* Render metric suggestions as clickable buttons */}
                   {message.suggestions && message.suggestions.length > 0 && (
