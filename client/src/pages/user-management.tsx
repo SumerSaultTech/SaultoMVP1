@@ -6,14 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Plus, Building2 } from "lucide-react";
+import { Users, Plus, Building2, UserCheck, Mail } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface User {
   id: number;
   username: string;
+  email?: string;
   companyId: number;
   role: string;
+  status: string;
+  invitedAt?: string;
   companyName?: string;
 }
 
@@ -30,6 +33,7 @@ export default function UserManagement() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUser, setNewUser] = useState({
     username: "",
+    email: "",
     password: "",
     companyId: "",
     role: "user"
@@ -44,13 +48,19 @@ export default function UserManagement() {
   });
 
   const createUserMutation = useMutation({
-    mutationFn: async (userData: { username: string; password: string; companyId: number; role: string }) => {
+    mutationFn: async (userData: { 
+      username: string; 
+      email: string; 
+      password: string; 
+      companyId: number; 
+      role: string; 
+    }) => {
       return await apiRequest("/api/users", "POST", userData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setShowCreateForm(false);
-      setNewUser({ username: "", password: "", companyId: "", role: "user" });
+      setNewUser({ username: "", email: "", password: "", companyId: "", role: "user" });
       toast({
         title: "Success",
         description: "User created successfully",
@@ -65,8 +75,49 @@ export default function UserManagement() {
     },
   });
 
+  const impersonateUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return await apiRequest("/api/admin/impersonate", "POST", { userId });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Now impersonating user. Redirecting...",
+      });
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1000);
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to impersonate user",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resendInviteMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return await apiRequest("/api/users/resend-invite", "POST", { userId });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Invitation email sent successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to send invitation",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreateUser = () => {
-    if (!newUser.username.trim() || !newUser.password.trim() || !newUser.companyId) {
+    if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password.trim() || !newUser.companyId) {
       toast({
         title: "Error",
         description: "All fields are required",
@@ -77,6 +128,7 @@ export default function UserManagement() {
 
     createUserMutation.mutate({
       username: newUser.username,
+      email: newUser.email,
       password: newUser.password,
       companyId: parseInt(newUser.companyId),
       role: newUser.role,
