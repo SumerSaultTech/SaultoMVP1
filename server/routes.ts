@@ -366,13 +366,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (result.success) {
         res.json({ 
           success: true, 
-          message: "Successfully connected to Snowflake",
+          message: "Successfully connected to MIAS_DATA_DB",
           data: result.data
         });
       } else {
         res.status(500).json({ 
           success: false, 
-          message: "Failed to connect to Snowflake",
+          message: "Failed to connect to MIAS_DATA_DB",
           error: result.error 
         });
       }
@@ -380,7 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Snowflake test error:", error);
       res.status(500).json({ 
         success: false, 
-        message: "Snowflake connection test failed" 
+        message: "MIAS_DATA_DB connection test failed" 
       });
     }
   });
