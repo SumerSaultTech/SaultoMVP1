@@ -259,9 +259,9 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
         </CardTitle>
       </CardHeader>
       
-      <CardContent className="flex-1 flex flex-col gap-4 p-4">
+      <CardContent className="flex-1 flex flex-col gap-3 p-4 min-h-0">
         {/* Quick Actions */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 flex-shrink-0">
           {quickActions.map((action, index) => (
             <Button
               key={index}
@@ -277,11 +277,11 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
           ))}
         </div>
 
-        <Separator />
+        <Separator className="flex-shrink-0" />
 
         {/* Messages */}
-        <ScrollArea className="flex-1">
-          <div className="space-y-4 pr-4">
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="space-y-3 pr-4 pb-4">
             {messages.map((message) => (
               <div
                 key={message.id}
