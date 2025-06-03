@@ -1,21 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUp, TrendingDown, DollarSign, Target, Calendar } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Target, Calendar } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
-interface NorthStarMetric {
-  id: string;
-  name: string;
-  value: string;
-  yearlyGoal: string;
-  changePercent: string;
-  description: string;
-  format: string;
-}
-
-// Fetch North Star metrics from your metrics management system
+// Fetch North Star metrics from metrics management system
 function useNorthStarMetrics() {
   return useQuery({
     queryKey: ["/api/kpi-metrics"],
@@ -25,139 +14,6 @@ function useNorthStarMetrics() {
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 10 * 60 * 1000, // 10 minutes
-  });
-}
-
-// Generate progress data for North Star metrics based on time period
-function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
-  const currentValue = parseFloat(metric.value.replace(/[$,]/g, ''));
-  const yearlyGoal = parseFloat(metric.yearlyGoal.replace(/[$,]/g, ''));
-  
-  // Performance patterns for different metrics
-  const revenuePattern = [0.75, 0.82, 0.88, 0.95, 1.02, 1.08, 1.15, 1.22, 1.18, 1.25, 1.32, 1.40];
-  const profitPattern = [0.65, 0.72, 0.79, 0.86, 0.93, 1.00, 1.07, 1.14, 1.10, 1.17, 1.24, 1.31];
-  const pattern = metric.id === 'annual-revenue' ? revenuePattern : profitPattern;
-
-  switch (timePeriod) {
-    case "weekly":
-      return generateWeeklyNorthStarData(yearlyGoal, pattern);
-    case "monthly":
-      return generateMonthlyNorthStarData(yearlyGoal, pattern);
-    case "quarterly":
-      return generateQuarterlyNorthStarData(yearlyGoal, pattern);
-    case "ytd":
-    default:
-      return generateYTDNorthStarData(yearlyGoal, pattern);
-  }
-}
-
-function generateWeeklyNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const currentDay = today.getDay();
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
-  
-  const dailyGoal = yearlyGoal / 365;
-  
-  return weekdays.map((day, index) => {
-    const dayProgress = dailyGoal * (index + 1);
-    const performanceMultiplier = pattern[index % 7] || 1.0;
-    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
-    
-    return {
-      period: day,
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: index === currentDayIndex
-    };
-  });
-}
-
-function generateMonthlyNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const currentDay = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  
-  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const dailyGoal = yearlyGoal / 365;
-  
-  return allDays.map((day, index) => {
-    const dayProgress = dailyGoal * day;
-    const performanceMultiplier = pattern[index % 30] || 1.0;
-    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
-    
-    return {
-      period: day.toString(),
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: day === currentDay
-    };
-  });
-}
-
-function generateQuarterlyNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-  const quarterStartMonth = (currentQuarter - 1) * 3;
-  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
-  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
-  
-  const weeks: Date[] = [];
-  const currentWeekStart = new Date(quarterStart);
-  const dayOfWeek = currentWeekStart.getDay();
-  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  
-  while (currentWeekStart <= quarterEnd) {
-    weeks.push(new Date(currentWeekStart));
-    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  }
-  
-  const weeklyGoal = yearlyGoal / 52;
-  
-  return weeks.map((weekStart, index) => {
-    const weekProgress = weeklyGoal * (index + 1);
-    const performanceMultiplier = pattern[index % 12] || 1.0;
-    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
-    
-    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-    
-    return {
-      period: weekLabel,
-      goal: Math.round(weekProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
-    };
-  });
-}
-
-function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const yearStart = new Date(today.getFullYear(), 0, 1);
-  const yearEnd = new Date(today.getFullYear(), 11, 31);
-  
-  const months = [];
-  const currentMonth = new Date(yearStart);
-  
-  while (currentMonth <= yearEnd) {
-    months.push(new Date(currentMonth));
-    currentMonth.setMonth(currentMonth.getMonth() + 1);
-  }
-  
-  const monthlyGoal = yearlyGoal / 12;
-  
-  return months.map((month, index) => {
-    const goalProgress = monthlyGoal * (index + 1);
-    const performanceMultiplier = pattern[index] || 1.0;
-    const actualValue = month <= today ? goalProgress * performanceMultiplier : null;
-    
-    const monthLabel = month.toLocaleDateString('en-US', { month: 'short' });
-    
-    return {
-      period: monthLabel,
-      goal: Math.round(goalProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: month.getMonth() === today.getMonth()
-    };
   });
 }
 
@@ -202,7 +58,7 @@ function getProgressStatus(progress: number) {
 export default function NorthStarMetrics() {
   const [northStarTimePeriod, setNorthStarTimePeriod] = useState("ytd");
   
-  // Fetch authentic metrics from MIAS_DATA Snowflake database
+  // Fetch authentic metrics from database
   const { data: northStarMetrics, isLoading, error } = useNorthStarMetrics();
 
   // Time period options for North Star metrics
@@ -241,7 +97,7 @@ export default function NorthStarMetrics() {
         </div>
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-blue-700">No North Star metrics found.</p>
-          <p className="text-blue-600 text-sm mt-1">Create metrics with "revenue" or "profit" in the name using Metrics Management.</p>
+          <p className="text-blue-600 text-sm mt-1">Create metrics and mark them as North Star using the checkbox in Metrics Management.</p>
         </div>
       </div>
     );
@@ -250,66 +106,6 @@ export default function NorthStarMetrics() {
   const getTimePeriodLabel = (period: string) => {
     const option = northStarTimePeriodOptions.find(opt => opt.value === period);
     return option?.label || "Year to Date";
-  };
-
-  // Calculate adaptive goal based on time period
-  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
-    const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
-    
-    switch (timePeriod) {
-      case "weekly":
-        return (yearlyValue / 52).toFixed(0);
-      case "monthly":
-        return (yearlyValue / 12).toFixed(0);
-      case "quarterly":
-        return (yearlyValue / 4).toFixed(0);
-      case "ytd":
-      default:
-        return yearlyValue.toFixed(0);
-    }
-  };
-
-  // Get authentic calculated values only
-  const getMetricValues = (metric: any) => {
-    if (!metric.value) {
-      return {
-        currentActual: null,
-        yearlyGoal: parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0'),
-        hasData: false
-      };
-    }
-    
-    return {
-      currentActual: parseFloat(metric.value.replace(/[$,]/g, '')),
-      yearlyGoal: parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0'),
-      hasData: true
-    };
-    const currentGoal = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].goal : chartData[chartData.length - 1]?.goal || 0;
-    
-    return {
-      current: currentActual || 0,
-      goal: currentGoal || 0
-    };
-  };
-
-  // Calculate YTD progress vs YTD goal for "on pace" indicator
-  const getYTDProgress = (metric: NorthStarMetric) => {
-    const ytdChartData = generateNorthStarData(metric, "ytd");
-    
-    // Find the most recent actual data point from YTD chart
-    const actualDataPoints = ytdChartData.filter(point => point.actual !== null);
-    if (actualDataPoints.length === 0) return { current: 0, goal: 0, progress: 0 };
-    
-    // Get the latest actual value and corresponding goal
-    const latestPoint = actualDataPoints[actualDataPoints.length - 1];
-    const currentYTD = latestPoint.actual || 0;
-    const goalYTD = latestPoint.goal || 1;
-    
-    return {
-      current: currentYTD,
-      goal: goalYTD,
-      progress: Math.round((currentYTD / goalYTD) * 100)
-    };
   };
 
   return (
@@ -340,142 +136,89 @@ export default function NorthStarMetrics() {
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {northStarMetrics.map((metric: any) => {
-          // Convert KPI metric to North Star format
-          const northStarMetric = {
-            id: metric.id.toString(),
-            name: metric.name,
-            value: metric.currentValue ? `$${metric.currentValue.toLocaleString()}` : '$0',
-            yearlyGoal: metric.yearlyGoal ? `$${metric.yearlyGoal.toLocaleString()}` : '$0',
-            changePercent: '+0',
-            description: metric.description || `${metric.name} metric`,
-            format: metric.format || 'currency'
-          };
-
-          // Get the EXACT same values used in the chart
-          const chartDisplayValues = getChartDisplayValues(northStarMetric, northStarTimePeriod);
-          const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
+          // Only show authentic calculated values
+          const hasCalculatedValue = metric.value && metric.value.trim() !== '';
+          const currentValue = hasCalculatedValue ? parseFloat(metric.value.replace(/[$,]/g, '')) : 0;
+          const yearlyGoal = parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0');
+          const progress = hasCalculatedValue ? calculateProgress(currentValue, yearlyGoal) : 0;
           const progressStatus = getProgressStatus(progress);
-          
-          // Use YTD progress for "on pace" indicator regardless of selected time period
-          const ytdProgress = getYTDProgress(northStarMetric);
-          const onPaceProgressStatus = getProgressStatus(ytdProgress.progress);
-          
-          const changeValue = parseFloat(northStarMetric.changePercent);
-          const isPositive = changeValue >= 0;
-          const chartData = generateNorthStarData(northStarMetric, northStarTimePeriod);
 
           return (
-            <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-blue-500"></div>
+            <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-white to-purple-50 dark:from-gray-800 dark:to-purple-900/20">
+              {/* Progress indicator bar */}
+              <div className={`absolute top-0 left-0 w-full h-2 ${
+                hasCalculatedValue ? (
+                  progress >= 90 ? 'bg-green-500' : 
+                  progress >= 75 ? 'bg-blue-500' : 
+                  progress >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                ) : 'bg-gray-300 dark:bg-gray-600'
+              }`}></div>
               
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
-                    <DollarSign className="h-4 w-4 text-purple-600" />
-                    <span>{northStarMetric.name}</span>
-                  </CardTitle>
-                  <div className={`flex items-center space-x-1 text-sm font-medium ${onPaceProgressStatus.color}`}>
-                    {ytdProgress.progress >= 100 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                    <span>{ytdProgress.progress}% on pace</span>
+              <CardHeader className="pb-3 pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg font-bold text-gray-900 dark:text-white mb-1">
+                      {metric.name}
+                    </CardTitle>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {metric.description || 'North Star metric'}
+                    </p>
+                  </div>
+                  <div className={`ml-3 px-3 py-1 rounded-full text-xs font-semibold ${
+                    hasCalculatedValue ? progressStatus.color + ' ' + progressStatus.bgColor : 'text-gray-500 bg-gray-100'
+                  }`}>
+                    {hasCalculatedValue ? `${progress}%` : 'No data'}
                   </div>
                 </div>
               </CardHeader>
 
-              <CardContent className="pt-0 space-y-3">
+              <CardContent className="space-y-4 pt-0">
                 {/* Current Value */}
-                <div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatValue(chartDisplayValues.current, northStarMetric.format)}
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    of {formatValue(chartDisplayValues.goal, northStarMetric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
-                  </div>
+                <div className="text-center">
+                  {hasCalculatedValue ? (
+                    <>
+                      <div className="text-4xl font-bold text-purple-700 dark:text-purple-300 mb-1">
+                        {formatValue(currentValue, metric.format || 'currency')}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        of {formatValue(yearlyGoal, metric.format || 'currency')} {getTimePeriodLabel(northStarTimePeriod).toLowerCase()} goal
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-4xl font-bold text-gray-400 dark:text-gray-500 mb-1">
+                        Not calculated
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-500">
+                        Calculate metric to see progress toward {formatValue(yearlyGoal, metric.format || 'currency')} goal
+                      </div>
+                    </>
+                  )}
                 </div>
 
-                {/* Progress Bar */}
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                      Progress
-                    </span>
-                    <span className={`text-xs font-bold ${progressStatus.color}`}>
-                      {progress}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
-                      style={{ width: `${Math.min(progress, 100)}%` }}
-                    />
-                  </div>
+                {/* Chart placeholder or message */}
+                <div className="h-24 -mx-2">
+                  {hasCalculatedValue ? (
+                    <div className="flex items-center justify-center h-full bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                      <div className="text-center">
+                        <div className="text-purple-600 dark:text-purple-400 text-sm font-medium">
+                          Progress Chart
+                        </div>
+                        <div className="text-xs text-purple-500 dark:text-purple-400 mt-1">
+                          Chart available when historical data exists
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className="text-center">
+                        <div className="text-gray-400 dark:text-gray-500 text-sm">
+                          Calculate metric to view progress chart
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                {/* Time Period Chart */}
-                <div className="space-y-1">
-                  <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {getTimePeriodLabel(northStarTimePeriod)} Progress
-                  </h4>
-                  
-                  <ResponsiveContainer width="100%" height={140}>
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="period"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
-                      />
-                      <YAxis 
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
-                        tickFormatter={(value) => formatValue(value.toString(), northStarMetric.format)}
-                      />
-                      <Tooltip 
-                        contentStyle={{
-                          backgroundColor: 'white',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                        }}
-                        labelFormatter={(period) => `${period}`}
-                        formatter={(value: any, name: string) => [
-                          formatValue(value?.toString() || '0', northStarMetric.format),
-                          name === 'actual' ? 'Actual' : 'Goal'
-                        ]}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="goal" 
-                        stroke="#9ca3af" 
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        dot={false}
-                        name="goal"
-                        connectNulls={false}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="actual" 
-                        stroke="#8b5cf6" 
-                        strokeWidth={3}
-                        connectNulls={false}
-                        dot={(props: any) => {
-                          const { cx, cy, payload } = props;
-                          if (!payload || payload.actual === null) return <g />;
-                          return payload?.isCurrent ? (
-                            <circle cx={cx} cy={cy} r={6} fill="#8b5cf6" stroke="#fff" strokeWidth={2} />
-                          ) : (
-                            <circle cx={cx} cy={cy} r={3} fill="#8b5cf6" />
-                          );
-                        }}
-                        name="actual"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-
               </CardContent>
             </Card>
           );
