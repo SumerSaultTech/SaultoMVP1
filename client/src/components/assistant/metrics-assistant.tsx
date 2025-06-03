@@ -140,7 +140,7 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           metricName: metric.name,
-          sqlQuery: metric.sql,
+          sqlQuery: metric.sqlQuery || "",
           description: metric.description,
           category: metric.category,
           format: metric.format
@@ -359,17 +359,10 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                   {message.suggestions && message.suggestions.length > 0 && (
                     <div className="mt-3 space-y-2">
                       {message.suggestions.map((suggestion, index) => (
-                        <Button
-                          key={index}
-                          variant="outline"
-                          size="sm"
-                          className="w-full justify-start text-left h-auto p-3 min-h-0"
-                          onClick={() => onMetricCreate?.(suggestion)}
-                        >
+                        <div key={index} className="border rounded-lg p-3 space-y-3">
                           <div className="flex items-start gap-2 w-full min-w-0">
-                            <Plus className="w-4 h-4 mt-0.5 text-green-600 flex-shrink-0" />
                             <div className="flex-1 min-w-0 overflow-hidden">
-                              <div className="font-medium text-sm truncate">{suggestion.name}</div>
+                              <div className="font-medium text-sm">{suggestion.name}</div>
                               <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 break-words overflow-wrap-anywhere">
                                 {suggestion.description}
                               </div>
@@ -383,7 +376,34 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                               </div>
                             </div>
                           </div>
-                        </Button>
+                          
+                          <div className="flex gap-2 pt-2 border-t">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 text-xs"
+                              onClick={() => onMetricCreate?.(suggestion)}
+                              disabled={cortexAnalyzeMutation.isPending}
+                            >
+                              <Plus className="w-3 h-3 mr-1" />
+                              Create Metric
+                            </Button>
+                            
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="flex-1 text-xs bg-blue-600 hover:bg-blue-700"
+                              onClick={() => {
+                                setIsTyping(true);
+                                cortexAnalyzeMutation.mutate(suggestion);
+                              }}
+                              disabled={cortexAnalyzeMutation.isPending || isTyping}
+                            >
+                              <Calculator className="w-3 h-3 mr-1" />
+                              {cortexAnalyzeMutation.isPending ? "Analyzing..." : "Calculate with Cortex"}
+                            </Button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
