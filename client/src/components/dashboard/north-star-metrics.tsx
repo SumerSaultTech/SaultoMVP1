@@ -427,7 +427,7 @@ export default function NorthStarMetrics() {
                         axisLine={false}
                         tickLine={false}
                         tick={{ fontSize: 12, fill: '#6b7280' }}
-                        tickFormatter={(value) => formatValue(value.toString(), metric.format)}
+                        tickFormatter={(value) => formatValue(value.toString(), northStarMetric.format)}
                       />
                       <Tooltip 
                         contentStyle={{
@@ -438,7 +438,7 @@ export default function NorthStarMetrics() {
                         }}
                         labelFormatter={(period) => `${period}`}
                         formatter={(value: any, name: string) => [
-                          formatValue(value?.toString() || '0', metric.format),
+                          formatValue(value?.toString() || '0', northStarMetric.format),
                           name === 'actual' ? 'Actual' : 'Goal'
                         ]}
                       />
