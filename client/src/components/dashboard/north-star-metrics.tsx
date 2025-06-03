@@ -313,6 +313,11 @@ export default function NorthStarMetrics() {
           const adaptiveCurrentValue = getAdaptiveCurrentValue(metric, northStarTimePeriod);
           const progress = calculateProgress(adaptiveCurrentValue, adaptiveGoal);
           const progressStatus = getProgressStatus(progress);
+          
+          // Use YTD progress for "on pace" indicator regardless of selected time period
+          const ytdProgress = getYTDProgress(metric);
+          const onPaceProgressStatus = getProgressStatus(ytdProgress.progress);
+          
           const changeValue = parseFloat(metric.changePercent);
           const isPositive = changeValue >= 0;
           const chartData = generateNorthStarData(metric, northStarTimePeriod);
@@ -327,9 +332,9 @@ export default function NorthStarMetrics() {
                     <DollarSign className="h-4 w-4 text-purple-600" />
                     <span>{metric.name}</span>
                   </CardTitle>
-                  <div className={`flex items-center space-x-1 text-sm font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                    {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                    <span>{Math.abs(changeValue)}%</span>
+                  <div className={`flex items-center space-x-1 text-sm font-medium ${onPaceProgressStatus.color}`}>
+                    {ytdProgress.progress >= 100 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                    <span>{ytdProgress.progress}% on pace</span>
                   </div>
                 </div>
               </CardHeader>
