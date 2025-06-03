@@ -95,8 +95,6 @@ function generateMonthlyData(metric: Partial<KpiMetric>, currentValue: number, y
 function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
   const today = new Date();
   const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-  
-  // Get the start and end of current quarter
   const quarterStartMonth = (currentQuarter - 1) * 3;
   const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
   const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
@@ -105,11 +103,10 @@ function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number,
   const weeks: Date[] = [];
   const currentWeekStart = new Date(quarterStart);
   
-  // Find the Monday of the week containing quarter start
+  // Find the Monday of the first week of the quarter
   const dayOfWeek = currentWeekStart.getDay();
   currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   
-  // Add all weeks in the quarter
   while (currentWeekStart <= quarterEnd) {
     weeks.push(new Date(currentWeekStart));
     currentWeekStart.setDate(currentWeekStart.getDate() + 7);
@@ -206,14 +203,28 @@ function formatValue(value: number, format: string | null | undefined): string {
 }
 
 function formatCurrency(value: number): string {
-  if (value >= 1000000000) {
-    return `$${(value / 1000000000).toFixed(1)}B`;
-  } else if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(1)}K`;
+  const absValue = Math.abs(value);
+  
+  if (absValue >= 1000000000) {
+    // Billions
+    const formatted = (value / 1000000000).toFixed(1);
+    return `$${formatted}B`;
+  } else if (absValue >= 1000000) {
+    // Millions
+    const formatted = (value / 1000000).toFixed(1);
+    return `$${formatted}M`;
+  } else if (absValue >= 1000) {
+    // Thousands
+    const formatted = (value / 1000).toFixed(1);
+    return `$${formatted}K`;
   } else {
-    return `$${value.toFixed(0)}`;
+    // Less than 1000
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
   }
 }
 
@@ -238,143 +249,68 @@ function formatNumber(value: number): string {
   }
 }
 
-function getProgressStatus(actual: number, goal: number) {
-  const percentage = goal > 0 ? (actual / goal) * 100 : 0;
-  
-  if (percentage >= 95) return { status: 'on-track', color: 'bg-green-500', textColor: 'text-green-700' };
-  if (percentage >= 80) return { status: 'at-risk', color: 'bg-yellow-500', textColor: 'text-yellow-700' };
-  return { status: 'behind', color: 'bg-red-500', textColor: 'text-red-700' };
-}
-
 export default function MetricProgressChart({ metric, timePeriod = "ytd" }: MetricProgressChartProps) {
   const progressData = generateProgressData(metric, timePeriod);
   
-  // Find the last data point with actual value (not null)
-  const currentData = [...progressData].reverse().find(data => data.actual !== null);
-  
-  if (!currentData || currentData.actual === null) return null;
-
-  const progressStatus = getProgressStatus(currentData.actual, currentData.goal);
+  if (progressData.length === 0) return null;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border p-6 space-y-4">
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-            {metric.name || 'Metric'}
-          </h3>
-          {metric.description && (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {metric.description}
-            </p>
-          )}
-        </div>
-        <div className={`px-2 py-1 rounded-full text-xs font-medium ${progressStatus.color} text-white`}>
-          {progressStatus.status}
-        </div>
-      </div>
-
-      {/* Current Value */}
-      <div className="flex items-baseline justify-between">
-        <div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">
-            {formatValue(currentData.actual, metric.format)}
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            of {formatValue(currentData.goal, metric.format)} goal
-          </div>
-        </div>
-        
-        {metric.changePercent && (
-          <div className={`flex items-center text-sm font-medium ${
-            parseFloat(metric.changePercent) >= 0 ? 'text-green-600' : 'text-red-600'
-          }`}>
-            {parseFloat(metric.changePercent) >= 0 ? '↗' : '↘'} {Math.abs(parseFloat(metric.changePercent))}%
-          </div>
-        )}
-      </div>
-
-      {/* Progress Bar */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-          <span>Progress</span>
-          <span>{Math.round((currentData.actual / currentData.goal) * 100)}%</span>
-        </div>
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-          <div 
-            className={`h-2 rounded-full transition-all duration-300 ${progressStatus.color}`}
-            style={{ width: `${Math.min((currentData.actual / currentData.goal) * 100, 100)}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {timePeriod === 'weekly' ? 'Weekly Progress' : 
-           timePeriod === 'monthly' ? 'Monthly Progress' :
-           timePeriod === 'quarterly' ? 'Quarterly Progress' : 'Year-to-Date Progress'}
-        </h4>
-        
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={progressData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis 
-              dataKey="period"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 12, fill: '#6b7280' }}
-            />
-            <YAxis 
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 12, fill: '#6b7280' }}
-              tickFormatter={(value) => formatValue(value, metric.format)}
-            />
-            <Tooltip 
-              contentStyle={{
-                backgroundColor: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-              }}
-              labelFormatter={(period) => `${period}`}
-              formatter={(value: any, name: string) => [
-                formatValue(value, metric.format),
-                name === 'actual' ? 'Actual' : 'Goal'
-              ]}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="goal" 
-              stroke="#9ca3af" 
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={false}
-              name="goal"
-              connectNulls={false}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="actual" 
-              stroke="#3b82f6" 
-              strokeWidth={3}
-              connectNulls={false}
-              dot={(props: any) => {
-                const { cx, cy, payload } = props;
-                if (!payload || payload.actual === null) return <g />;
-                return payload?.isCurrent ? (
-                  <circle cx={cx} cy={cy} r={6} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
-                ) : (
-                  <circle cx={cx} cy={cy} r={3} fill="#3b82f6" />
-                );
-              }}
-              name="actual"
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={120}>
+      <LineChart data={progressData}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis 
+          dataKey="period"
+          axisLine={false}
+          tickLine={false}
+          tick={{ fontSize: 10, fill: '#6b7280' }}
+        />
+        <YAxis 
+          axisLine={false}
+          tickLine={false}
+          tick={{ fontSize: 10, fill: '#6b7280' }}
+          tickFormatter={(value) => formatValue(value, metric.format)}
+        />
+        <Tooltip 
+          contentStyle={{
+            backgroundColor: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}
+          labelFormatter={(period) => `${period}`}
+          formatter={(value: any, name: string) => [
+            formatValue(value?.toString() ? parseFloat(value.toString()) : 0, metric.format),
+            name === 'actual' ? 'Actual' : 'Goal'
+          ]}
+        />
+        <Line 
+          type="monotone" 
+          dataKey="goal" 
+          stroke="#9ca3af" 
+          strokeWidth={2}
+          strokeDasharray="5 5"
+          dot={false}
+          name="goal"
+          connectNulls={false}
+        />
+        <Line 
+          type="monotone" 
+          dataKey="actual" 
+          stroke="#3b82f6" 
+          strokeWidth={2}
+          connectNulls={false}
+          dot={(props: any) => {
+            const { cx, cy, payload } = props;
+            if (!payload || payload.actual === null) return <g />;
+            return payload?.isCurrent ? (
+              <circle cx={cx} cy={cy} r={4} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
+            ) : (
+              <circle cx={cx} cy={cy} r={2} fill="#3b82f6" />
+            );
+          }}
+          name="actual"
+        />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
