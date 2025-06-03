@@ -258,6 +258,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   };
 
   const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number) => {
+    if (!yearlyValue) return 0;
     const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
     
     // Create realistic business scenarios where short-term performance differs from yearly
