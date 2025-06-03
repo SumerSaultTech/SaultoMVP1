@@ -319,287 +319,197 @@ export default function MetricsManagement() {
                 Add Metric
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
               <DialogHeader>
                 <DialogTitle>
                   {editingMetric ? "Edit Metric" : "Add New Metric"}
                 </DialogTitle>
               </DialogHeader>
               
-              <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="details">Metric Details</TabsTrigger>
-                  <TabsTrigger value="sql">SQL Query</TabsTrigger>
-                  <TabsTrigger value="cortex">Cortex Analysis</TabsTrigger>
-                </TabsList>
-                
-                <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-                  <TabsContent value="details" className="space-y-4 flex-1 overflow-y-auto">
+              <div className="space-y-6 max-h-[calc(90vh-180px)] overflow-y-auto">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Metric Name *</label>
+                    <Input
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g., Annual Recurring Revenue"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Description *</label>
+                    <Textarea
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="Describe what this metric measures and how it should be calculated"
+                      rows={3}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Metric Name *</label>
-                      <Input
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="e.g., Annual Recurring Revenue"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Description</label>
-                      <Textarea
-                        value={formData.description}
-                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                        placeholder="Brief description of this metric"
-                        rows={2}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Category</label>
-                        <Select 
-                          value={formData.category} 
-                          onValueChange={(value) => setFormData({ ...formData, category: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {METRIC_CATEGORIES.map((category) => (
-                              <SelectItem key={category.value} value={category.value}>
-                                {category.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Format</label>
-                        <Select 
-                          value={formData.format} 
-                          onValueChange={(value) => setFormData({ ...formData, format: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {METRIC_FORMATS.map((format) => (
-                              <SelectItem key={format.value} value={format.value}>
-                                {format.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Yearly Goal *</label>
-                        <div className="flex gap-2">
-                          <Input
-                            value={formData.yearlyGoal}
-                            onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
-                            placeholder="e.g., $1,000,000"
-                            required
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={calculateWithCortex}
-                            disabled={isCortexAnalyzing || !formData.name || !formData.sqlQuery}
-                            className="whitespace-nowrap"
-                          >
-                            <Calculator className="w-4 h-4 mr-1" />
-                            {isCortexAnalyzing ? "Analyzing..." : "Auto-Calculate"}
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Priority</label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="12"
-                          value={formData.priority}
-                          onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Goal Direction</label>
+                      <label className="text-sm font-medium">Category</label>
                       <Select 
-                        value={formData.isIncreasing ? "increasing" : "decreasing"} 
-                        onValueChange={(value) => setFormData({ ...formData, isIncreasing: value === "increasing" })}
+                        value={formData.category} 
+                        onValueChange={(value) => setFormData({ ...formData, category: value })}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="increasing">Higher is Better</SelectItem>
-                          <SelectItem value="decreasing">Lower is Better</SelectItem>
+                          {METRIC_CATEGORIES.map((category) => (
+                            <SelectItem key={category.value} value={category.value}>
+                              {category.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
-                  </TabsContent>
 
-                  <TabsContent value="sql" className="space-y-4 flex-1 overflow-y-auto">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">SQL Query for Metric Calculation</Label>
-                      <Textarea
-                        value={formData.sqlQuery || ""}
-                        onChange={(e) => {
-                          setFormData({ ...formData, sqlQuery: e.target.value });
-                          setSqlQuery(e.target.value);
-                        }}
-                        placeholder="SELECT COUNT(*) as total_users FROM users WHERE created_at >= '2024-01-01'"
-                        rows={8}
-                        className="font-mono text-sm"
+                      <label className="text-sm font-medium">Format</label>
+                      <Select 
+                        value={formData.format} 
+                        onValueChange={(value) => setFormData({ ...formData, format: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {METRIC_FORMATS.map((format) => (
+                            <SelectItem key={format.value} value={format.value}>
+                              {format.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Yearly Goal *</label>
+                      <Input
+                        value={formData.yearlyGoal}
+                        onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
+                        placeholder="e.g., $1,000,000"
+                        required
                       />
                     </div>
-                    
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={runSQLQuery}
-                        disabled={isRunningSQL || !sqlQuery}
-                      >
-                        <Play className="w-4 h-4 mr-2" />
-                        {isRunningSQL ? "Running..." : "Test Query"}
-                      </Button>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Priority</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="12"
+                        value={formData.priority}
+                        onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
+                      />
                     </div>
-
-                    {sqlResult && (
-                      <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                        <h4 className="font-medium mb-2">Query Result</h4>
-                        <pre className="text-sm text-gray-600 dark:text-gray-300 overflow-auto">
-                          {JSON.stringify(sqlResult, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="cortex" className="space-y-4 flex-1 overflow-y-auto">
-                    <div className="space-y-6">
-                      <div className="text-center">
-                        <Calculator className="w-12 h-12 mx-auto text-blue-600 mb-4" />
-                        <h3 className="text-lg font-medium mb-2">Calculate Actual Value</h3>
-                        <p className="text-gray-600 dark:text-gray-400 mb-6">
-                          Choose how to calculate the current actual value for this metric to display on your dashboard.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="border rounded-lg p-4 space-y-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                              <Calculator className="w-4 h-4 text-blue-600" />
-                            </div>
-                            <h4 className="font-medium">Cortex Analyst</h4>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Let AI analyze your metric description and automatically generate SQL to calculate the current value.
-                          </p>
-                          <Button
-                            type="button"
-                            onClick={calculateWithCortex}
-                            disabled={isCortexAnalyzing || !formData.name || !formData.description}
-                            className="w-full bg-blue-600 hover:bg-blue-700"
-                          >
-                            <Calculator className="w-4 h-4 mr-2" />
-                            {isCortexAnalyzing ? "Analyzing..." : "Calculate with Cortex Analyst"}
-                          </Button>
-                        </div>
-
-                        <div className="border rounded-lg p-4 space-y-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                              <Code className="w-4 h-4 text-green-600" />
-                            </div>
-                            <h4 className="font-medium">Custom SQL</h4>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Write your own SQL query to calculate the current value. Use the SQL tab to test your query first.
-                          </p>
-                          <Button
-                            type="button"
-                            onClick={runSQLQuery}
-                            disabled={isRunningSQL || !formData.sqlQuery}
-                            variant="outline"
-                            className="w-full border-green-600 text-green-600 hover:bg-green-50"
-                          >
-                            <Play className="w-4 h-4 mr-2" />
-                            {isRunningSQL ? "Running..." : "Calculate with Custom SQL"}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {sqlResult && (
-                        <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                          <h4 className="font-medium mb-3">Calculation Result</h4>
-                          <div className="space-y-2 text-sm">
-                            {sqlResult.currentValue !== undefined && (
-                              <div>
-                                <span className="font-medium">Current Value: </span>
-                                <span className="text-blue-600 font-bold">
-                                  {sqlResult.currentValue.toLocaleString()}
-                                </span>
-                              </div>
-                            )}
-                            {sqlResult.suggestedGoal && (
-                              <div>
-                                <span className="font-medium">Suggested Yearly Goal: </span>
-                                <span className="text-green-600 font-bold">
-                                  {sqlResult.suggestedGoal.toLocaleString()}
-                                </span>
-                              </div>
-                            )}
-                            {sqlResult.reasoning && (
-                              <div>
-                                <span className="font-medium">Analysis: </span>
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {sqlResult.reasoning}
-                                </span>
-                              </div>
-                            )}
-                            {sqlResult.data && (
-                              <div>
-                                <span className="font-medium">Raw Data: </span>
-                                <pre className="text-xs mt-1 bg-white dark:bg-gray-900 p-2 rounded overflow-auto">
-                                  {JSON.stringify(sqlResult.data, null, 2)}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </TabsContent>
-
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      disabled={createMetricMutation.isPending || updateMetricMutation.isPending}
-                    >
-                      <Save className="mr-2 h-4 w-4" />
-                      {editingMetric ? "Update" : "Create"}
-                    </Button>
                   </div>
-                </form>
-              </Tabs>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Goal Direction</label>
+                    <Select 
+                      value={formData.isIncreasing ? "increasing" : "decreasing"} 
+                      onValueChange={(value) => setFormData({ ...formData, isIncreasing: value === "increasing" })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="increasing">Higher is Better</SelectItem>
+                        <SelectItem value="decreasing">Lower is Better</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* SQL Query Section */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">SQL Query (Optional)</label>
+                    <Textarea
+                      value={formData.sqlQuery || ""}
+                      onChange={(e) => {
+                        setFormData({ ...formData, sqlQuery: e.target.value });
+                        setSqlQuery(e.target.value);
+                      }}
+                      placeholder="Enter custom SQL query to calculate current value (leave blank for AI generation)"
+                      rows={4}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+
+                  {/* Calculation Results */}
+                  {sqlResult && (
+                    <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+                      <h4 className="font-medium mb-3 text-blue-900 dark:text-blue-100">Calculation Result</h4>
+                      <div className="space-y-2 text-sm">
+                        {sqlResult.currentValue !== undefined && (
+                          <div>
+                            <span className="font-medium">Current Value: </span>
+                            <span className="text-blue-600 font-bold">
+                              {sqlResult.currentValue.toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                        {sqlResult.suggestedGoal && (
+                          <div>
+                            <span className="font-medium">Suggested Yearly Goal: </span>
+                            <span className="text-green-600 font-bold">
+                              {sqlResult.suggestedGoal.toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                        {sqlResult.reasoning && (
+                          <div>
+                            <span className="font-medium">Analysis: </span>
+                            <span className="text-gray-600 dark:text-gray-300">
+                              {sqlResult.reasoning}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-between space-x-2 pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                
+                <div className="flex space-x-2">
+                  <Button
+                    type="button"
+                    onClick={calculateWithCortex}
+                    disabled={isCortexAnalyzing || !formData.name || !formData.description}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Calculator className="w-4 h-4 mr-2" />
+                    {isCortexAnalyzing ? "Analyzing..." : "Calculate with Cortex Analyst"}
+                  </Button>
+                  
+                  <Button
+                    type="button"
+                    onClick={runSQLQuery}
+                    disabled={isRunningSQL || !formData.sqlQuery}
+                    variant="outline"
+                    className="border-green-600 text-green-600 hover:bg-green-50"
+                  >
+                    <Play className="w-4 h-4 mr-2" />
+                    {isRunningSQL ? "Running..." : "Calculate with Custom SQL"}
+                  </Button>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         }
