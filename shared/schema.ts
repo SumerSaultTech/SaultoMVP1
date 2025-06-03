@@ -21,6 +21,7 @@ export const users = pgTable("users", {
 
 export const dataSources = pgTable("data_sources", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").references(() => companies.id).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(), // 'salesforce', 'hubspot', 'quickbooks'
   status: text("status").notNull().default("disconnected"), // 'connected', 'syncing', 'error', 'disconnected'
@@ -32,6 +33,7 @@ export const dataSources = pgTable("data_sources", {
 
 export const sqlModels = pgTable("sql_models", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").references(() => companies.id).notNull(),
   name: text("name").notNull().unique(),
   layer: text("layer").notNull(), // 'stg', 'int', 'core'
   sqlContent: text("sql_content").notNull(),
@@ -42,6 +44,7 @@ export const sqlModels = pgTable("sql_models", {
 
 export const kpiMetrics = pgTable("kpi_metrics", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").references(() => companies.id).notNull(),
   name: text("name").notNull(),
   description: text("description"),
   value: text("value"),
@@ -127,7 +130,15 @@ export const insertSetupStatusSchema = createInsertSchema(setupStatus).omit({
   lastUpdated: true,
 });
 
+export const insertCompanySchema = createInsertSchema(companies).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type Company = typeof companies.$inferSelect;
+
 export type InsertDataSource = z.infer<typeof insertDataSourceSchema>;
 export type DataSource = typeof dataSources.$inferSelect;
 
