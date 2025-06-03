@@ -184,9 +184,9 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
-  // KPI Metrics
-  async getKpiMetrics(): Promise<KpiMetric[]> {
-    return Array.from(this.kpiMetrics.values());
+  // KPI Metrics (company-scoped)
+  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
+    return Array.from(this.kpiMetrics.values()).filter(metric => metric.companyId === companyId);
   }
 
   async getKpiMetric(id: number): Promise<KpiMetric | undefined> {
