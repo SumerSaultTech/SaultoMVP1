@@ -108,7 +108,7 @@ export default function Sidebar() {
         </div>
 
         {/* Status Indicator */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 ${systemStatus.color} rounded-full animate-pulse`} />
             <span className="text-sm font-medium text-green-800">{systemStatus.text}</span>
@@ -117,6 +117,19 @@ export default function Sidebar() {
             System status
           </p>
         </div>
+
+        {/* Logout Button */}
+        <Button
+          onClick={() => {
+            localStorage.clear();
+            window.location.href = "/login";
+          }}
+          variant="outline"
+          className="w-full flex items-center justify-center space-x-2 text-gray-600 hover:text-gray-800"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign Out</span>
+        </Button>
       </div>
     </div>
   );
