@@ -40,6 +40,46 @@ const companiesArray: any[] = [
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Companies
+  app.get("/api/companies", async (req, res) => {
+    try {
+      res.json(companiesArray.map(company => ({
+        id: company.id,
+        name: company.name,
+        slug: company.slug,
+        snowflakeDatabase: company.databaseName,
+        isActive: company.status === "active"
+      })));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get companies" });
+    }
+  });
+
+  app.post("/api/companies", async (req, res) => {
+    try {
+      const { name, slug, snowflakeDatabase } = req.body;
+      const newCompany = {
+        id: Date.now(),
+        name,
+        slug,
+        databaseName: snowflakeDatabase,
+        createdAt: new Date().toISOString().split('T')[0],
+        userCount: 0,
+        status: "active"
+      };
+      companiesArray.push(newCompany);
+      res.json({
+        id: newCompany.id,
+        name: newCompany.name,
+        slug: newCompany.slug,
+        snowflakeDatabase: newCompany.databaseName,
+        isActive: true
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create company" });
+    }
+  });
+  
   // Setup Status
   app.get("/api/setup-status", async (req, res) => {
     try {
