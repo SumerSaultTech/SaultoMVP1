@@ -133,64 +133,7 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
     }
   });
 
-  const cortexAnalyzeMutation = useMutation({
-    mutationFn: async (metric: MetricSuggestion) => {
-      const response = await fetch("/api/cortex/analyze-metric", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          metricName: metric.name,
-          sqlQuery: metric.sqlQuery || "",
-          description: metric.description,
-          category: metric.category,
-          format: metric.format
-        })
-      });
-      if (!response.ok) throw new Error("Failed to analyze metric with Cortex");
-      return response.json();
-    },
-    onSuccess: (analysis, metric) => {
-      const assistantMessage: ChatMessage = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: `I've analyzed "${metric.name}" using your Snowflake data:\n\n**Current Value:** ${analysis.currentValue.toLocaleString()}\n**Historical Trend:** ${analysis.historicalTrend.toFixed(1)}%\n**Suggested Goal:** ${analysis.suggestedGoal.toLocaleString()}\n**Confidence:** ${(analysis.confidence * 100).toFixed(0)}%\n\n**Analysis:** ${analysis.reasoning}\n\nWould you like me to create this metric with the suggested goal?`,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, assistantMessage]);
-      setIsTyping(false);
-      
-      // Offer to create the metric with Cortex-suggested goal
-      if (onMetricCreate) {
-        const enhancedMetric = {
-          ...metric,
-          yearlyGoal: analysis.suggestedGoal.toString()
-        };
-        
-        toast({
-          title: "Cortex Analysis Complete",
-          description: "Smart goal calculated from your data. Create metric?",
-          action: (
-            <Button
-              size="sm"
-              onClick={() => onMetricCreate(enhancedMetric)}
-            >
-              Create with Smart Goal
-            </Button>
-          )
-        });
-      }
-    },
-    onError: (error) => {
-      console.error("Cortex analysis error:", error);
-      toast({
-        title: "Analysis Error",
-        description: "Failed to analyze with Cortex. Using fallback suggestions.",
-        variant: "destructive"
-      });
-      setIsTyping(false);
-    }
-  });
+
 
   const suggestMetricsMutation = useMutation({
     mutationFn: async (businessType: string) => {
@@ -381,26 +324,11 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex-1 text-xs"
+                              className="w-full text-xs"
                               onClick={() => onMetricCreate?.(suggestion)}
-                              disabled={cortexAnalyzeMutation.isPending}
                             >
                               <Plus className="w-3 h-3 mr-1" />
                               Create Metric
-                            </Button>
-                            
-                            <Button
-                              variant="default"
-                              size="sm"
-                              className="flex-1 text-xs bg-blue-600 hover:bg-blue-700"
-                              onClick={() => {
-                                setIsTyping(true);
-                                cortexAnalyzeMutation.mutate(suggestion);
-                              }}
-                              disabled={cortexAnalyzeMutation.isPending || isTyping}
-                            >
-                              <Calculator className="w-3 h-3 mr-1" />
-                              {cortexAnalyzeMutation.isPending ? "Analyzing..." : "Calculate with Cortex"}
                             </Button>
                           </div>
                         </div>
