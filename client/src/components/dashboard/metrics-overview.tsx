@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RefreshCw, Calendar } from "lucide-react";
 import MetricProgressChart from "./metric-progress-chart";
 import NorthStarMetrics from "./north-star-metrics";
+import MetricsSummary from "./metrics-summary";
 import type { KpiMetric } from "@/../../shared/schema";
 
 interface MetricsOverviewProps {
@@ -239,8 +240,15 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   return (
     <div className="space-y-6">
-      {/* North Star Metrics */}
-      <NorthStarMetrics />
+      {/* North Star Metrics and Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <NorthStarMetrics />
+        </div>
+        <div className="lg:col-span-1">
+          <MetricsSummary metrics={metrics} />
+        </div>
+      </div>
 
       {/* Header */}
       <div className="flex items-center justify-between">
