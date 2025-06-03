@@ -21,6 +21,9 @@ interface MetricFormData {
   name: string;
   description: string;
   yearlyGoal: string;
+  goalType: string;
+  quarterlyGoals: { [key: string]: string };
+  monthlyGoals: { [key: string]: string };
   category: string;
   format: string;
   isIncreasing: boolean;
@@ -54,6 +57,12 @@ export default function MetricsManagement() {
     name: "",
     description: "",
     yearlyGoal: "",
+    goalType: "yearly",
+    quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
+    monthlyGoals: { 
+      Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
+      Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
+    },
     category: "revenue",
     format: "currency",
     isIncreasing: true,
@@ -224,6 +233,12 @@ export default function MetricsManagement() {
       name: "",
       description: "",
       yearlyGoal: "",
+      goalType: "yearly",
+      quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
+      monthlyGoals: { 
+        Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
+        Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
+      },
       category: "revenue",
       format: "currency",
       isIncreasing: true,
