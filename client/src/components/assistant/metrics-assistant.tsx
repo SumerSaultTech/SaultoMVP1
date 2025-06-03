@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Bot, Send, Sparkles, TrendingUp, Calculator, Lightbulb } from "lucide-react";
+import { Bot, Send, Sparkles, TrendingUp, Calculator, Lightbulb, Plus } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,6 +15,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  suggestions?: MetricSuggestion[];
 }
 
 interface MetricSuggestion {
@@ -146,10 +147,9 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
       const assistantMessage: ChatMessage = {
         id: Date.now().toString(),
         role: "assistant",
-        content: `Here are some key metrics I recommend for your ${suggestions.length > 0 ? 'business' : 'SaaS business'}:\n\n${suggestions.map((s, i) => 
-          `**${i + 1}. ${s.name}**\n${s.description}\n*Category: ${s.category} | Format: ${s.format}*\n`
-        ).join('\n')}Click on any metric below to learn more or create it!`,
-        timestamp: new Date()
+        content: `Here are some key metrics I recommend for your business:`,
+        timestamp: new Date(),
+        suggestions: suggestions
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -295,6 +295,40 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                   }`}
                 >
                   <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                  
+                  {/* Render metric suggestions as clickable buttons */}
+                  {message.suggestions && message.suggestions.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {message.suggestions.map((suggestion, index) => (
+                        <Button
+                          key={index}
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-start text-left h-auto p-3"
+                          onClick={() => onMetricCreate?.(suggestion)}
+                        >
+                          <div className="flex items-start gap-2 w-full">
+                            <Plus className="w-4 h-4 mt-0.5 text-green-600" />
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">{suggestion.name}</div>
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                {suggestion.description}
+                              </div>
+                              <div className="flex gap-2 mt-2">
+                                <Badge variant="secondary" className="text-xs">
+                                  {suggestion.category}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
+                                  {suggestion.format}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  
                   <div className="text-xs opacity-70 mt-1">
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
