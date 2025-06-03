@@ -71,48 +71,80 @@ function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "
 }
 
 function generateWeeklyData(currentValue: number, yearlyGoal: number) {
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const weeklyGoal = yearlyGoal / 52;
-  const dailyGoal = weeklyGoal / 5;
+  const dailyGoal = weeklyGoal / 7;
+  const currentDay = new Date().getDay();
+  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
   
   return weekdays.map((day, index) => {
-    const isToday = index === 4; // Friday is current for demo
+    const cumulativeGoal = dailyGoal * (index + 1);
+    const cumulativeActual = index <= currentDayIndex ? (currentValue / 7) * (index + 1) : null;
+    
     return {
       period: day,
-      goal: Math.round(dailyGoal * (index + 1)),
-      actual: index <= 4 ? Math.round((currentValue / 5) * (index + 1)) : null,
-      isCurrent: isToday
+      goal: Math.round(cumulativeGoal),
+      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
+      isCurrent: index === currentDayIndex
     };
   });
 }
 
 function generateMonthlyData(currentValue: number, yearlyGoal: number) {
-  const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-  const monthlyGoal = yearlyGoal / 12;
-  const weeklyGoal = monthlyGoal / 4;
+  const today = new Date();
+  const currentDay = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   
-  return weeks.map((week, index) => {
-    const isCurrentWeek = index === 3; // Week 4 is current for demo
+  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const monthlyGoal = yearlyGoal / 12;
+  const dailyGoal = monthlyGoal / daysInMonth;
+  
+  return allDays.map((day, index) => {
+    const cumulativeGoal = dailyGoal * day;
+    const cumulativeActual = day <= currentDay ? (currentValue / daysInMonth) * day : null;
+    
     return {
-      period: week,
-      goal: Math.round(weeklyGoal * (index + 1)),
-      actual: index <= 3 ? Math.round((currentValue / 4) * (index + 1)) : null,
-      isCurrent: isCurrentWeek
+      period: day.toString(),
+      goal: Math.round(cumulativeGoal),
+      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
+      isCurrent: day === currentDay
     };
   });
 }
 
 function generateQuarterlyData(currentValue: number, yearlyGoal: number) {
-  const months = ['Jan-Mar', 'Apr-Jun', 'Jul-Sep', 'Oct-Dec'];
-  const quarterlyGoal = yearlyGoal / 4;
+  const today = new Date();
+  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
+  const quarterStartMonth = (currentQuarter - 1) * 3;
+  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
+  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
   
-  return months.map((month, index) => {
-    const isCurrentQuarter = index === 2; // Q3 is current for demo
+  // Generate all weeks in the quarter
+  const weeks: Date[] = [];
+  const currentWeekStart = new Date(quarterStart);
+  
+  // Find the Monday of the first week of the quarter
+  const dayOfWeek = currentWeekStart.getDay();
+  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  
+  while (currentWeekStart <= quarterEnd) {
+    weeks.push(new Date(currentWeekStart));
+    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  }
+  
+  const weeklyGoal = yearlyGoal / 52;
+  
+  return weeks.map((weekStart, index) => {
+    const cumulativeGoal = weeklyGoal * (index + 1);
+    const actualValue = weekStart <= today ? (currentValue / weeks.length) * (index + 1) : null;
+    
+    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
+    
     return {
-      period: month,
-      goal: Math.round(quarterlyGoal * (index + 1)),
-      actual: index <= 2 ? Math.round((currentValue / 3) * (index + 1)) : null,
-      isCurrent: isCurrentQuarter
+      period: weekLabel,
+      goal: Math.round(cumulativeGoal),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: index === weeks.length - 1
     };
   });
 }
@@ -122,16 +154,15 @@ function generateYTDData(currentValue: number, yearlyGoal: number) {
   const monthlyGoal = yearlyGoal / 12;
   const currentMonth = new Date().getMonth();
   
-  // Generate monthly progression showing individual month performance
   return months.map((month, index) => {
-    const isCurrentMonth = index === currentMonth;
-    const monthlyActual = index <= currentMonth ? monthlyGoal * (0.8 + Math.random() * 0.4) : null; // Varied monthly performance
+    const cumulativeGoal = monthlyGoal * (index + 1);
+    const cumulativeActual = index <= currentMonth ? (currentValue / (currentMonth + 1)) * (index + 1) : null;
     
     return {
       period: month,
-      goal: Math.round(monthlyGoal),
-      actual: monthlyActual ? Math.round(monthlyActual) : null,
-      isCurrent: isCurrentMonth
+      goal: Math.round(cumulativeGoal),
+      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
+      isCurrent: index === currentMonth
     };
   });
 }
