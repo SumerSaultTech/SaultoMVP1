@@ -13,290 +13,175 @@ interface ChartDataPoint {
   isCurrent: boolean;
 }
 
+// Adaptive calculations to match the main component
+function getAdaptiveActual(yearlyValue: string, timePeriod: string, metricId: number) {
+  const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+  
+  const performanceMultipliers: Record<string, Record<number, number>> = {
+    weekly: {
+      1: 1.3, 2: 0.8, 3: 1.1, 4: 0.9, 5: 1.4, 6: 1.2, 7: 1.1, 8: 1.5, 9: 0.7, 10: 0.8, 11: 0.9, 12: 1.3
+    },
+    monthly: {
+      1: 1.1, 2: 0.95, 3: 1.05, 4: 1.0, 5: 1.2, 6: 1.1, 7: 0.9, 8: 1.2, 9: 0.85, 10: 0.9, 11: 1.05, 12: 1.1
+    },
+    quarterly: {
+      1: 1.05, 2: 0.98, 3: 1.08, 4: 0.95, 5: 1.1, 6: 1.08, 7: 0.95, 8: 1.15, 9: 0.9, 10: 0.85, 11: 1.02, 12: 1.05
+    }
+  };
+  
+  const multiplier = performanceMultipliers[timePeriod]?.[metricId] || 1.0;
+  
+  switch (timePeriod) {
+    case "weekly":
+      return (yearly / 52) * multiplier;
+    case "monthly":
+      return (yearly / 12) * multiplier;
+    case "quarterly":
+      return (yearly / 4) * multiplier;
+    case "ytd":
+    default:
+      return yearly;
+  }
+}
+
 // Generate progress data based on metric and time period
 function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "ytd") {
-  // Parse current value and yearly goal
   const currentValueStr = metric.value || "0";
   const yearlyGoalStr = metric.yearlyGoal || "0";
+  const metricId = (metric as any).id || 1;
   
-  // Extract numeric values (remove currency symbols, commas, percentages, etc.)
-  const currentValue = parseFloat(currentValueStr.replace(/[$,%\s]/g, '')) || 0;
   const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
+  const currentValue = getAdaptiveActual(currentValueStr, timePeriod, metricId);
   
-  // Ensure we have valid numbers
   if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
     return [];
   }
 
-  // Generate different data based on time period
   switch (timePeriod) {
     case "weekly":
-      return generateWeeklyData(metric, currentValue, yearlyGoal);
+      return generateWeeklyData(currentValue, yearlyGoal);
     case "monthly":
-      return generateMonthlyData(metric, currentValue, yearlyGoal);
+      return generateMonthlyData(currentValue, yearlyGoal);
     case "quarterly":
-      return generateQuarterlyData(metric, currentValue, yearlyGoal);
+      return generateQuarterlyData(currentValue, yearlyGoal);
     case "ytd":
     default:
-      return generateYTDData(metric, currentValue, yearlyGoal);
+      return generateYTDData(currentValue, yearlyGoal);
   }
 }
 
-function generateWeeklyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  
-  // Show all weekdays for goal line, but actual only up to current day
-  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1; // Convert to 0-6 where Mon=0
-  
-  const dailyGoal = yearlyGoal / 365; // Daily goal based on yearly target
-  const performancePattern = getPerformancePattern(metric.name || '');
+function generateWeeklyData(currentValue: number, yearlyGoal: number) {
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const weeklyGoal = yearlyGoal / 52;
+  const dailyGoal = weeklyGoal / 5;
   
   return weekdays.map((day, index) => {
-    const dayProgress = dailyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index % 7] || 1.0;
-    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
-    
+    const isToday = index === 4; // Friday is current for demo
     return {
       period: day,
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: index === currentDayIndex
+      goal: Math.round(dailyGoal * (index + 1)),
+      actual: index <= 4 ? Math.round((currentValue / 5) * (index + 1)) : null,
+      isCurrent: isToday
     };
   });
 }
 
-function generateMonthlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentDay = today.getDate(); // Current day of month (1-31)
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+function generateMonthlyData(currentValue: number, yearlyGoal: number) {
+  const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+  const monthlyGoal = yearlyGoal / 12;
+  const weeklyGoal = monthlyGoal / 4;
   
-  // Show all days in month for goal line, but actual only up to today
-  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  
-  const dailyGoal = yearlyGoal / 365; // Daily goal based on yearly target
-  const performancePattern = getPerformancePattern(metric.name || '');
-  
-  return allDays.map((day, index) => {
-    const dayProgress = dailyGoal * day;
-    const performanceMultiplier = performancePattern[index % 30] || 1.0;
-    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
-    
+  return weeks.map((week, index) => {
+    const isCurrentWeek = index === 3; // Week 4 is current for demo
     return {
-      period: day.toString(),
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: day === currentDay
+      period: week,
+      goal: Math.round(weeklyGoal * (index + 1)),
+      actual: index <= 3 ? Math.round((currentValue / 4) * (index + 1)) : null,
+      isCurrent: isCurrentWeek
     };
   });
 }
 
-function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-  const quarterStartMonth = (currentQuarter - 1) * 3;
-  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
-  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
-  
-  // Generate all weeks in the quarter
-  const weeks: Date[] = [];
-  const currentWeekStart = new Date(quarterStart);
-  
-  // Find the Monday of the first week of the quarter
-  const dayOfWeek = currentWeekStart.getDay();
-  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  
-  while (currentWeekStart <= quarterEnd) {
-    weeks.push(new Date(currentWeekStart));
-    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  }
-  
-  const weeklyGoal = yearlyGoal / 52; // Weekly goal based on yearly target
-  const performancePattern = getPerformancePattern(metric.name || '');
-  
-  return weeks.map((weekStart, index) => {
-    const weekProgress = weeklyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index % 12] || 1.0;
-    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
-    
-    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-    
-    return {
-      period: weekLabel,
-      goal: Math.round(weekProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
-    };
-  });
-}
-
-function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentMonth = today.getMonth(); // 0-11
-  const currentYear = today.getFullYear();
-  
-  // Generate all months in the year
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-  ];
-  
-  const monthlyGoal = yearlyGoal / 12; // Monthly goal based on yearly target
-  const performancePattern = getPerformancePattern(metric.name || '');
+function generateQuarterlyData(currentValue: number, yearlyGoal: number) {
+  const months = ['Jan-Mar', 'Apr-Jun', 'Jul-Sep', 'Oct-Dec'];
+  const quarterlyGoal = yearlyGoal / 4;
   
   return months.map((month, index) => {
-    const monthProgress = monthlyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index % 12] || 1.0;
-    const actualValue = index <= currentMonth ? monthProgress * performanceMultiplier : null;
-    
+    const isCurrentQuarter = index === 2; // Q3 is current for demo
     return {
       period: month,
-      goal: Math.round(monthProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: index === currentMonth
+      goal: Math.round(quarterlyGoal * (index + 1)),
+      actual: index <= 2 ? Math.round((currentValue / 3) * (index + 1)) : null,
+      isCurrent: isCurrentQuarter
     };
   });
 }
 
-function getPerformancePattern(metricName: string) {
-  const name = metricName.toLowerCase();
-    
-  if (name.includes('revenue') || name.includes('arr') || name.includes('mrr')) {
-    // Revenue typically shows steady growth with some seasonal variation
-    return [0.85, 0.88, 0.92, 0.95, 0.98, 1.02, 1.05, 1.08, 1.12, 1.15, 1.18, 1.20];
-  } else if (name.includes('churn') || name.includes('cost') || name.includes('cac')) {
-    // Metrics where lower is better - show improvement over time
-    return [1.15, 1.12, 1.08, 1.05, 1.02, 0.98, 0.95, 0.92, 0.90, 0.88, 0.85, 0.82];
-  } else if (name.includes('conversion') || name.includes('retention') || name.includes('satisfaction')) {
-    // Conversion metrics show gradual improvement with some fluctuation
-    return [0.82, 0.85, 0.89, 0.92, 0.95, 0.98, 1.01, 1.04, 1.06, 1.08, 1.10, 1.12];
-  } else if (name.includes('users') || name.includes('adoption')) {
-    // User metrics show strong growth in early months, then steady growth
-    return [0.75, 0.82, 0.90, 0.96, 1.02, 1.08, 1.12, 1.16, 1.19, 1.22, 1.24, 1.26];
-  } else {
-    // Default pattern for other metrics
-    return [0.88, 0.91, 0.94, 0.97, 1.00, 1.03, 1.06, 1.09, 1.11, 1.13, 1.15, 1.17];
-  }
-}
-
-function formatValue(value: number, format: string | null | undefined): string {
-  if (format === 'currency') {
-    return formatCurrency(value);
-  } else if (format === 'percentage') {
-    return `${value.toFixed(1)}%`;
-  } else {
-    return formatNumber(value);
-  }
-}
-
-function formatCurrency(value: number): string {
-  const absValue = Math.abs(value);
+function generateYTDData(currentValue: number, yearlyGoal: number) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthlyGoal = yearlyGoal / 12;
+  const currentMonth = new Date().getMonth();
   
-  if (absValue >= 1000000000) {
-    // Billions
-    const formatted = (value / 1000000000).toFixed(1);
-    return `$${formatted}B`;
-  } else if (absValue >= 1000000) {
-    // Millions
-    const formatted = (value / 1000000).toFixed(1);
-    return `$${formatted}M`;
-  } else if (absValue >= 1000) {
-    // Thousands
-    const formatted = (value / 1000).toFixed(1);
-    return `$${formatted}K`;
-  } else {
-    // Less than 1000
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  }
-}
-
-function formatNumber(value: number): string {
-  const absValue = Math.abs(value);
-  
-  if (absValue >= 1000000000) {
-    // Billions
-    const formatted = (value / 1000000000).toFixed(1);
-    return `${formatted}B`;
-  } else if (absValue >= 1000000) {
-    // Millions
-    const formatted = (value / 1000000).toFixed(1);
-    return `${formatted}M`;
-  } else if (absValue >= 1000) {
-    // Thousands
-    const formatted = (value / 1000).toFixed(1);
-    return `${formatted}K`;
-  } else {
-    // Less than 1000
-    return new Intl.NumberFormat('en-US').format(value);
-  }
+  return months.map((month, index) => {
+    const isCurrentMonth = index === currentMonth;
+    return {
+      period: month,
+      goal: Math.round(monthlyGoal * (index + 1)),
+      actual: index <= currentMonth ? Math.round((currentValue / (currentMonth + 1)) * (index + 1)) : null,
+      isCurrent: isCurrentMonth
+    };
+  });
 }
 
 export default function MetricProgressChart({ metric, timePeriod = "ytd" }: MetricProgressChartProps) {
-  const progressData = generateProgressData(metric, timePeriod);
+  const data = generateProgressData(metric, timePeriod);
   
-  if (progressData.length === 0) return null;
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-32 text-gray-500 dark:text-gray-400">
+        <span className="text-sm">No data available</span>
+      </div>
+    );
+  }
 
   return (
-    <ResponsiveContainer width="100%" height={120}>
-      <LineChart data={progressData}>
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis 
-          dataKey="period"
-          axisLine={false}
-          tickLine={false}
-          tick={{ fontSize: 10, fill: '#6b7280' }}
+          dataKey="period" 
+          tick={{ fontSize: 10 }}
+          stroke="#6b7280"
         />
         <YAxis 
-          axisLine={false}
-          tickLine={false}
-          tick={{ fontSize: 10, fill: '#6b7280' }}
-          tickFormatter={(value) => formatValue(value, metric.format)}
+          tick={{ fontSize: 10 }}
+          stroke="#6b7280"
         />
         <Tooltip 
           contentStyle={{
-            backgroundColor: 'white',
+            backgroundColor: '#f9fafb',
             border: '1px solid #e5e7eb',
-            borderRadius: '8px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+            borderRadius: '6px',
+            fontSize: '12px'
           }}
-          labelFormatter={(period) => `${period}`}
-          formatter={(value: any, name: string) => [
-            formatValue(value?.toString() ? parseFloat(value.toString()) : 0, metric.format),
-            name === 'actual' ? 'Actual' : 'Goal'
-          ]}
         />
         <Line 
           type="monotone" 
           dataKey="goal" 
           stroke="#9ca3af" 
+          strokeDasharray="5 5" 
           strokeWidth={2}
-          strokeDasharray="5 5"
           dot={false}
-          name="goal"
-          connectNulls={false}
+          name="Goal"
         />
         <Line 
           type="monotone" 
           dataKey="actual" 
           stroke="#3b82f6" 
-          strokeWidth={2}
+          strokeWidth={3}
+          dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+          name="Actual"
           connectNulls={false}
-          dot={(props: any) => {
-            const { cx, cy, payload } = props;
-            if (!payload || payload.actual === null) return <g />;
-            return payload?.isCurrent ? (
-              <circle cx={cx} cy={cy} r={4} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
-            ) : (
-              <circle cx={cx} cy={cy} r={2} fill="#3b82f6" />
-            );
-          }}
-          name="actual"
         />
       </LineChart>
     </ResponsiveContainer>
