@@ -15,75 +15,80 @@ interface MetricCalculationResult {
   error?: string;
 }
 
-// SQL query templates for common business metrics
+// SQL query templates for MIAS_DATA_DB structure
 const SQL_TEMPLATES = {
-  // Revenue metrics from QuickBooks data
+  // Revenue metrics - using actual table names from MIAS_DATA_DB
   'annual-revenue': `
-    SELECT SUM(amount) as value 
-    FROM quickbooks_revenue 
-    WHERE YEAR(date) = YEAR(CURRENT_DATE())
+    SELECT SUM(AMOUNT) as value 
+    FROM QUICKBOOKS_ITEMS 
+    WHERE YEAR(TXNDATE) = YEAR(CURRENT_DATE())
+    AND TYPE = 'Income'
   `,
   
   'monthly-revenue': `
-    SELECT SUM(amount) as value 
-    FROM quickbooks_revenue 
-    WHERE YEAR(date) = YEAR(CURRENT_DATE()) 
-    AND MONTH(date) = MONTH(CURRENT_DATE())
+    SELECT SUM(AMOUNT) as value 
+    FROM QUICKBOOKS_ITEMS 
+    WHERE YEAR(TXNDATE) = YEAR(CURRENT_DATE()) 
+    AND MONTH(TXNDATE) = MONTH(CURRENT_DATE())
+    AND TYPE = 'Income'
   `,
   
   'quarterly-revenue': `
-    SELECT SUM(amount) as value 
-    FROM quickbooks_revenue 
-    WHERE YEAR(date) = YEAR(CURRENT_DATE()) 
-    AND QUARTER(date) = QUARTER(CURRENT_DATE())
+    SELECT SUM(AMOUNT) as value 
+    FROM QUICKBOOKS_ITEMS 
+    WHERE YEAR(TXNDATE) = YEAR(CURRENT_DATE()) 
+    AND QUARTER(TXNDATE) = QUARTER(CURRENT_DATE())
+    AND TYPE = 'Income'
   `,
 
   // Expense and profit metrics
   'annual-expenses': `
-    SELECT SUM(amount) as value 
-    FROM quickbooks_expenses 
-    WHERE YEAR(date) = YEAR(CURRENT_DATE())
+    SELECT SUM(ABS(AMOUNT)) as value 
+    FROM QUICKBOOKS_ITEMS 
+    WHERE YEAR(TXNDATE) = YEAR(CURRENT_DATE())
+    AND TYPE = 'Expense'
   `,
   
   'annual-profit': `
     SELECT 
-      (SELECT SUM(amount) FROM quickbooks_revenue WHERE YEAR(date) = YEAR(CURRENT_DATE())) -
-      (SELECT SUM(amount) FROM quickbooks_expenses WHERE YEAR(date) = YEAR(CURRENT_DATE())) as value
+      COALESCE((SELECT SUM(AMOUNT) FROM QUICKBOOKS_ITEMS WHERE YEAR(TXNDATE) = YEAR(CURRENT_DATE()) AND TYPE = 'Income'), 0) -
+      COALESCE((SELECT SUM(ABS(AMOUNT)) FROM QUICKBOOKS_ITEMS WHERE YEAR(TXNDATE) = YEAR(CURRENT_DATE()) AND TYPE = 'Expense'), 0) as value
   `,
 
   // HubSpot deal metrics
   'conversion-rate': `
     SELECT 
-      (COUNT(CASE WHEN deal_stage = 'closed-won' THEN 1 END) * 100.0 / COUNT(*)) as value
-    FROM hubspot_deals 
-    WHERE YEAR(created_date) = YEAR(CURRENT_DATE())
+      (COUNT(CASE WHEN DEALSTAGE = 'closedwon' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0)) as value
+    FROM HUBSPOT_DEALS 
+    WHERE YEAR(CREATEDATE) = YEAR(CURRENT_DATE())
   `,
   
   'deals-closed': `
     SELECT COUNT(*) as value 
-    FROM hubspot_deals 
-    WHERE deal_stage = 'closed-won' 
-    AND YEAR(closed_date) = YEAR(CURRENT_DATE())
+    FROM HUBSPOT_DEALS 
+    WHERE DEALSTAGE = 'closedwon' 
+    AND YEAR(CLOSEDATE) = YEAR(CURRENT_DATE())
   `,
   
   'average-deal-size': `
-    SELECT AVG(amount) as value 
-    FROM hubspot_deals 
-    WHERE deal_stage = 'closed-won' 
-    AND YEAR(closed_date) = YEAR(CURRENT_DATE())
+    SELECT AVG(AMOUNT) as value 
+    FROM HUBSPOT_DEALS 
+    WHERE DEALSTAGE = 'closedwon' 
+    AND YEAR(CLOSEDATE) = YEAR(CURRENT_DATE())
+    AND AMOUNT IS NOT NULL
   `,
 
   // Call and activity metrics
   'total-calls': `
     SELECT COUNT(*) as value 
-    FROM hubspot_calls 
-    WHERE YEAR(created_date) = YEAR(CURRENT_DATE())
+    FROM HUBSPOT_CALLS 
+    WHERE YEAR(TIMESTAMP) = YEAR(CURRENT_DATE())
   `,
   
   'calls-per-deal': `
     SELECT 
-      (SELECT COUNT(*) FROM hubspot_calls WHERE YEAR(created_date) = YEAR(CURRENT_DATE())) /
-      NULLIF((SELECT COUNT(*) FROM hubspot_deals WHERE YEAR(created_date) = YEAR(CURRENT_DATE())), 0) as value
+      (SELECT COUNT(*) FROM HUBSPOT_CALLS WHERE YEAR(TIMESTAMP) = YEAR(CURRENT_DATE())) /
+      NULLIF((SELECT COUNT(*) FROM HUBSPOT_DEALS WHERE YEAR(CREATEDATE) = YEAR(CURRENT_DATE())), 0) as value
   `
 };
 
@@ -94,23 +99,55 @@ export class SnowflakeCalculatorService {
   // Execute SQL query against Snowflake
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
-      // This would connect to your actual Snowflake instance
-      // For now, simulating the connection
       console.log("Executing Snowflake query:", sql);
       
-      // TODO: Replace with actual Snowflake connection
-      // const connection = snowflake.createConnection({
-      //   account: process.env.SNOWFLAKE_ACCOUNT,
-      //   username: process.env.SNOWFLAKE_USERNAME,
-      //   password: process.env.SNOWFLAKE_PASSWORD,
-      //   database: 'MIAS_DATA_DB'
-      // });
+      const snowflake = require('snowflake-sdk');
       
-      // Simulated response for demo
-      return {
-        success: false,
-        error: "Snowflake connection not configured. Please provide Snowflake credentials."
-      };
+      return new Promise((resolve) => {
+        const connection = snowflake.createConnection({
+          account: process.env.SNOWFLAKE_ACCOUNT,
+          username: process.env.SNOWFLAKE_USERNAME,
+          password: process.env.SNOWFLAKE_PASSWORD,
+          warehouse: process.env.SNOWFLAKE_WAREHOUSE,
+          database: 'MIAS_DATA_DB',
+          schema: process.env.SNOWFLAKE_SCHEMA || 'PUBLIC'
+        });
+
+        connection.connect((err: any, conn: any) => {
+          if (err) {
+            console.error('Snowflake connection error:', err);
+            resolve({
+              success: false,
+              error: `Failed to connect to Snowflake: ${err.message}`
+            });
+            return;
+          }
+
+          console.log('Successfully connected to Snowflake');
+          
+          connection.execute({
+            sqlText: sql,
+            complete: (err: any, stmt: any, rows: any) => {
+              connection.destroy();
+              
+              if (err) {
+                console.error('Snowflake query execution error:', err);
+                resolve({
+                  success: false,
+                  error: `Query execution failed: ${err.message}`
+                });
+                return;
+              }
+
+              console.log('Query executed successfully, rows:', rows?.length || 0);
+              resolve({
+                success: true,
+                data: rows || []
+              });
+            }
+          });
+        });
+      });
       
     } catch (error) {
       console.error("Snowflake query error:", error);
@@ -211,7 +248,7 @@ export class SnowflakeCalculatorService {
 
       // Extract value from result
       const calculatedValue = result.data?.[0]?.value || 0;
-      const formattedValue = this.formatValue(calculatedValue, metric.format);
+      const formattedValue = this.formatValue(calculatedValue, metric.format || 'number');
 
       // Update metric with calculated value
       await storage.updateKpiMetric(metricId, {
@@ -259,6 +296,11 @@ export class SnowflakeCalculatorService {
       default:
         return value.toString();
     }
+  }
+
+  // Test connection method for debugging
+  async testConnection(testQuery: string = "SELECT 1 as test_value"): Promise<SnowflakeQueryResult> {
+    return this.executeQuery(testQuery);
   }
 
   // Calculate all metrics for a company
