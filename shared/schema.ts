@@ -1,9 +1,9 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, numeric, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const companies = pgTable("companies", {
-  id: serial("id").primaryKey(),
+  id: bigint("id", { mode: "number" }).primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").unique().notNull(), // Used for database naming: company_slug_db
   snowflakeDatabase: text("snowflake_database").notNull(),
@@ -44,7 +44,7 @@ export const sqlModels = pgTable("sql_models", {
 
 export const kpiMetrics = pgTable("kpi_metrics", {
   id: serial("id").primaryKey(),
-  companyId: integer("company_id").references(() => companies.id).notNull(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   name: text("name").notNull(),
   description: text("description"),
   value: text("value"),
@@ -114,6 +114,8 @@ export const insertKpiMetricSchema = createInsertSchema(kpiMetrics).omit({
   lastCalculatedAt: true,
 }).partial({
   companyId: true,
+}).extend({
+  companyId: z.number().optional(),
 });
 
 export const insertMetricHistorySchema = createInsertSchema(metricHistory).omit({
