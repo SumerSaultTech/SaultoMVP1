@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Calculator, Play, Code } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
@@ -23,6 +25,7 @@ interface MetricFormData {
   format: string;
   isIncreasing: boolean;
   priority: number;
+  sqlQuery?: string;
 }
 
 const METRIC_CATEGORIES = [
@@ -43,6 +46,10 @@ export default function MetricsManagement() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingMetric, setEditingMetric] = useState<KpiMetric | null>(null);
+  const [sqlQuery, setSqlQuery] = useState("");
+  const [sqlResult, setSqlResult] = useState<any>(null);
+  const [isRunningSQL, setIsRunningSQL] = useState(false);
+  const [isCortexAnalyzing, setIsCortexAnalyzing] = useState(false);
   const [formData, setFormData] = useState<MetricFormData>({
     name: "",
     description: "",
@@ -117,6 +124,93 @@ export default function MetricsManagement() {
     },
   });
 
+  const runSQLQuery = async () => {
+    if (!sqlQuery.trim()) {
+      toast({
+        title: "Empty Query",
+        description: "Please enter a SQL query to execute.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsRunningSQL(true);
+    try {
+      const response = await fetch("/api/snowflake/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql: sqlQuery }),
+      });
+      
+      if (!response.ok) throw new Error("Failed to execute query");
+      
+      const result = await response.json();
+      setSqlResult(result);
+      
+      toast({
+        title: "Query Executed",
+        description: `Query completed successfully. ${result.data?.length || 0} rows returned.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Query Error",
+        description: "Failed to execute SQL query. Check your syntax and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRunningSQL(false);
+    }
+  };
+
+  const calculateWithCortex = async () => {
+    if (!formData.name || !formData.sqlQuery) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide metric name and SQL query for Cortex analysis.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCortexAnalyzing(true);
+    try {
+      const response = await fetch("/api/cortex/analyze-metric", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metricName: formData.name,
+          sqlQuery: formData.sqlQuery,
+          description: formData.description,
+          category: formData.category,
+          format: formData.format,
+        }),
+      });
+      
+      if (!response.ok) throw new Error("Failed to analyze with Cortex");
+      
+      const analysis = await response.json();
+      
+      // Update the yearly goal with Cortex suggestion
+      setFormData(prev => ({
+        ...prev,
+        yearlyGoal: analysis.suggestedGoal.toString()
+      }));
+      
+      toast({
+        title: "Cortex Analysis Complete",
+        description: `Suggested goal: ${analysis.suggestedGoal.toLocaleString()} (${(analysis.confidence * 100).toFixed(0)}% confidence)`,
+      });
+    } catch (error) {
+      toast({
+        title: "Analysis Error",
+        description: "Failed to analyze with Cortex. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCortexAnalyzing(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -126,8 +220,11 @@ export default function MetricsManagement() {
       format: "currency",
       isIncreasing: true,
       priority: 1,
+      sqlQuery: "",
     });
     setEditingMetric(null);
+    setSqlQuery("");
+    setSqlResult(null);
   };
 
   const handleEdit = (metric: KpiMetric) => {
@@ -214,129 +311,209 @@ export default function MetricsManagement() {
                 Add Metric
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
               <DialogHeader>
                 <DialogTitle>
                   {editingMetric ? "Edit Metric" : "Add New Metric"}
                 </DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Metric Name *</label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Annual Recurring Revenue"
-                    required
-                  />
-                </div>
+              
+              <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="details">Metric Details</TabsTrigger>
+                  <TabsTrigger value="sql">SQL Query</TabsTrigger>
+                  <TabsTrigger value="cortex">Cortex Analysis</TabsTrigger>
+                </TabsList>
+                
+                <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
+                  <TabsContent value="details" className="space-y-4 flex-1 overflow-y-auto">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Metric Name *</label>
+                      <Input
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        placeholder="e.g., Annual Recurring Revenue"
+                        required
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Description</label>
-                  <Textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Brief description of this metric"
-                    rows={2}
-                  />
-                </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Description</label>
+                      <Textarea
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        placeholder="Brief description of this metric"
+                        rows={2}
+                      />
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Category</label>
-                    <Select 
-                      value={formData.category} 
-                      onValueChange={(value) => setFormData({ ...formData, category: value })}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Category</label>
+                        <Select 
+                          value={formData.category} 
+                          onValueChange={(value) => setFormData({ ...formData, category: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {METRIC_CATEGORIES.map((category) => (
+                              <SelectItem key={category.value} value={category.value}>
+                                {category.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Format</label>
+                        <Select 
+                          value={formData.format} 
+                          onValueChange={(value) => setFormData({ ...formData, format: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {METRIC_FORMATS.map((format) => (
+                              <SelectItem key={format.value} value={format.value}>
+                                {format.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Yearly Goal *</label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={formData.yearlyGoal}
+                            onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
+                            placeholder="e.g., $1,000,000"
+                            required
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={calculateWithCortex}
+                            disabled={isCortexAnalyzing || !formData.name || !formData.sqlQuery}
+                            className="whitespace-nowrap"
+                          >
+                            <Calculator className="w-4 h-4 mr-1" />
+                            {isCortexAnalyzing ? "Analyzing..." : "Auto-Calculate"}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Priority</label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="12"
+                          value={formData.priority}
+                          onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Goal Direction</label>
+                      <Select 
+                        value={formData.isIncreasing ? "increasing" : "decreasing"} 
+                        onValueChange={(value) => setFormData({ ...formData, isIncreasing: value === "increasing" })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="increasing">Higher is Better</SelectItem>
+                          <SelectItem value="decreasing">Lower is Better</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="sql" className="space-y-4 flex-1 overflow-y-auto">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">SQL Query for Metric Calculation</Label>
+                      <Textarea
+                        value={formData.sqlQuery || ""}
+                        onChange={(e) => {
+                          setFormData({ ...formData, sqlQuery: e.target.value });
+                          setSqlQuery(e.target.value);
+                        }}
+                        placeholder="SELECT COUNT(*) as total_users FROM users WHERE created_at >= '2024-01-01'"
+                        rows={8}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={runSQLQuery}
+                        disabled={isRunningSQL || !sqlQuery}
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        {isRunningSQL ? "Running..." : "Test Query"}
+                      </Button>
+                    </div>
+
+                    {sqlResult && (
+                      <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                        <h4 className="font-medium mb-2">Query Result</h4>
+                        <pre className="text-sm text-gray-600 dark:text-gray-300 overflow-auto">
+                          {JSON.stringify(sqlResult, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="cortex" className="space-y-4 flex-1 overflow-y-auto">
+                    <div className="text-center py-8">
+                      <Calculator className="w-12 h-12 mx-auto text-blue-600 mb-4" />
+                      <h3 className="text-lg font-medium mb-2">Snowflake Cortex Analysis</h3>
+                      <p className="text-gray-600 dark:text-gray-400 mb-4">
+                        Use Cortex to analyze your data and get intelligent goal recommendations based on historical trends.
+                      </p>
+                      <Button
+                        type="button"
+                        onClick={calculateWithCortex}
+                        disabled={isCortexAnalyzing || !formData.name || !formData.sqlQuery}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Calculator className="w-4 h-4 mr-2" />
+                        {isCortexAnalyzing ? "Analyzing with Cortex..." : "Calculate Smart Goal"}
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsDialogOpen(false)}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {METRIC_CATEGORIES.map((category) => (
-                          <SelectItem key={category.value} value={category.value}>
-                            {category.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Format</label>
-                    <Select 
-                      value={formData.format} 
-                      onValueChange={(value) => setFormData({ ...formData, format: value })}
+                      Cancel
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={createMetricMutation.isPending || updateMetricMutation.isPending}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {METRIC_FORMATS.map((format) => (
-                          <SelectItem key={format.value} value={format.value}>
-                            {format.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <Save className="mr-2 h-4 w-4" />
+                      {editingMetric ? "Update" : "Create"}
+                    </Button>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Yearly Goal *</label>
-                    <Input
-                      value={formData.yearlyGoal}
-                      onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
-                      placeholder="e.g., $1,000,000"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Priority</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="12"
-                      value={formData.priority}
-                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Goal Direction</label>
-                  <Select 
-                    value={formData.isIncreasing ? "increasing" : "decreasing"} 
-                    onValueChange={(value) => setFormData({ ...formData, isIncreasing: value === "increasing" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="increasing">Higher is Better</SelectItem>
-                      <SelectItem value="decreasing">Lower is Better</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex justify-end space-x-2 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={createMetricMutation.isPending || updateMetricMutation.isPending}
-                  >
-                    <Save className="mr-2 h-4 w-4" />
-                    {editingMetric ? "Update" : "Create"}
-                  </Button>
-                </div>
-              </form>
+                </form>
+              </Tabs>
             </DialogContent>
           </Dialog>
         }
