@@ -133,40 +133,28 @@ function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number,
 
 function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
   const today = new Date();
-  const yearStart = new Date(today.getFullYear(), 0, 1);
-  const yearEnd = new Date(today.getFullYear(), 11, 31);
+  const currentMonth = today.getMonth(); // 0-11
+  const currentYear = today.getFullYear();
   
-  // Generate all weeks in the year
-  const weeks: Date[] = [];
-  const currentWeekStart = new Date(yearStart);
+  // Generate all months in the year
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
   
-  // Find the Monday of the first week of the year
-  const dayOfWeek = currentWeekStart.getDay();
-  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  
-  while (currentWeekStart <= yearEnd) {
-    weeks.push(new Date(currentWeekStart));
-    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  }
-  
-  const weeklyGoal = yearlyGoal / 52; // Weekly goal based on yearly target
+  const monthlyGoal = yearlyGoal / 12; // Monthly goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
   
-  return weeks.map((weekStart, index) => {
-    const weekProgress = weeklyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index % 52] || 1.0;
-    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
-    
-    // Format as "W1", "W2", etc. or show date for larger datasets
-    const weekLabel = weeks.length > 20 ? 
-      `${weekStart.getMonth() + 1}/${weekStart.getDate()}` : 
-      `W${index + 1}`;
+  return months.map((month, index) => {
+    const monthProgress = monthlyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index % 12] || 1.0;
+    const actualValue = index <= currentMonth ? monthProgress * performanceMultiplier : null;
     
     return {
-      period: weekLabel,
-      goal: Math.round(weekProgress),
+      period: month,
+      goal: Math.round(monthProgress),
       actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
+      isCurrent: index === currentMonth
     };
   });
 }
