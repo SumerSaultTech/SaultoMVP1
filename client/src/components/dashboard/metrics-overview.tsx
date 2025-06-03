@@ -374,11 +374,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {metrics.map((metric: any) => (
               <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
-                {/* Priority indicator */}
+                {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
-                  metric.priority === 1 ? 'bg-red-500' : 
-                  metric.priority === 2 ? 'bg-orange-500' : 
-                  metric.priority === 3 ? 'bg-yellow-500' : 'bg-green-500'
+                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'bg-green-500' : 
+                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
                 
                 <CardHeader className="pb-3">
@@ -429,11 +428,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(categoryMetrics as any[]).map((metric: any) => (
                 <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
-                  {/* Priority indicator */}
+                  {/* Goal progress indicator */}
                   <div className={`absolute top-0 left-0 w-full h-1 ${
-                    metric.priority === 1 ? 'bg-red-500' : 
-                    metric.priority === 2 ? 'bg-orange-500' : 
-                    metric.priority === 3 ? 'bg-yellow-500' : 'bg-green-500'
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'bg-green-500' : 
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                   }`}></div>
                   
                   <CardHeader className="pb-3">
