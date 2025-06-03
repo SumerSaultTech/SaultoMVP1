@@ -112,6 +112,8 @@ export const insertSqlModelSchema = createInsertSchema(sqlModels).omit({
 export const insertKpiMetricSchema = createInsertSchema(kpiMetrics).omit({
   id: true,
   lastCalculatedAt: true,
+}).partial({
+  companyId: true,
 });
 
 export const insertMetricHistorySchema = createInsertSchema(metricHistory).omit({
