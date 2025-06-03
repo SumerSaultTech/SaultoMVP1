@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { snowflakePythonService } from "./snowflake-python";
 
 interface SnowflakeQueryResult {
   success: boolean;
@@ -96,59 +97,11 @@ export class SnowflakeCalculatorService {
   private lastCalculated: Map<number, Date> = new Map();
   private readonly CACHE_DURATION_HOURS = 1;
 
-  // Execute SQL query against Snowflake
+  // Execute SQL query against Snowflake using Python service
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
-      console.log("Executing Snowflake query:", sql);
-      
-      const snowflake = require('snowflake-sdk');
-      
-      return new Promise((resolve) => {
-        const connection = snowflake.createConnection({
-          account: process.env.SNOWFLAKE_ACCOUNT,
-          username: process.env.SNOWFLAKE_USERNAME,
-          password: process.env.SNOWFLAKE_PASSWORD,
-          warehouse: process.env.SNOWFLAKE_WAREHOUSE,
-          database: 'MIAS_DATA_DB',
-          schema: process.env.SNOWFLAKE_SCHEMA || 'PUBLIC'
-        });
-
-        connection.connect((err: any, conn: any) => {
-          if (err) {
-            console.error('Snowflake connection error:', err);
-            resolve({
-              success: false,
-              error: `Failed to connect to Snowflake: ${err.message}`
-            });
-            return;
-          }
-
-          console.log('Successfully connected to Snowflake');
-          
-          connection.execute({
-            sqlText: sql,
-            complete: (err: any, stmt: any, rows: any) => {
-              connection.destroy();
-              
-              if (err) {
-                console.error('Snowflake query execution error:', err);
-                resolve({
-                  success: false,
-                  error: `Query execution failed: ${err.message}`
-                });
-                return;
-              }
-
-              console.log('Query executed successfully, rows:', rows?.length || 0);
-              resolve({
-                success: true,
-                data: rows || []
-              });
-            }
-          });
-        });
-      });
-      
+      console.log("Executing Snowflake query via Python:", sql);
+      return await snowflakePythonService.executeQuery(sql);
     } catch (error) {
       console.error("Snowflake query error:", error);
       return {
