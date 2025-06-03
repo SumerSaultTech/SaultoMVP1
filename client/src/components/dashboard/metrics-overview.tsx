@@ -196,6 +196,67 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return option?.label || "Year to Date";
   };
 
+  // Helper functions for adaptive goals
+  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
+    const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+    
+    switch (timePeriod) {
+      case "weekly":
+        return formatGoalValue(yearlyValue / 52);
+      case "monthly":
+        return formatGoalValue(yearlyValue / 12);
+      case "quarterly":
+        return formatGoalValue(yearlyValue / 4);
+      case "ytd":
+      default:
+        return formatGoalValue(yearlyValue);
+    }
+  };
+
+  const formatGoalValue = (value: number) => {
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(1)}M`;
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(0)}K`;
+    } else {
+      return `$${Math.round(value).toLocaleString()}`;
+    }
+  };
+
+  const getTimePeriodLabelShort = (period: string) => {
+    switch (period) {
+      case "weekly": return "weekly";
+      case "monthly": return "monthly";
+      case "quarterly": return "quarterly";
+      case "ytd": return "annual";
+      default: return "annual";
+    }
+  };
+
+  const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string) => {
+    const current = parseFloat(currentValue.replace(/[$,]/g, ''));
+    const yearly = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+    
+    let periodGoal: number;
+    switch (timePeriod) {
+      case "weekly":
+        periodGoal = yearly / 52;
+        break;
+      case "monthly":
+        periodGoal = yearly / 12;
+        break;
+      case "quarterly":
+        periodGoal = yearly / 4;
+        break;
+      case "ytd":
+      default:
+        periodGoal = yearly;
+        break;
+    }
+    
+    return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
+  };
+
   // Group metrics by category
   const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
     const category = metric.category || 'other';
@@ -305,11 +366,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </p>
                     </div>
                     <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                      parseInt(metric.goalProgress) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                      parseInt(metric.goalProgress) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                       'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     }`}>
-                      {parseInt(metric.goalProgress) >= 100 ? '↗' : parseInt(metric.goalProgress) >= 90 ? '→' : '↘'} {metric.goalProgress}% to goal
+                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod)}% to goal
                     </div>
                   </div>
                 </CardHeader>
@@ -321,7 +382,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       {metric.value}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      vs. {metric.yearlyGoal} goal
+                      vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
                     </div>
                   </div>
                   
@@ -360,11 +421,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         </p>
                       </div>
                       <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                        parseInt(metric.goalProgress) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                        parseInt(metric.goalProgress) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                         'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                       }`}>
-                        {parseInt(metric.goalProgress) >= 100 ? '↗' : parseInt(metric.goalProgress) >= 90 ? '→' : '↘'} {metric.goalProgress}% to goal
+                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod)}% to goal
                       </div>
                     </div>
                   </CardHeader>
