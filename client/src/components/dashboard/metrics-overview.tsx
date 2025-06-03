@@ -324,28 +324,22 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     </div>
                   </div>
                   
-                  {/* Progress Bar */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Progress</span>
-                      <span className={`text-sm font-bold ${
+                  {/* Progress Indicator */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Goal Progress</span>
+                    <div className="flex items-center space-x-2">
+                      <span className={`text-lg font-bold ${
                         parseInt(metric.goalProgress) >= 90 ? 'text-green-600' : 
                         parseInt(metric.goalProgress) >= 70 ? 'text-blue-600' : 
                         parseInt(metric.goalProgress) >= 50 ? 'text-yellow-600' : 'text-red-600'
                       }`}>
                         {metric.goalProgress}%
                       </span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                      <div 
-                        className={`h-3 rounded-full transition-all duration-500 ${
-                          parseInt(metric.goalProgress) >= 90 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 
-                          parseInt(metric.goalProgress) >= 70 ? 'bg-gradient-to-r from-blue-500 to-cyan-500' : 
-                          parseInt(metric.goalProgress) >= 50 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
-                          'bg-gradient-to-r from-red-500 to-pink-500'
-                        }`}
-                        style={{ width: `${Math.min(parseInt(metric.goalProgress), 100)}%` }}
-                      />
+                      <div className={`w-3 h-3 rounded-full ${
+                        parseInt(metric.goalProgress) >= 90 ? 'bg-green-500' : 
+                        parseInt(metric.goalProgress) >= 70 ? 'bg-blue-500' : 
+                        parseInt(metric.goalProgress) >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}></div>
                     </div>
                   </div>
 
@@ -401,28 +395,22 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </div>
                     </div>
                     
-                    {/* Progress Bar */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Progress</span>
-                        <span className={`text-sm font-bold ${
+                    {/* Progress Indicator */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Goal Progress</span>
+                      <div className="flex items-center space-x-2">
+                        <span className={`text-lg font-bold ${
                           parseInt(metric.goalProgress) >= 90 ? 'text-green-600' : 
                           parseInt(metric.goalProgress) >= 70 ? 'text-blue-600' : 
                           parseInt(metric.goalProgress) >= 50 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
                           {metric.goalProgress}%
                         </span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                        <div 
-                          className={`h-3 rounded-full transition-all duration-500 ${
-                            parseInt(metric.goalProgress) >= 90 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 
-                            parseInt(metric.goalProgress) >= 70 ? 'bg-gradient-to-r from-blue-500 to-cyan-500' : 
-                            parseInt(metric.goalProgress) >= 50 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
-                            'bg-gradient-to-r from-red-500 to-pink-500'
-                          }`}
-                          style={{ width: `${Math.min(parseInt(metric.goalProgress), 100)}%` }}
-                        />
+                        <div className={`w-3 h-3 rounded-full ${
+                          parseInt(metric.goalProgress) >= 90 ? 'bg-green-500' : 
+                          parseInt(metric.goalProgress) >= 70 ? 'bg-blue-500' : 
+                          parseInt(metric.goalProgress) >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}></div>
                       </div>
                     </div>
 
