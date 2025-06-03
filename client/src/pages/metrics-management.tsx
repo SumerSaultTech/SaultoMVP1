@@ -681,7 +681,6 @@ export default function MetricsManagement() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Priority</TableHead>
                         <TableHead>Metric Name</TableHead>
                         <TableHead>Category</TableHead>
                         <TableHead>Yearly Goal</TableHead>
@@ -696,9 +695,6 @@ export default function MetricsManagement() {
                           const categoryInfo = getCategoryInfo(metric.category);
                           return (
                             <TableRow key={metric.id}>
-                              <TableCell className="font-medium">
-                                {metric.priority || 1}
-                              </TableCell>
                               <TableCell>
                                 <div>
                                   <div className="font-medium">{metric.name}</div>
@@ -777,8 +773,7 @@ export default function MetricsManagement() {
                   category: metric.category,
                   format: metric.format,
                   isIncreasing: true,
-                  isNorthStar: false,
-                  priority: 1
+                  isNorthStar: false
                 });
                 setIsDialogOpen(true);
               }}
