@@ -240,15 +240,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   return (
     <div className="space-y-6">
-      {/* North Star Metrics and Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <NorthStarMetrics />
-        </div>
-        <div className="lg:col-span-1">
-          <MetricsSummary metrics={metrics} />
-        </div>
-      </div>
+      {/* North Star Metrics */}
+      <NorthStarMetrics />
+      
+      {/* Metrics Status Overview */}
+      <MetricsSummary metrics={metrics} />
 
       {/* Header */}
       <div className="flex items-center justify-between">
