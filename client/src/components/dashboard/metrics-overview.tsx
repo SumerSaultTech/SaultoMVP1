@@ -281,22 +281,28 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const calculateWeeklyProgress = (currentValue: string, yearlyGoal: string) => {
     const current = parseFloat(currentValue.replace(/[$,%]/g, ''));
     const goal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
+    // For weekly view, scale down both current and goal
+    const weeklyActual = current / 52;
     const weeklyGoal = goal / 52;
-    return Math.round((current / weeklyGoal) * 100).toString();
+    return Math.round((weeklyActual / weeklyGoal) * 100).toString();
   };
 
   const calculateMonthlyProgress = (currentValue: string, yearlyGoal: string) => {
     const current = parseFloat(currentValue.replace(/[$,%]/g, ''));
     const goal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
+    // For monthly view, scale down both current and goal
+    const monthlyActual = current / 12;
     const monthlyGoal = goal / 12;
-    return Math.round((current / monthlyGoal) * 100).toString();
+    return Math.round((monthlyActual / monthlyGoal) * 100).toString();
   };
 
   const calculateQuarterlyProgress = (currentValue: string, yearlyGoal: string) => {
     const current = parseFloat(currentValue.replace(/[$,%]/g, ''));
     const goal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
+    // For quarterly view, scale down both current and goal
+    const quarterlyActual = current / 4;
     const quarterlyGoal = goal / 4;
-    return Math.round((current / quarterlyGoal) * 100).toString();
+    return Math.round((quarterlyActual / quarterlyGoal) * 100).toString();
   };
 
   const adjustedMetrics = adjustMetricsForTimePeriod(metrics);
@@ -348,25 +354,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Business Metrics Dashboard</h2>
           <p className="text-gray-600 mt-1">
-            Track your key performance indicators and goal progress - {getTimePeriodLabel()}
+            Track your key performance indicators and goal progress
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-2">
-            <Calendar className="h-4 w-4 text-gray-500" />
-            <Select value={timePeriod} onValueChange={setTimePeriod}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                {timePeriodOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="text-right">
             <div className="text-sm text-gray-600">Overall Goal Progress</div>
             <div className="text-2xl font-bold text-green-600">{overallProgress}%</div>
@@ -394,13 +385,31 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         </Card>
       ) : (
         <Tabs defaultValue="all" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="all">All Metrics ({adjustedMetrics.length})</TabsTrigger>
-            <TabsTrigger value="revenue">Revenue ({metricsByCategory.revenue?.length || 0})</TabsTrigger>
-            <TabsTrigger value="growth">Growth ({metricsByCategory.growth?.length || 0})</TabsTrigger>
-            <TabsTrigger value="retention">Retention ({metricsByCategory.retention?.length || 0})</TabsTrigger>
-            <TabsTrigger value="efficiency">Efficiency ({metricsByCategory.efficiency?.length || 0})</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between">
+            <TabsList>
+              <TabsTrigger value="all">All Metrics ({adjustedMetrics.length})</TabsTrigger>
+              <TabsTrigger value="revenue">Revenue ({metricsByCategory.revenue?.length || 0})</TabsTrigger>
+              <TabsTrigger value="growth">Growth ({metricsByCategory.growth?.length || 0})</TabsTrigger>
+              <TabsTrigger value="retention">Retention ({metricsByCategory.retention?.length || 0})</TabsTrigger>
+              <TabsTrigger value="efficiency">Efficiency ({metricsByCategory.efficiency?.length || 0})</TabsTrigger>
+            </TabsList>
+            
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4 text-gray-500" />
+              <Select value={timePeriod} onValueChange={setTimePeriod}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  {timePeriodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
           <TabsContent value="all" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
