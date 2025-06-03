@@ -9,186 +9,6 @@ import MetricProgressChart from "./metric-progress-chart";
 import NorthStarMetrics from "./north-star-metrics";
 import type { KpiMetric } from "@/../../shared/schema";
 
-// Import chart data generation function for value alignment
-function generateProgressData(metric: any, timePeriod: string = "ytd") {
-  const currentValueStr = metric.value || "0";
-  const yearlyGoalStr = metric.yearlyGoal || "0";
-  
-  const currentValue = parseFloat(currentValueStr.replace(/[$,%\s]/g, '')) || 0;
-  const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
-  
-  if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
-    return [];
-  }
-
-  switch (timePeriod) {
-    case "weekly":
-      return generateWeeklyData(metric, currentValue, yearlyGoal);
-    case "monthly":
-      return generateMonthlyData(metric, currentValue, yearlyGoal);
-    case "quarterly":
-      return generateQuarterlyData(metric, currentValue, yearlyGoal);
-    case "ytd":
-    default:
-      return generateYTDData(metric, currentValue, yearlyGoal);
-  }
-}
-
-function generateYTDData(metric: any, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const yearStart = new Date(today.getFullYear(), 0, 1);
-  const yearEnd = new Date(today.getFullYear(), 11, 31);
-  
-  const months = [];
-  const currentMonth = new Date(yearStart);
-  
-  while (currentMonth <= yearEnd) {
-    months.push(new Date(currentMonth));
-    currentMonth.setMonth(currentMonth.getMonth() + 1);
-  }
-  
-  const monthlyGoal = yearlyGoal / 12;
-  const performancePattern = getPerformancePattern(metric.name || '');
-  
-  return months.map((month, index) => {
-    const goalProgress = monthlyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index] || 1.0;
-    const actualValue = month <= today ? goalProgress * performanceMultiplier : null;
-    
-    const monthLabel = month.toLocaleDateString('en-US', { month: 'short' });
-    
-    return {
-      period: monthLabel,
-      goal: Math.round(goalProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: month.getMonth() === today.getMonth()
-    };
-  });
-}
-
-function generateWeeklyData(metric: any, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentDay = today.getDay();
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
-  
-  const dailyGoal = yearlyGoal / 365;
-  const performancePattern = getPerformancePattern(metric.name || '');
-  
-  return weekdays.map((day, index) => {
-    const dayProgress = dailyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index % 7] || 1.0;
-    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
-    
-    return {
-      period: day,
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: index === currentDayIndex
-    };
-  });
-}
-
-function generateMonthlyData(metric: any, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentDay = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  
-  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const dailyGoal = yearlyGoal / 365;
-  const performancePattern = getPerformancePattern(metric.name || '');
-  
-  return allDays.map((day, index) => {
-    const dayProgress = dailyGoal * day;
-    const performanceMultiplier = performancePattern[index % 30] || 1.0;
-    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
-    
-    return {
-      period: day.toString(),
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: day === currentDay
-    };
-  });
-}
-
-function generateQuarterlyData(metric: any, currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-  const quarterStartMonth = (currentQuarter - 1) * 3;
-  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
-  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
-  
-  const weeks: Date[] = [];
-  const currentWeekStart = new Date(quarterStart);
-  const dayOfWeek = currentWeekStart.getDay();
-  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  
-  while (currentWeekStart <= quarterEnd) {
-    weeks.push(new Date(currentWeekStart));
-    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  }
-  
-  const weeklyGoal = yearlyGoal / 52;
-  const performancePattern = getPerformancePattern(metric.name || '');
-  
-  return weeks.map((weekStart, index) => {
-    const weekProgress = weeklyGoal * (index + 1);
-    const performanceMultiplier = performancePattern[index % 12] || 1.0;
-    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
-    
-    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-    
-    return {
-      period: weekLabel,
-      goal: Math.round(weekProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
-    };
-  });
-}
-
-function getPerformancePattern(metricName: string) {
-  const name = metricName.toLowerCase();
-    
-  if (name.includes('revenue') || name.includes('arr') || name.includes('mrr')) {
-    return [0.85, 0.88, 0.92, 0.95, 0.98, 1.02, 1.05, 1.08, 1.12, 1.15, 1.18, 1.20];
-  } else if (name.includes('churn') || name.includes('cost') || name.includes('cac')) {
-    return [1.15, 1.12, 1.08, 1.05, 1.02, 0.98, 0.95, 0.92, 0.90, 0.88, 0.85, 0.82];
-  } else if (name.includes('conversion') || name.includes('retention') || name.includes('satisfaction')) {
-    return [0.82, 0.85, 0.89, 0.92, 0.95, 0.98, 1.01, 1.04, 1.06, 1.08, 1.10, 1.12];
-  } else if (name.includes('users') || name.includes('adoption')) {
-    return [0.75, 0.82, 0.90, 0.96, 1.02, 1.08, 1.12, 1.16, 1.19, 1.22, 1.24, 1.26];
-  } else {
-    return [0.88, 0.91, 0.94, 0.97, 1.00, 1.03, 1.06, 1.09, 1.11, 1.13, 1.15, 1.17];
-  }
-}
-
-// Get current value from chart data for alignment
-function getCurrentValueFromChart(metric: any, timePeriod: string) {
-  const chartData = generateProgressData(metric, timePeriod);
-  const actualDataPoints = chartData.filter(point => point.actual !== null);
-  if (actualDataPoints.length === 0) return metric.value;
-  
-  const latestActual = actualDataPoints[actualDataPoints.length - 1].actual;
-  return formatChartValue(latestActual || 0, metric.format);
-}
-
-function formatChartValue(value: number, format: string) {
-  if (format === 'currency') {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  } else if (format === 'percentage') {
-    return `${value.toFixed(1)}%`;
-  } else {
-    return value.toLocaleString();
-  }
-}
-
 interface MetricsOverviewProps {
   onRefresh: () => void;
 }
@@ -237,9 +57,9 @@ const defaultMetrics = [
   {
     id: 4,
     name: "Customer Lifetime Value",
-    value: "$2,400",
-    yearlyGoal: "$3,000",
-    goalProgress: "80",
+    value: "$2,800",
+    yearlyGoal: "$3,200",
+    goalProgress: "88",
     changePercent: "+15%",
     category: "revenue",
     format: "currency",
@@ -250,9 +70,9 @@ const defaultMetrics = [
   {
     id: 5,
     name: "Monthly Churn Rate",
-    value: "3.2%",
-    yearlyGoal: "2.5%",
-    goalProgress: "78",
+    value: "2.1%",
+    yearlyGoal: "1.5%",
+    goalProgress: "70",
     changePercent: "-0.3%",
     category: "retention",
     format: "percentage",
@@ -263,11 +83,11 @@ const defaultMetrics = [
   {
     id: 6,
     name: "Net Revenue Retention",
-    value: "115%",
-    yearlyGoal: "120%",
-    goalProgress: "96",
+    value: "118%",
+    yearlyGoal: "125%",
+    goalProgress: "94",
     changePercent: "+3%",
-    category: "growth",
+    category: "retention",
     format: "percentage",
     priority: 6,
     isIncreasing: true,
@@ -275,25 +95,25 @@ const defaultMetrics = [
   },
   {
     id: 7,
-    name: "Monthly Active Users",
-    value: "12,500",
-    yearlyGoal: "15,000",
-    goalProgress: "83",
-    changePercent: "+7%",
+    name: "Daily Active Users",
+    value: "45,200",
+    yearlyGoal: "60,000",
+    goalProgress: "75",
+    changePercent: "+18%",
     category: "growth",
     format: "number",
     priority: 7,
     isIncreasing: true,
-    description: "Users who actively used the product this month"
+    description: "Number of users active in the last 24 hours"
   },
   {
     id: 8,
     name: "Lead Conversion Rate",
-    value: "4.2%",
-    yearlyGoal: "5.0%",
-    goalProgress: "84",
-    changePercent: "+0.5%",
-    category: "efficiency",
+    value: "12.5%",
+    yearlyGoal: "15%",
+    goalProgress: "83",
+    changePercent: "+2%",
+    category: "growth",
     format: "percentage",
     priority: 8,
     isIncreasing: true,
@@ -376,111 +196,18 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return option?.label || "Year to Date";
   };
 
-  // Adjust metrics based on chart data for alignment
-  const adjustMetricsForTimePeriod = (originalMetrics: any[]) => {
-    return originalMetrics.map(metric => {
-      const chartData = generateProgressData(metric, timePeriod);
-      const actualDataPoints = chartData.filter(point => point.actual !== null);
-      
-      if (actualDataPoints.length === 0) return metric;
-      
-      const latestActual = actualDataPoints[actualDataPoints.length - 1].actual || 0;
-      const latestGoal = chartData[chartData.length - 1]?.goal || 0;
-      
-      const adjustedMetric = { ...metric };
-      adjustedMetric.value = formatChartValue(latestActual, metric.format);
-      adjustedMetric.yearlyGoal = formatChartValue(latestGoal, metric.format);
-      adjustedMetric.goalProgress = latestGoal > 0 ? Math.round((latestActual / latestGoal) * 100).toString() : "0";
-      
-      return adjustedMetric;
-    });
-  };
-
-  const adjustedMetrics = adjustMetricsForTimePeriod(metrics);
-
-  return (
-
-  const getMonthlyValue = (yearlyValue: string) => {
-    const numValue = parseFloat(yearlyValue.replace(/[$,%]/g, ''));
-    const monthlyValue = numValue / 12;
-    if (yearlyValue.includes('$')) return `$${monthlyValue.toLocaleString()}`;
-    if (yearlyValue.includes('%')) return `${monthlyValue.toFixed(1)}%`;
-    return monthlyValue.toLocaleString();
-  };
-
-  const getQuarterlyValue = (yearlyValue: string) => {
-    const numValue = parseFloat(yearlyValue.replace(/[$,%]/g, ''));
-    const quarterlyValue = numValue / 4;
-    if (yearlyValue.includes('$')) return `$${quarterlyValue.toLocaleString()}`;
-    if (yearlyValue.includes('%')) return `${quarterlyValue.toFixed(1)}%`;
-    return quarterlyValue.toLocaleString();
-  };
-
-  const getWeeklyGoal = (yearlyGoal: string) => {
-    const numGoal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
-    const weeklyGoal = numGoal / 52;
-    if (yearlyGoal.includes('$')) return `$${weeklyGoal.toLocaleString()}`;
-    if (yearlyGoal.includes('%')) return `${weeklyGoal.toFixed(1)}%`;
-    return weeklyGoal.toLocaleString();
-  };
-
-  const getMonthlyGoal = (yearlyGoal: string) => {
-    const numGoal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
-    const monthlyGoal = numGoal / 12;
-    if (yearlyGoal.includes('$')) return `$${monthlyGoal.toLocaleString()}`;
-    if (yearlyGoal.includes('%')) return `${monthlyGoal.toFixed(1)}%`;
-    return monthlyGoal.toLocaleString();
-  };
-
-  const getQuarterlyGoal = (yearlyGoal: string) => {
-    const numGoal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
-    const quarterlyGoal = numGoal / 4;
-    if (yearlyGoal.includes('$')) return `$${quarterlyGoal.toLocaleString()}`;
-    if (yearlyGoal.includes('%')) return `${quarterlyGoal.toFixed(1)}%`;
-    return quarterlyGoal.toLocaleString();
-  };
-
-  const calculateWeeklyProgress = (currentValue: string, yearlyGoal: string) => {
-    const current = parseFloat(currentValue.replace(/[$,%]/g, ''));
-    const goal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
-    // For weekly view, scale down both current and goal
-    const weeklyActual = current / 52;
-    const weeklyGoal = goal / 52;
-    return Math.round((weeklyActual / weeklyGoal) * 100).toString();
-  };
-
-  const calculateMonthlyProgress = (currentValue: string, yearlyGoal: string) => {
-    const current = parseFloat(currentValue.replace(/[$,%]/g, ''));
-    const goal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
-    // For monthly view, scale down both current and goal
-    const monthlyActual = current / 12;
-    const monthlyGoal = goal / 12;
-    return Math.round((monthlyActual / monthlyGoal) * 100).toString();
-  };
-
-  const calculateQuarterlyProgress = (currentValue: string, yearlyGoal: string) => {
-    const current = parseFloat(currentValue.replace(/[$,%]/g, ''));
-    const goal = parseFloat(yearlyGoal.replace(/[$,%]/g, ''));
-    // For quarterly view, scale down both current and goal
-    const quarterlyActual = current / 4;
-    const quarterlyGoal = goal / 4;
-    return Math.round((quarterlyActual / quarterlyGoal) * 100).toString();
-  };
-
-  const adjustedMetrics = adjustMetricsForTimePeriod(metrics);
-
-  // Group adjusted metrics by category
-  const metricsByCategory = adjustedMetrics.reduce((acc: any, metric: any) => {
+  // Group metrics by category
+  const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
     const category = metric.category || 'other';
     if (!acc[category]) acc[category] = [];
     acc[category].push(metric);
     return acc;
   }, {});
 
-  // Calculate overall performance using adjusted metrics
-  const overallProgress = adjustedMetrics.length > 0 ? 
-    Math.round(adjustedMetrics.reduce((sum: number, metric: any) => 
-      sum + parseFloat(metric.goalProgress || "0"), 0) / adjustedMetrics.length) : 0;
+  // Calculate overall performance
+  const overallProgress = metrics.length > 0 ? 
+    Math.round(metrics.reduce((sum: number, metric: any) => 
+      sum + parseFloat(metric.goalProgress || "0"), 0) / metrics.length) : 0;
 
   if (isLoading) {
     return (
@@ -512,93 +239,140 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   return (
     <div className="space-y-6">
+      {/* North Star Metrics */}
+      <NorthStarMetrics />
+
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Business Metrics Dashboard</h2>
-          <p className="text-gray-600 mt-1">
-            Track your key performance indicators and goal progress
+        <div className="space-y-1">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Business Metrics</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Overall performance: {overallProgress}% of goals achieved
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <div className="text-right">
-            <div className="text-sm text-gray-600">Overall Goal Progress</div>
-            <div className="text-2xl font-bold text-green-600">{overallProgress}%</div>
+          <div className="flex items-center space-x-2">
+            <Calendar className="h-4 w-4 text-gray-600" />
+            <Select value={timePeriod} onValueChange={setTimePeriod}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent>
+                {timePeriodOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Button variant="outline" size="sm" onClick={onRefresh}>
+          <Button onClick={onRefresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
         </div>
       </div>
 
-      {/* North Star Metrics - Always Visible */}
-      <NorthStarMetrics />
+      {/* Tabs for different categories */}
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="all">All Metrics</TabsTrigger>
+          <TabsTrigger value="revenue">Revenue</TabsTrigger>
+          <TabsTrigger value="growth">Growth</TabsTrigger>
+          <TabsTrigger value="retention">Retention</TabsTrigger>
+          <TabsTrigger value="efficiency">Efficiency</TabsTrigger>
+        </TabsList>
 
-      {metrics.length === 0 ? (
-        <Card className="p-12 text-center">
-          <CardHeader>
-            <CardTitle className="text-gray-500">No Metrics Configured</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-400 mb-4">
-              Set up your business metrics to start tracking performance against goals.
-            </p>
-            <Button onClick={() => window.location.href = '/metrics-management'}>
-              Configure Metrics
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Tabs defaultValue="all" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <TabsList>
-              <TabsTrigger value="all">All Metrics ({adjustedMetrics.length})</TabsTrigger>
-              <TabsTrigger value="revenue">Revenue ({metricsByCategory.revenue?.length || 0})</TabsTrigger>
-              <TabsTrigger value="growth">Growth ({metricsByCategory.growth?.length || 0})</TabsTrigger>
-              <TabsTrigger value="retention">Retention ({metricsByCategory.retention?.length || 0})</TabsTrigger>
-              <TabsTrigger value="efficiency">Efficiency ({metricsByCategory.efficiency?.length || 0})</TabsTrigger>
-            </TabsList>
-            
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-gray-500" />
-              <Select value={timePeriod} onValueChange={setTimePeriod}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Select period" />
-                </SelectTrigger>
-                <SelectContent>
-                  {timePeriodOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <TabsContent value="all" className="mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {metrics.map((metric: any) => (
+              <Card key={metric.id} className="relative overflow-hidden">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {metric.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {metric.value}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {metric.changePercent} vs. last period
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
+                      <span className="text-sm font-medium">{metric.goalProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(parseInt(metric.goalProgress), 100)}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Goal: {metric.yearlyGoal}
+                    </div>
+                  </div>
+
+                  <div className="h-32">
+                    <MetricProgressChart metric={metric} timePeriod={timePeriod} />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
+        </TabsContent>
 
-          <TabsContent value="all" className="space-y-6">
+        {Object.entries(metricsByCategory).map(([category, categoryMetrics]: [string, any]) => (
+          <TabsContent key={category} value={category} className="mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {Array.isArray(adjustedMetrics) ? adjustedMetrics
-                .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
-                .map((metric: any) => (
-                  <MetricProgressChart key={metric.id || metric.name} metric={metric} timePeriod={timePeriod} />
-                )) : null}
+              {(categoryMetrics as any[]).map((metric: any) => (
+                <Card key={metric.id} className="relative overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {metric.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                        {metric.value}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {metric.changePercent} vs. last period
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
+                        <span className="text-sm font-medium">{metric.goalProgress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(parseInt(metric.goalProgress), 100)}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Goal: {metric.yearlyGoal}
+                      </div>
+                    </div>
+
+                    <div className="h-32">
+                      <MetricProgressChart metric={metric} timePeriod={timePeriod} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </TabsContent>
-
-          {Object.entries(metricsByCategory).map(([category, categoryMetrics]: [string, any]) => (
-            <TabsContent key={category} value={category} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {(categoryMetrics as any[])
-                  .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
-                  .map((metric: any) => (
-                    <MetricProgressChart key={metric.id || metric.name} metric={metric} timePeriod={timePeriod} />
-                  ))}
-              </div>
-            </TabsContent>
-          ))}
-        </Tabs>
-      )}
+        ))}
+      </Tabs>
     </div>
   );
 }
