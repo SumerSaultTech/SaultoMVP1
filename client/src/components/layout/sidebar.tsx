@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Database, BarChart3, Settings, Table, GitBranch, Bot, Shield, Target } from "lucide-react";
+import { Database, BarChart3, Settings, Table, Shield, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 
@@ -15,8 +15,6 @@ export default function Sidebar() {
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
     { path: "/tables", icon: Table, label: "Table Browser" },
-    { path: "/models", icon: GitBranch, label: "Model Registry" },
-    { path: "/assistant", icon: Bot, label: "KPI Assistant" },
     { path: "/admin", icon: Shield, label: "Admin Panel" },
   ];
 

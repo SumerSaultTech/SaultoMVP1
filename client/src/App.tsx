@@ -7,8 +7,6 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Setup from "@/pages/setup";
 import TableBrowser from "@/pages/table-browser";
-import ModelRegistry from "@/pages/model-registry";
-import KpiAssistant from "@/pages/kpi-assistant";
 
 import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
@@ -20,8 +18,6 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/setup" component={Setup} />
       <Route path="/tables" component={TableBrowser} />
-      <Route path="/models" component={ModelRegistry} />
-      <Route path="/assistant" component={KpiAssistant} />
       <Route path="/metrics" component={MetricsManagement} />
       <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
