@@ -425,8 +425,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                 {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                  metric.value ? (
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                  ) : 'bg-gray-300 dark:bg-gray-600'
                 }`}></div>
                 
                 <CardHeader className="pb-3">
@@ -440,11 +442,19 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </p>
                     </div>
                     <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
-                      'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
+                      metric.value ? (
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                        'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
+                      ) : 'text-gray-500 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
                     }`}>
-                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
+                      {metric.value ? (
+                        <>
+                          {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
+                        </>
+                      ) : (
+                        '• No data'
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -452,19 +462,42 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                 <CardContent className="space-y-4 pt-0">
                   {/* Current Value */}
                   <div>
-                    <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
-                    </div>
+                    {metric.value ? (
+                      <>
+                        <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                          {formatActualValue(parseFloat(metric.value.replace(/[$,]/g, '')))}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-3xl font-bold text-gray-400 dark:text-gray-500">
+                          Not calculated
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-500">
+                          No data available - calculate metric to see progress
+                        </div>
+                      </>
+                    )}
                   </div>
                   
 
 
                   {/* Chart */}
                   <div className="h-32 -mx-2">
-                    <MetricProgressChart metric={metric} timePeriod={timePeriod} />
+                    {metric.value ? (
+                      <MetricProgressChart metric={metric} timePeriod={timePeriod} />
+                    ) : (
+                      <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="text-center">
+                          <div className="text-gray-400 dark:text-gray-500 text-sm">
+                            Calculate metric to view progress
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
