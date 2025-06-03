@@ -331,36 +331,6 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     }
   };
 
-  // Dynamic gradient backgrounds based on performance
-  const getMetricGradient = (progress: number) => {
-    if (progress >= 100) {
-      return "bg-gradient-to-br from-green-50 via-emerald-50 to-green-100 dark:from-green-900/20 dark:via-emerald-900/20 dark:to-green-800/30";
-    } else if (progress >= 90) {
-      return "bg-gradient-to-br from-blue-50 via-cyan-50 to-blue-100 dark:from-blue-900/20 dark:via-cyan-900/20 dark:to-blue-800/30";
-    } else if (progress >= 75) {
-      return "bg-gradient-to-br from-yellow-50 via-amber-50 to-yellow-100 dark:from-yellow-900/20 dark:via-amber-900/20 dark:to-yellow-800/30";
-    } else if (progress >= 50) {
-      return "bg-gradient-to-br from-orange-50 via-orange-50 to-orange-100 dark:from-orange-900/20 dark:via-orange-900/20 dark:to-orange-800/30";
-    } else {
-      return "bg-gradient-to-br from-red-50 via-rose-50 to-red-100 dark:from-red-900/20 dark:via-rose-900/20 dark:to-red-800/30";
-    }
-  };
-
-  // Dynamic border colors based on performance
-  const getMetricBorder = (progress: number) => {
-    if (progress >= 100) {
-      return "border-green-200 dark:border-green-700";
-    } else if (progress >= 90) {
-      return "border-blue-200 dark:border-blue-700";
-    } else if (progress >= 75) {
-      return "border-yellow-200 dark:border-yellow-700";
-    } else if (progress >= 50) {
-      return "border-orange-200 dark:border-orange-700";
-    } else {
-      return "border-red-200 dark:border-red-700";
-    }
-  };
-
   // Group metrics by category
   const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
     const category = metric.category || 'other';
@@ -450,10 +420,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
         <TabsContent value="all" className="mt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {metrics.map((metric: any) => {
-              const progress = getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id);
-              return (
-              <Card key={metric.id} className={`relative overflow-hidden border-2 hover:shadow-lg transition-all duration-300 ${getMetricGradient(progress)} ${getMetricBorder(progress)}`}>
+            {metrics.map((metric: any) => (
+              <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                 {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
                   getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
@@ -499,7 +467,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   </div>
                 </CardContent>
               </Card>
-            )})}
+            ))}
           </div>
         </TabsContent>
 
