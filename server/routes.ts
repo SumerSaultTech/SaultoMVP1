@@ -7,6 +7,7 @@ import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
 import { metricsAIService } from "./services/metrics-ai";
 import { snowflakeCortexService } from "./services/snowflake-cortex";
+import { snowflakeMetricsService } from "./services/snowflake-metrics";
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -435,6 +436,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Failed to get companies:", error);
       res.status(500).json({ message: "Failed to get companies" });
+    }
+  });
+
+  // Snowflake metrics endpoints for MIAS_DATA
+  app.get("/api/metrics/north-star", async (req, res) => {
+    try {
+      const companySlug = 'mias_data'; // Using MIAS_DATA as the company
+      const metrics = await snowflakeMetricsService.getNorthStarMetrics(companySlug);
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error fetching North Star metrics:", error);
+      res.status(500).json({ message: "Failed to fetch North Star metrics from Snowflake" });
+    }
+  });
+
+  app.get("/api/metrics/kpi", async (req, res) => {
+    try {
+      const companySlug = 'mias_data'; // Using MIAS_DATA as the company
+      const metrics = await snowflakeMetricsService.getKPIMetrics(companySlug);
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error fetching KPI metrics:", error);
+      res.status(500).json({ message: "Failed to fetch KPI metrics from Snowflake" });
+    }
+  });
+
+  app.post("/api/metrics/time-series", async (req, res) => {
+    try {
+      const { metricId, timePeriod } = req.body;
+      const companySlug = 'mias_data'; // Using MIAS_DATA as the company
+      
+      if (!metricId || !timePeriod) {
+        return res.status(400).json({ message: "Metric ID and time period are required" });
+      }
+
+      const timeSeriesData = await snowflakeMetricsService.getTimeSeriesData(companySlug, metricId, timePeriod);
+      res.json(timeSeriesData);
+    } catch (error) {
+      console.error("Error fetching time series data:", error);
+      res.status(500).json({ message: "Failed to fetch time series data from Snowflake" });
     }
   });
 
