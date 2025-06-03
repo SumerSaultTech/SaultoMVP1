@@ -79,6 +79,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to create company" });
     }
   });
+
+  // Users
+  app.get("/api/users", async (req, res) => {
+    try {
+      const users = await storage.getUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get users" });
+    }
+  });
+
+  app.post("/api/users", async (req, res) => {
+    try {
+      const { username, password, companyId, role } = req.body;
+      const user = await storage.createUser({
+        username,
+        password,
+        companyId,
+        role: role || "user"
+      });
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
   
   // Setup Status
   app.get("/api/setup-status", async (req, res) => {

@@ -11,6 +11,7 @@ import CompanySelection from "@/pages/company-selection";
 
 import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
+import UserManagement from "@/pages/user-management";
 import Sidebar from "@/components/layout/sidebar";
 
 function Router() {
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/setup" component={Setup} />
       <Route path="/tables" component={TableBrowser} />
       <Route path="/metrics" component={MetricsManagement} />
+      <Route path="/users" component={UserManagement} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/companies" component={CompanySelection} />
       <Route component={NotFound} />
