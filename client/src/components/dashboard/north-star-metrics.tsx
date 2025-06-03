@@ -211,6 +211,44 @@ export default function NorthStarMetrics() {
     return option?.label || "Year to Date";
   };
 
+  // Calculate adaptive goal based on time period
+  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
+    const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+    
+    switch (timePeriod) {
+      case "weekly":
+        return (yearlyValue / 52).toFixed(0);
+      case "monthly":
+        return (yearlyValue / 12).toFixed(0);
+      case "quarterly":
+        return (yearlyValue / 4).toFixed(0);
+      case "ytd":
+      default:
+        return yearlyValue.toFixed(0);
+    }
+  };
+
+  // Calculate adaptive current value based on time period
+  const getAdaptiveCurrentValue = (currentValue: string, timePeriod: string) => {
+    const yearlyValue = parseFloat(currentValue.replace(/[$,]/g, ''));
+    const today = new Date();
+    
+    switch (timePeriod) {
+      case "weekly":
+        // Show this week's progress (weekly rate)
+        return (yearlyValue / 52).toFixed(0);
+      case "monthly":
+        // Show this month's progress (monthly rate)
+        return (yearlyValue / 12).toFixed(0);
+      case "quarterly":
+        // Show this quarter's progress (quarterly rate)
+        return (yearlyValue / 4).toFixed(0);
+      case "ytd":
+      default:
+        return yearlyValue.toFixed(0);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -239,7 +277,9 @@ export default function NorthStarMetrics() {
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {northStarMetrics.map((metric) => {
-          const progress = calculateProgress(metric.value, metric.yearlyGoal);
+          const adaptiveGoal = getAdaptiveGoal(metric.yearlyGoal, northStarTimePeriod);
+          const adaptiveCurrentValue = getAdaptiveCurrentValue(metric.value, northStarTimePeriod);
+          const progress = calculateProgress(adaptiveCurrentValue, adaptiveGoal);
           const progressStatus = getProgressStatus(progress);
           const changeValue = parseFloat(metric.changePercent);
           const isPositive = changeValue >= 0;
@@ -269,10 +309,10 @@ export default function NorthStarMetrics() {
                 {/* Current Value */}
                 <div>
                   <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {formatValue(metric.value, metric.format)}
+                    {formatValue(adaptiveCurrentValue, metric.format)}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">
-                    of {formatValue(metric.yearlyGoal, metric.format)} annual goal
+                    of {formatValue(adaptiveGoal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
                   </div>
                 </div>
 
