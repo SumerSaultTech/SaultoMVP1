@@ -15,10 +15,18 @@ interface NorthStarMetric {
   format: string;
 }
 
-// Fetch authentic North Star metrics from MIAS_DATA Snowflake database
+// Fetch North Star metrics from your metrics management system
 function useNorthStarMetrics() {
   return useQuery({
-    queryKey: ["/api/metrics/north-star"],
+    queryKey: ["/api/kpi-metrics"],
+    select: (data: any[]) => {
+      // Filter for metrics marked as North Star (revenue and profit)
+      return data.filter(metric => 
+        metric.name.toLowerCase().includes('revenue') || 
+        metric.name.toLowerCase().includes('profit') ||
+        metric.category === 'north-star'
+      ).slice(0, 2); // Take first 2 North Star metrics
+    },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 10 * 60 * 1000, // 10 minutes
   });
@@ -226,7 +234,7 @@ export default function NorthStarMetrics() {
     );
   }
 
-  if (error || !northStarMetrics) {
+  if (error || !northStarMetrics || northStarMetrics.length === 0) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -235,9 +243,9 @@ export default function NorthStarMetrics() {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
           </div>
         </div>
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-700">Unable to load North Star metrics from MIAS_DATA Snowflake database.</p>
-          <p className="text-red-600 text-sm mt-1">Error: {error?.message || 'Connection failed'}</p>
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-blue-700">No North Star metrics found.</p>
+          <p className="text-blue-600 text-sm mt-1">Create metrics with "revenue" or "profit" in the name using Metrics Management.</p>
         </div>
       </div>
     );
@@ -329,19 +337,30 @@ export default function NorthStarMetrics() {
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {northStarMetrics && northStarMetrics.map && northStarMetrics.map((metric: any) => {
+        {northStarMetrics.map((metric: any) => {
+          // Convert KPI metric to North Star format
+          const northStarMetric = {
+            id: metric.id.toString(),
+            name: metric.name,
+            value: metric.currentValue ? `$${metric.currentValue.toLocaleString()}` : '$0',
+            yearlyGoal: metric.yearlyGoal ? `$${metric.yearlyGoal.toLocaleString()}` : '$0',
+            changePercent: '+0',
+            description: metric.description || `${metric.name} metric`,
+            format: metric.format || 'currency'
+          };
+
           // Get the EXACT same values used in the chart
-          const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
+          const chartDisplayValues = getChartDisplayValues(northStarMetric, northStarTimePeriod);
           const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
           const progressStatus = getProgressStatus(progress);
           
           // Use YTD progress for "on pace" indicator regardless of selected time period
-          const ytdProgress = getYTDProgress(metric);
+          const ytdProgress = getYTDProgress(northStarMetric);
           const onPaceProgressStatus = getProgressStatus(ytdProgress.progress);
           
-          const changeValue = parseFloat(metric.changePercent);
+          const changeValue = parseFloat(northStarMetric.changePercent);
           const isPositive = changeValue >= 0;
-          const chartData = generateNorthStarData(metric, northStarTimePeriod);
+          const chartData = generateNorthStarData(northStarMetric, northStarTimePeriod);
 
           return (
             <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800">
@@ -351,7 +370,7 @@ export default function NorthStarMetrics() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
                     <DollarSign className="h-4 w-4 text-purple-600" />
-                    <span>{metric.name}</span>
+                    <span>{northStarMetric.name}</span>
                   </CardTitle>
                   <div className={`flex items-center space-x-1 text-sm font-medium ${onPaceProgressStatus.color}`}>
                     {ytdProgress.progress >= 100 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -364,10 +383,10 @@ export default function NorthStarMetrics() {
                 {/* Current Value */}
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatValue(chartDisplayValues.current, metric.format)}
+                    {formatValue(chartDisplayValues.current, northStarMetric.format)}
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
-                    of {formatValue(chartDisplayValues.goal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
+                    of {formatValue(chartDisplayValues.goal, northStarMetric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
                   </div>
                 </div>
 
