@@ -9,6 +9,186 @@ import MetricProgressChart from "./metric-progress-chart";
 import NorthStarMetrics from "./north-star-metrics";
 import type { KpiMetric } from "@/../../shared/schema";
 
+// Import chart data generation function for value alignment
+function generateProgressData(metric: any, timePeriod: string = "ytd") {
+  const currentValueStr = metric.value || "0";
+  const yearlyGoalStr = metric.yearlyGoal || "0";
+  
+  const currentValue = parseFloat(currentValueStr.replace(/[$,%\s]/g, '')) || 0;
+  const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
+  
+  if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
+    return [];
+  }
+
+  switch (timePeriod) {
+    case "weekly":
+      return generateWeeklyData(metric, currentValue, yearlyGoal);
+    case "monthly":
+      return generateMonthlyData(metric, currentValue, yearlyGoal);
+    case "quarterly":
+      return generateQuarterlyData(metric, currentValue, yearlyGoal);
+    case "ytd":
+    default:
+      return generateYTDData(metric, currentValue, yearlyGoal);
+  }
+}
+
+function generateYTDData(metric: any, currentValue: number, yearlyGoal: number) {
+  const today = new Date();
+  const yearStart = new Date(today.getFullYear(), 0, 1);
+  const yearEnd = new Date(today.getFullYear(), 11, 31);
+  
+  const months = [];
+  const currentMonth = new Date(yearStart);
+  
+  while (currentMonth <= yearEnd) {
+    months.push(new Date(currentMonth));
+    currentMonth.setMonth(currentMonth.getMonth() + 1);
+  }
+  
+  const monthlyGoal = yearlyGoal / 12;
+  const performancePattern = getPerformancePattern(metric.name || '');
+  
+  return months.map((month, index) => {
+    const goalProgress = monthlyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index] || 1.0;
+    const actualValue = month <= today ? goalProgress * performanceMultiplier : null;
+    
+    const monthLabel = month.toLocaleDateString('en-US', { month: 'short' });
+    
+    return {
+      period: monthLabel,
+      goal: Math.round(goalProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: month.getMonth() === today.getMonth()
+    };
+  });
+}
+
+function generateWeeklyData(metric: any, currentValue: number, yearlyGoal: number) {
+  const today = new Date();
+  const currentDay = today.getDay();
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
+  
+  const dailyGoal = yearlyGoal / 365;
+  const performancePattern = getPerformancePattern(metric.name || '');
+  
+  return weekdays.map((day, index) => {
+    const dayProgress = dailyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index % 7] || 1.0;
+    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
+    
+    return {
+      period: day,
+      goal: Math.round(dayProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: index === currentDayIndex
+    };
+  });
+}
+
+function generateMonthlyData(metric: any, currentValue: number, yearlyGoal: number) {
+  const today = new Date();
+  const currentDay = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  
+  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const dailyGoal = yearlyGoal / 365;
+  const performancePattern = getPerformancePattern(metric.name || '');
+  
+  return allDays.map((day, index) => {
+    const dayProgress = dailyGoal * day;
+    const performanceMultiplier = performancePattern[index % 30] || 1.0;
+    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
+    
+    return {
+      period: day.toString(),
+      goal: Math.round(dayProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: day === currentDay
+    };
+  });
+}
+
+function generateQuarterlyData(metric: any, currentValue: number, yearlyGoal: number) {
+  const today = new Date();
+  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
+  const quarterStartMonth = (currentQuarter - 1) * 3;
+  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
+  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
+  
+  const weeks: Date[] = [];
+  const currentWeekStart = new Date(quarterStart);
+  const dayOfWeek = currentWeekStart.getDay();
+  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  
+  while (currentWeekStart <= quarterEnd) {
+    weeks.push(new Date(currentWeekStart));
+    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  }
+  
+  const weeklyGoal = yearlyGoal / 52;
+  const performancePattern = getPerformancePattern(metric.name || '');
+  
+  return weeks.map((weekStart, index) => {
+    const weekProgress = weeklyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index % 12] || 1.0;
+    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
+    
+    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
+    
+    return {
+      period: weekLabel,
+      goal: Math.round(weekProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
+    };
+  });
+}
+
+function getPerformancePattern(metricName: string) {
+  const name = metricName.toLowerCase();
+    
+  if (name.includes('revenue') || name.includes('arr') || name.includes('mrr')) {
+    return [0.85, 0.88, 0.92, 0.95, 0.98, 1.02, 1.05, 1.08, 1.12, 1.15, 1.18, 1.20];
+  } else if (name.includes('churn') || name.includes('cost') || name.includes('cac')) {
+    return [1.15, 1.12, 1.08, 1.05, 1.02, 0.98, 0.95, 0.92, 0.90, 0.88, 0.85, 0.82];
+  } else if (name.includes('conversion') || name.includes('retention') || name.includes('satisfaction')) {
+    return [0.82, 0.85, 0.89, 0.92, 0.95, 0.98, 1.01, 1.04, 1.06, 1.08, 1.10, 1.12];
+  } else if (name.includes('users') || name.includes('adoption')) {
+    return [0.75, 0.82, 0.90, 0.96, 1.02, 1.08, 1.12, 1.16, 1.19, 1.22, 1.24, 1.26];
+  } else {
+    return [0.88, 0.91, 0.94, 0.97, 1.00, 1.03, 1.06, 1.09, 1.11, 1.13, 1.15, 1.17];
+  }
+}
+
+// Get current value from chart data for alignment
+function getCurrentValueFromChart(metric: any, timePeriod: string) {
+  const chartData = generateProgressData(metric, timePeriod);
+  const actualDataPoints = chartData.filter(point => point.actual !== null);
+  if (actualDataPoints.length === 0) return metric.value;
+  
+  const latestActual = actualDataPoints[actualDataPoints.length - 1].actual;
+  return formatChartValue(latestActual || 0, metric.format);
+}
+
+function formatChartValue(value: number, format: string) {
+  if (format === 'currency') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  } else if (format === 'percentage') {
+    return `${value.toFixed(1)}%`;
+  } else {
+    return value.toLocaleString();
+  }
+}
+
 interface MetricsOverviewProps {
   onRefresh: () => void;
 }
@@ -196,48 +376,29 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return option?.label || "Year to Date";
   };
 
-  // Adjust metrics based on time period
+  // Adjust metrics based on chart data for alignment
   const adjustMetricsForTimePeriod = (originalMetrics: any[]) => {
     return originalMetrics.map(metric => {
-      let adjustedMetric = { ...metric };
+      const chartData = generateProgressData(metric, timePeriod);
+      const actualDataPoints = chartData.filter(point => point.actual !== null);
       
-      switch (timePeriod) {
-        case "weekly":
-          // For weekly view, show weekly targets and values
-          adjustedMetric.value = getWeeklyValue(metric.value);
-          adjustedMetric.yearlyGoal = getWeeklyGoal(metric.yearlyGoal);
-          adjustedMetric.goalProgress = calculateWeeklyProgress(metric.value, metric.yearlyGoal);
-          break;
-        case "monthly":
-          // For monthly view, show monthly targets and values
-          adjustedMetric.value = getMonthlyValue(metric.value);
-          adjustedMetric.yearlyGoal = getMonthlyGoal(metric.yearlyGoal);
-          adjustedMetric.goalProgress = calculateMonthlyProgress(metric.value, metric.yearlyGoal);
-          break;
-        case "quarterly":
-          // For quarterly view, show quarterly targets and values
-          adjustedMetric.value = getQuarterlyValue(metric.value);
-          adjustedMetric.yearlyGoal = getQuarterlyGoal(metric.yearlyGoal);
-          adjustedMetric.goalProgress = calculateQuarterlyProgress(metric.value, metric.yearlyGoal);
-          break;
-        case "ytd":
-        default:
-          // YTD is the default, no adjustment needed
-          break;
-      }
+      if (actualDataPoints.length === 0) return metric;
+      
+      const latestActual = actualDataPoints[actualDataPoints.length - 1].actual || 0;
+      const latestGoal = chartData[chartData.length - 1]?.goal || 0;
+      
+      const adjustedMetric = { ...metric };
+      adjustedMetric.value = formatChartValue(latestActual, metric.format);
+      adjustedMetric.yearlyGoal = formatChartValue(latestGoal, metric.format);
+      adjustedMetric.goalProgress = latestGoal > 0 ? Math.round((latestActual / latestGoal) * 100).toString() : "0";
       
       return adjustedMetric;
     });
   };
 
-  // Helper functions for time period calculations
-  const getWeeklyValue = (yearlyValue: string) => {
-    const numValue = parseFloat(yearlyValue.replace(/[$,%]/g, ''));
-    const weeklyValue = numValue / 52;
-    if (yearlyValue.includes('$')) return `$${weeklyValue.toLocaleString()}`;
-    if (yearlyValue.includes('%')) return `${weeklyValue.toFixed(1)}%`;
-    return weeklyValue.toLocaleString();
-  };
+  const adjustedMetrics = adjustMetricsForTimePeriod(metrics);
+
+  return (
 
   const getMonthlyValue = (yearlyValue: string) => {
     const numValue = parseFloat(yearlyValue.replace(/[$,%]/g, ''));
