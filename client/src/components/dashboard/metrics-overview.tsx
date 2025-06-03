@@ -286,39 +286,71 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         <TabsContent value="all" className="mt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {metrics.map((metric: any) => (
-              <Card key={metric.id} className="relative overflow-hidden">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {metric.name}
-                  </CardTitle>
+              <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
+                {/* Priority indicator */}
+                <div className={`absolute top-0 left-0 w-full h-1 ${
+                  metric.priority === 1 ? 'bg-red-500' : 
+                  metric.priority === 2 ? 'bg-orange-500' : 
+                  metric.priority === 3 ? 'bg-yellow-500' : 'bg-green-500'
+                }`}></div>
+                
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
+                        {metric.name}
+                      </CardTitle>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                        {metric.description}
+                      </p>
+                    </div>
+                    <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
+                      metric.isIncreasing ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                      'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
+                    }`}>
+                      {metric.isIncreasing ? '↗' : '↘'} {metric.changePercent}
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
+
+                <CardContent className="space-y-4 pt-0">
+                  {/* Current Value */}
                   <div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <div className="text-3xl font-bold text-gray-900 dark:text-white">
                       {metric.value}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {metric.changePercent} vs. last period
+                      vs. {metric.yearlyGoal} goal
                     </div>
                   </div>
                   
+                  {/* Progress Bar */}
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
-                      <span className="text-sm font-medium">{metric.goalProgress}%</span>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Progress</span>
+                      <span className={`text-sm font-bold ${
+                        parseInt(metric.goalProgress) >= 90 ? 'text-green-600' : 
+                        parseInt(metric.goalProgress) >= 70 ? 'text-blue-600' : 
+                        parseInt(metric.goalProgress) >= 50 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {metric.goalProgress}%
+                      </span>
                     </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                       <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        className={`h-3 rounded-full transition-all duration-500 ${
+                          parseInt(metric.goalProgress) >= 90 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 
+                          parseInt(metric.goalProgress) >= 70 ? 'bg-gradient-to-r from-blue-500 to-cyan-500' : 
+                          parseInt(metric.goalProgress) >= 50 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
+                          'bg-gradient-to-r from-red-500 to-pink-500'
+                        }`}
                         style={{ width: `${Math.min(parseInt(metric.goalProgress), 100)}%` }}
                       />
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Goal: {metric.yearlyGoal}
-                    </div>
                   </div>
 
-                  <div className="h-32">
+                  {/* Chart */}
+                  <div className="h-32 -mx-2">
                     <MetricProgressChart metric={metric} timePeriod={timePeriod} />
                   </div>
                 </CardContent>
@@ -331,39 +363,71 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
           <TabsContent key={category} value={category} className="mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(categoryMetrics as any[]).map((metric: any) => (
-                <Card key={metric.id} className="relative overflow-hidden">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {metric.name}
-                    </CardTitle>
+                <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
+                  {/* Priority indicator */}
+                  <div className={`absolute top-0 left-0 w-full h-1 ${
+                    metric.priority === 1 ? 'bg-red-500' : 
+                    metric.priority === 2 ? 'bg-orange-500' : 
+                    metric.priority === 3 ? 'bg-yellow-500' : 'bg-green-500'
+                  }`}></div>
+                  
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
+                          {metric.name}
+                        </CardTitle>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                          {metric.description}
+                        </p>
+                      </div>
+                      <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
+                        metric.isIncreasing ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                        'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
+                      }`}>
+                        {metric.isIncreasing ? '↗' : '↘'} {metric.changePercent}
+                      </div>
+                    </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+
+                  <CardContent className="space-y-4 pt-0">
+                    {/* Current Value */}
                     <div>
-                      <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                      <div className="text-3xl font-bold text-gray-900 dark:text-white">
                         {metric.value}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {metric.changePercent} vs. last period
+                        vs. {metric.yearlyGoal} goal
                       </div>
                     </div>
                     
+                    {/* Progress Bar */}
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
-                        <span className="text-sm font-medium">{metric.goalProgress}%</span>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Progress</span>
+                        <span className={`text-sm font-bold ${
+                          parseInt(metric.goalProgress) >= 90 ? 'text-green-600' : 
+                          parseInt(metric.goalProgress) >= 70 ? 'text-blue-600' : 
+                          parseInt(metric.goalProgress) >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {metric.goalProgress}%
+                        </span>
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                         <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          className={`h-3 rounded-full transition-all duration-500 ${
+                            parseInt(metric.goalProgress) >= 90 ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 
+                            parseInt(metric.goalProgress) >= 70 ? 'bg-gradient-to-r from-blue-500 to-cyan-500' : 
+                            parseInt(metric.goalProgress) >= 50 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
+                            'bg-gradient-to-r from-red-500 to-pink-500'
+                          }`}
                           style={{ width: `${Math.min(parseInt(metric.goalProgress), 100)}%` }}
                         />
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        Goal: {metric.yearlyGoal}
-                      </div>
                     </div>
 
-                    <div className="h-32">
+                    {/* Chart */}
+                    <div className="h-32 -mx-2">
                       <MetricProgressChart metric={metric} timePeriod={timePeriod} />
                     </div>
                   </CardContent>
