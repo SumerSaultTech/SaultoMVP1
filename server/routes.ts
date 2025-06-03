@@ -535,6 +535,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Snowflake SQL execution route
+  app.post("/api/snowflake/execute", async (req, res) => {
+    try {
+      const { sql } = req.body;
+      
+      if (!sql) {
+        return res.status(400).json({ error: "SQL query is required" });
+      }
+
+      const result = await snowflakeService.executeQuery(sql);
+      res.json(result);
+    } catch (error: any) {
+      console.error("SQL execution error:", error);
+      res.status(500).json({ error: `Failed to execute SQL: ${error.message}` });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
