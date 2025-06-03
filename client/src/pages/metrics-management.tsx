@@ -29,7 +29,6 @@ interface MetricFormData {
   format: string;
   isIncreasing: boolean;
   isNorthStar: boolean;
-  priority: number;
   sqlQuery?: string;
 }
 
@@ -69,7 +68,6 @@ export default function MetricsManagement() {
     format: "currency",
     isIncreasing: true,
     isNorthStar: false,
-    priority: 1,
   });
 
   const { data: metrics = [], isLoading } = useQuery({
@@ -246,7 +244,6 @@ export default function MetricsManagement() {
       format: "currency",
       isIncreasing: true,
       isNorthStar: false,
-      priority: 1,
       sqlQuery: "",
     });
     setEditingMetric(null);
@@ -270,7 +267,6 @@ export default function MetricsManagement() {
       format: metric.format || "currency",
       isIncreasing: metric.isIncreasing ?? true,
       isNorthStar: (metric as any).isNorthStar ?? false,
-      priority: metric.priority || 1,
     });
     setIsDialogOpen(true);
   };
@@ -312,7 +308,6 @@ export default function MetricsManagement() {
 
     const submitData = {
       ...formData,
-      priority: parseInt(formData.priority.toString()),
     };
 
     if (editingMetric) {
@@ -522,17 +517,6 @@ export default function MetricsManagement() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Priority</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="12"
-                      value={formData.priority}
-                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
                     <label className="text-sm font-medium">Goal Direction</label>
                     <Select 
                       value={formData.isIncreasing ? "increasing" : "decreasing"} 
@@ -708,7 +692,6 @@ export default function MetricsManagement() {
                     </TableHeader>
                     <TableBody>
                       {metricsArray
-                        .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
                         .map((metric: any) => {
                           const categoryInfo = getCategoryInfo(metric.category);
                           return (
