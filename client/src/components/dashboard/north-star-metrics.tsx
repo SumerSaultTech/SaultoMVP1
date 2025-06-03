@@ -301,58 +301,55 @@ export default function NorthStarMetrics() {
             <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-blue-500"></div>
               
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
-                    <DollarSign className="h-5 w-5 text-purple-600" />
+                  <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
+                    <DollarSign className="h-4 w-4 text-purple-600" />
                     <span>{metric.name}</span>
                   </CardTitle>
                   <div className={`flex items-center space-x-1 text-sm font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                    {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                    {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                     <span>{Math.abs(changeValue)}%</span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  {metric.description}
-                </p>
               </CardHeader>
 
-              <CardContent className="pt-0 space-y-4">
+              <CardContent className="pt-0 space-y-3">
                 {/* Current Value */}
                 <div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
                     {formatValue(adaptiveCurrentValue, metric.format)}
                   </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
                     of {formatValue(adaptiveGoal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
                   </div>
                 </div>
 
                 {/* Progress Bar */}
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                       Progress
                     </span>
-                    <span className={`text-sm font-bold ${progressStatus.color}`}>
+                    <span className={`text-xs font-bold ${progressStatus.color}`}>
                       {progress}%
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div 
-                      className="h-3 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
+                      className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500 ease-out"
                       style={{ width: `${Math.min(progress, 100)}%` }}
                     />
                   </div>
                 </div>
 
                 {/* Time Period Chart */}
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300">
                     {getTimePeriodLabel(northStarTimePeriod)} Progress
                   </h4>
                   
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={140}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis 
