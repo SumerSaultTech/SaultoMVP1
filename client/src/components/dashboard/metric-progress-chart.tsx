@@ -250,8 +250,7 @@ export default function MetricProgressChart({ metric, timePeriod = "ytd" }: Metr
   const progressData = generateProgressData(metric, timePeriod);
   
   // Find the last data point with actual value (not null)
-  const currentData = progressData.reverse().find(data => data.actual !== null);
-  progressData.reverse(); // Restore original order
+  const currentData = [...progressData].reverse().find(data => data.actual !== null);
   
   if (!currentData || currentData.actual === null) return null;
 
@@ -354,14 +353,17 @@ export default function MetricProgressChart({ metric, timePeriod = "ytd" }: Metr
               strokeDasharray="5 5"
               dot={false}
               name="goal"
+              connectNulls={false}
             />
             <Line 
               type="monotone" 
               dataKey="actual" 
               stroke="#3b82f6" 
               strokeWidth={3}
+              connectNulls={false}
               dot={(props: any) => {
                 const { cx, cy, payload } = props;
+                if (!payload || payload.actual === null) return null;
                 return payload?.isCurrent ? (
                   <circle cx={cx} cy={cy} r={6} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
                 ) : (
