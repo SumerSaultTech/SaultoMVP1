@@ -311,7 +311,11 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                             <Plus className="w-4 h-4 mt-0.5 text-green-600 flex-shrink-0" />
                             <div className="flex-1 min-w-0 overflow-hidden">
                               <div className="font-medium text-sm truncate">{suggestion.name}</div>
-                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 break-words overflow-wrap-anywhere">
+                              <div className={`text-gray-600 dark:text-gray-400 mt-1 break-words overflow-wrap-anywhere ${
+                                suggestion.description.length > 120 ? 'text-xs' :
+                                suggestion.description.length > 80 ? 'text-xs' :
+                                'text-sm'
+                              }`}>
                                 {suggestion.description}
                               </div>
                               <div className="flex gap-2 mt-2 flex-wrap">
