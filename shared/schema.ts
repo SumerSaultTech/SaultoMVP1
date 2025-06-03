@@ -53,6 +53,9 @@ export const kpiMetrics = pgTable("kpi_metrics", {
   yearlyGoal: text("yearly_goal"),
   currentProgress: text("current_progress"),
   goalProgress: text("goal_progress"), // percentage as string
+  goalType: text("goal_type").default("yearly"), // yearly, quarterly, monthly
+  quarterlyGoals: jsonb("quarterly_goals"), // {Q1: value, Q2: value, Q3: value, Q4: value}
+  monthlyGoals: jsonb("monthly_goals"), // {Jan: value, Feb: value, ...}
   category: text("category").notNull().default("revenue"), // revenue, growth, retention, efficiency
   priority: integer("priority").default(1), // 1-12 for ordering
   format: text("format").default("currency"), // currency, percentage, number
