@@ -132,26 +132,28 @@ Please define this metric and provide the SQL query to calculate it.`;
     // Skip database schema lookup for suggestions to avoid timeout
     const formattedSchema = "No specific database schema available - provide general metric suggestions.";
 
-    const systemPrompt = `You are a business intelligence expert. Based on the database schema, suggest 5-8 key business metrics that would be most valuable for a ${businessType} business.
+    const systemPrompt = `You are a business intelligence expert. Suggest 5-8 key business metrics that would be most valuable for a ${businessType} business.
 
-Your response must be a valid JSON array of metric objects with this structure:
-[
-  {
-    "name": "metric name",
-    "description": "clear business definition",
-    "sqlQuery": "SELECT statement to calculate the metric",
-    "category": "one of: revenue, growth, retention, efficiency",
-    "format": "one of: currency, percentage, number",
-    "yearlyGoal": "suggested realistic yearly target",
-    "rationale": "explanation of why this metric matters"
-  }
-]
+Your response must be a valid JSON object with this exact structure:
+{
+  "metrics": [
+    {
+      "name": "metric name",
+      "description": "clear business definition",
+      "sqlQuery": "SELECT COUNT(*) as example_metric FROM example_table",
+      "category": "one of: revenue, growth, retention, efficiency",
+      "format": "one of: currency, percentage, number",
+      "yearlyGoal": "suggested realistic yearly target",
+      "rationale": "explanation of why this metric matters"
+    }
+  ]
+}
 
 Focus on metrics that:
-- Are directly calculable from the available data
 - Provide actionable business insights
 - Are industry-standard KPIs
-- Cover different aspects of business performance`;
+- Cover different aspects of business performance
+- Include example SQL queries for reference`;
 
     const userPrompt = `Database Schema:
 ${formattedSchema}
