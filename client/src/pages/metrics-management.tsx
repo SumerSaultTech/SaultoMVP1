@@ -27,6 +27,7 @@ interface MetricFormData {
   category: string;
   format: string;
   isIncreasing: boolean;
+  isNorthStar: boolean;
   priority: number;
   sqlQuery?: string;
 }
@@ -66,6 +67,7 @@ export default function MetricsManagement() {
     category: "revenue",
     format: "currency",
     isIncreasing: true,
+    isNorthStar: false,
     priority: 1,
   });
 
@@ -242,6 +244,7 @@ export default function MetricsManagement() {
       category: "revenue",
       format: "currency",
       isIncreasing: true,
+      isNorthStar: false,
       priority: 1,
       sqlQuery: "",
     });
@@ -265,6 +268,7 @@ export default function MetricsManagement() {
       category: metric.category || "revenue",
       format: metric.format || "currency",
       isIncreasing: metric.isIncreasing ?? true,
+      isNorthStar: (metric as any).isNorthStar ?? false,
       priority: metric.priority || 1,
     });
     setIsDialogOpen(true);
@@ -755,6 +759,7 @@ export default function MetricsManagement() {
                   category: metric.category,
                   format: metric.format,
                   isIncreasing: true,
+                  isNorthStar: false,
                   priority: 1
                 });
                 setIsDialogOpen(true);
