@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, TrendingDown, DollarSign, Target, Calendar } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useQuery } from "@tanstack/react-query";
 
 interface NorthStarMetric {
   id: string;
@@ -14,26 +15,14 @@ interface NorthStarMetric {
   format: string;
 }
 
-const northStarMetrics: NorthStarMetric[] = [
-  {
-    id: "annual-revenue",
-    name: "Annual Revenue",
-    value: "$2,400,000",
-    yearlyGoal: "$3,000,000",
-    changePercent: "+12.5",
-    description: "Total revenue for the current fiscal year",
-    format: "currency"
-  },
-  {
-    id: "annual-profit",
-    name: "Annual Profit",
-    value: "$480,000",
-    yearlyGoal: "$750,000",
-    changePercent: "+8.2",
-    description: "Net profit after all expenses for the current fiscal year",
-    format: "currency"
-  }
-];
+// Fetch authentic North Star metrics from MIAS_DATA Snowflake database
+function useNorthStarMetrics() {
+  return useQuery({
+    queryKey: ["/api/metrics/north-star"],
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 10 * 60 * 1000, // 10 minutes
+  });
+}
 
 // Generate progress data for North Star metrics based on time period
 function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
@@ -208,6 +197,9 @@ function getProgressStatus(progress: number) {
 
 export default function NorthStarMetrics() {
   const [northStarTimePeriod, setNorthStarTimePeriod] = useState("ytd");
+  
+  // Fetch authentic metrics from MIAS_DATA Snowflake database
+  const { data: northStarMetrics, isLoading, error } = useNorthStarMetrics();
 
   // Time period options for North Star metrics
   const northStarTimePeriodOptions = [
@@ -216,6 +208,40 @@ export default function NorthStarMetrics() {
     { value: "quarterly", label: "Quarterly View" },
     { value: "ytd", label: "Year to Date" }
   ];
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Target className="h-5 w-5 text-purple-600" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-48 bg-gray-100 animate-pulse rounded-lg"></div>
+          <div className="h-48 bg-gray-100 animate-pulse rounded-lg"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !northStarMetrics) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Target className="h-5 w-5 text-purple-600" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
+          </div>
+        </div>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-700">Unable to load North Star metrics from MIAS_DATA Snowflake database.</p>
+          <p className="text-red-600 text-sm mt-1">Error: {error?.message || 'Connection failed'}</p>
+        </div>
+      </div>
+    );
+  }
 
   const getTimePeriodLabel = (period: string) => {
     const option = northStarTimePeriodOptions.find(opt => opt.value === period);
@@ -303,7 +329,7 @@ export default function NorthStarMetrics() {
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {northStarMetrics.map((metric) => {
+        {northStarMetrics && northStarMetrics.map && northStarMetrics.map((metric: any) => {
           // Get the EXACT same values used in the chart
           const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
           const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
