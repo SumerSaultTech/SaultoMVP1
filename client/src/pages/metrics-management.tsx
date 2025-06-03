@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Calculator, Play, Code } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -545,6 +546,24 @@ export default function MetricsManagement() {
                         <SelectItem value="decreasing">Lower is Better</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  {/* North Star Metric Checkbox */}
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="isNorthStar"
+                      checked={formData.isNorthStar}
+                      onCheckedChange={(checked) => setFormData({ ...formData, isNorthStar: !!checked })}
+                    />
+                    <Label 
+                      htmlFor="isNorthStar" 
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      North Star Metric
+                    </Label>
+                    <div className="text-xs text-gray-500 ml-2">
+                      (Primary metrics always visible on dashboard)
+                    </div>
                   </div>
 
                   {/* SQL Query Section */}
