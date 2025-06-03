@@ -416,7 +416,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               {Array.isArray(adjustedMetrics) ? adjustedMetrics
                 .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
                 .map((metric: any) => (
-                  <MetricProgressChart key={metric.id || metric.name} metric={metric} />
+                  <MetricProgressChart key={metric.id || metric.name} metric={metric} timePeriod={timePeriod} />
                 )) : null}
             </div>
           </TabsContent>
@@ -427,7 +427,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                 {(categoryMetrics as any[])
                   .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
                   .map((metric: any) => (
-                    <MetricProgressChart key={metric.id || metric.name} metric={metric} />
+                    <MetricProgressChart key={metric.id || metric.name} metric={metric} timePeriod={timePeriod} />
                   ))}
               </div>
             </TabsContent>

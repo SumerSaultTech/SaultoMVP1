@@ -13,16 +13,11 @@ import type { KpiMetric } from "@/../../shared/schema";
 
 interface MetricProgressChartProps {
   metric: Partial<KpiMetric>;
+  timePeriod?: string;
 }
 
-// Generate YTD progress data based on metric
-function generateYTDData(metric: Partial<KpiMetric>) {
-  const currentMonth = new Date().getMonth() + 1; // 1-12
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-  ];
-
+// Generate progress data based on metric and time period
+function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "ytd") {
   // Parse current value and yearly goal
   const currentValueStr = metric.value || "0";
   const yearlyGoalStr = metric.yearlyGoal || "0";
@@ -35,52 +30,127 @@ function generateYTDData(metric: Partial<KpiMetric>) {
   if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
     return [];
   }
-  
-  // Create realistic performance patterns based on metric type
-  const getPerformancePattern = (metricName: string) => {
-    const name = metricName.toLowerCase();
-    
-    if (name.includes('revenue') || name.includes('arr') || name.includes('mrr')) {
-      // Revenue typically shows steady growth with some seasonal variation
-      return [0.85, 0.88, 0.92, 0.95, 0.98, 1.02, 1.05, 1.08, 1.12, 1.15, 1.18, 1.20];
-    } else if (name.includes('churn') || name.includes('cost') || name.includes('cac')) {
-      // Metrics where lower is better - show improvement over time
-      return [1.15, 1.12, 1.08, 1.05, 1.02, 0.98, 0.95, 0.92, 0.90, 0.88, 0.85, 0.82];
-    } else if (name.includes('conversion') || name.includes('retention') || name.includes('satisfaction')) {
-      // Conversion metrics show gradual improvement with some fluctuation
-      return [0.82, 0.85, 0.89, 0.92, 0.95, 0.98, 1.01, 1.04, 1.06, 1.08, 1.10, 1.12];
-    } else if (name.includes('users') || name.includes('adoption')) {
-      // User metrics show strong growth in early months, then steady growth
-      return [0.75, 0.82, 0.90, 0.96, 1.02, 1.08, 1.12, 1.16, 1.19, 1.22, 1.24, 1.26];
-    } else {
-      // Default pattern for other metrics
-      return [0.88, 0.91, 0.94, 0.97, 1.00, 1.03, 1.06, 1.09, 1.11, 1.13, 1.15, 1.17];
-    }
-  };
+
+  // Generate different data based on time period
+  switch (timePeriod) {
+    case "weekly":
+      return generateWeeklyData(metric, currentValue, yearlyGoal);
+    case "monthly":
+      return generateMonthlyData(metric, currentValue, yearlyGoal);
+    case "quarterly":
+      return generateQuarterlyData(metric, currentValue, yearlyGoal);
+    case "ytd":
+    default:
+      return generateYTDData(metric, currentValue, yearlyGoal);
+  }
+}
+
+function generateWeeklyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
+  const currentWeek = Math.floor((new Date().getTime() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  const weeks = Array.from({ length: Math.min(currentWeek, 12) }, (_, i) => `W${i + 1}`);
   
   const performancePattern = getPerformancePattern(metric.name || '');
+  const weeklyGoal = yearlyGoal / 52;
   
-  // Generate monthly data points
-  const monthlyData = months.slice(0, currentMonth).map((month, index) => {
+  return weeks.map((week, index) => {
+    const weekNumber = index + 1;
+    const goalProgress = weeklyGoal * weekNumber;
+    const performanceMultiplier = performancePattern[index % 12] || 1.0;
+    const actualValue = goalProgress * performanceMultiplier;
+    
+    return {
+      period: week,
+      goal: Math.round(goalProgress),
+      actual: Math.round(actualValue),
+      isCurrent: weekNumber === currentWeek
+    };
+  });
+}
+
+function generateMonthlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
+  const currentMonth = new Date().getMonth() + 1;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  const performancePattern = getPerformancePattern(metric.name || '');
+  const monthlyGoal = yearlyGoal / 12;
+  
+  return months.slice(0, currentMonth).map((month, index) => {
     const monthNumber = index + 1;
-    
-    // Goal trajectory (linear progression through the year)
-    const goalProgress = (yearlyGoal / 12) * monthNumber;
-    
-    // Use performance pattern to create realistic actual values
+    const goalProgress = monthlyGoal * monthNumber;
     const performanceMultiplier = performancePattern[index] || 1.0;
     const actualValue = goalProgress * performanceMultiplier;
     
     return {
-      month,
-      monthNumber,
+      period: month,
       goal: Math.round(goalProgress),
       actual: Math.round(actualValue),
-      isCurrentMonth: monthNumber === currentMonth
+      isCurrent: monthNumber === currentMonth
     };
   });
+}
 
-  return monthlyData;
+function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
+  const currentQuarter = Math.floor(new Date().getMonth() / 3) + 1;
+  const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+  
+  const performancePattern = getPerformancePattern(metric.name || '');
+  const quarterlyGoal = yearlyGoal / 4;
+  
+  return quarters.slice(0, currentQuarter).map((quarter, index) => {
+    const quarterNumber = index + 1;
+    const goalProgress = quarterlyGoal * quarterNumber;
+    const performanceMultiplier = performancePattern[index * 3] || 1.0;
+    const actualValue = goalProgress * performanceMultiplier;
+    
+    return {
+      period: quarter,
+      goal: Math.round(goalProgress),
+      actual: Math.round(actualValue),
+      isCurrent: quarterNumber === currentQuarter
+    };
+  });
+}
+
+function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
+  const currentMonth = new Date().getMonth() + 1;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  const performancePattern = getPerformancePattern(metric.name || '');
+  
+  return months.slice(0, currentMonth).map((month, index) => {
+    const monthNumber = index + 1;
+    const goalProgress = (yearlyGoal / 12) * monthNumber;
+    const performanceMultiplier = performancePattern[index] || 1.0;
+    const actualValue = goalProgress * performanceMultiplier;
+    
+    return {
+      period: month,
+      goal: Math.round(goalProgress),
+      actual: Math.round(actualValue),
+      isCurrent: monthNumber === currentMonth
+    };
+  });
+}
+
+function getPerformancePattern(metricName: string) {
+  const name = metricName.toLowerCase();
+    
+  if (name.includes('revenue') || name.includes('arr') || name.includes('mrr')) {
+    // Revenue typically shows steady growth with some seasonal variation
+    return [0.85, 0.88, 0.92, 0.95, 0.98, 1.02, 1.05, 1.08, 1.12, 1.15, 1.18, 1.20];
+  } else if (name.includes('churn') || name.includes('cost') || name.includes('cac')) {
+    // Metrics where lower is better - show improvement over time
+    return [1.15, 1.12, 1.08, 1.05, 1.02, 0.98, 0.95, 0.92, 0.90, 0.88, 0.85, 0.82];
+  } else if (name.includes('conversion') || name.includes('retention') || name.includes('satisfaction')) {
+    // Conversion metrics show gradual improvement with some fluctuation
+    return [0.82, 0.85, 0.89, 0.92, 0.95, 0.98, 1.01, 1.04, 1.06, 1.08, 1.10, 1.12];
+  } else if (name.includes('users') || name.includes('adoption')) {
+    // User metrics show strong growth in early months, then steady growth
+    return [0.75, 0.82, 0.90, 0.96, 1.02, 1.08, 1.12, 1.16, 1.19, 1.22, 1.24, 1.26];
+  } else {
+    // Default pattern for other metrics
+    return [0.88, 0.91, 0.94, 0.97, 1.00, 1.03, 1.06, 1.09, 1.11, 1.13, 1.15, 1.17];
+  }
 }
 
 function formatValue(value: number, format: string | null | undefined): string {
