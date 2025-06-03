@@ -9,7 +9,7 @@ import Setup from "@/pages/setup";
 import TableBrowser from "@/pages/table-browser";
 import ModelRegistry from "@/pages/model-registry";
 import KpiAssistant from "@/pages/kpi-assistant";
-import PipelineLogs from "@/pages/pipeline-logs";
+
 import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
 import Sidebar from "@/components/layout/sidebar";
@@ -22,7 +22,6 @@ function Router() {
       <Route path="/tables" component={TableBrowser} />
       <Route path="/models" component={ModelRegistry} />
       <Route path="/assistant" component={KpiAssistant} />
-      <Route path="/logs" component={PipelineLogs} />
       <Route path="/metrics" component={MetricsManagement} />
       <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
