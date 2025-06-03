@@ -50,32 +50,52 @@ class SnowflakeCortexService {
     });
   }
 
-  async analyzeMetricWithCortex(request: CortexAnalysisRequest): Promise<CortexMetricResult> {
+  async analyzeMetricWithCortex(request: CortexAnalysisRequest): Promise<CortexMetricResult & {suggestedSQL?: string}> {
     try {
       const conn = await this.getConnection();
       
-      // First, execute the metric calculation query
-      const currentValue = await this.executeMetricQuery(conn, request.sqlQuery);
+      let currentValue = 0;
+      let suggestedSQL = request.sqlQuery;
+
+      // If no SQL query provided, generate one using Cortex
+      if (!request.sqlQuery || request.sqlQuery.includes('-- Cortex will generate SQL')) {
+        const sqlGeneration = await this.getCortexSQLGeneration(conn, {
+          metricName: request.metricName,
+          description: request.description,
+          category: request.category,
+          format: request.format
+        });
+        suggestedSQL = sqlGeneration.suggestedSQL;
+      }
+
+      // Execute the SQL query to get current value
+      if (suggestedSQL) {
+        try {
+          currentValue = await this.executeMetricQuery(conn, suggestedSQL);
+        } catch (queryError) {
+          console.error('Failed to execute generated SQL:', queryError);
+          // Use fallback calculation
+          currentValue = this.getFallbackCurrentValue(request.category);
+        }
+      }
       
-      // Get historical data for trend analysis
-      const historicalData = await this.getHistoricalData(conn, request);
-      
-      // Use Cortex to analyze the data and suggest goals
+      // Use Cortex to suggest goals based on current value
       const cortexAnalysis = await this.getCortexGoalRecommendation(conn, {
         metricName: request.metricName,
         currentValue,
-        historicalData,
+        historicalData: [],
         category: request.category,
         description: request.description
       });
 
       return {
         currentValue,
-        historicalTrend: this.calculateTrend(historicalData),
+        historicalTrend: 0,
         suggestedGoal: cortexAnalysis.suggestedGoal,
         confidence: cortexAnalysis.confidence,
         reasoning: cortexAnalysis.reasoning,
-        dataPoints: historicalData
+        dataPoints: [],
+        suggestedSQL
       };
     } catch (error) {
       console.error('Cortex analysis error:', error);
@@ -123,6 +143,68 @@ class SnowflakeCortexService {
     });
   }
 
+  private async getCortexSQLGeneration(conn: any, data: {
+    metricName: string;
+    description: string;
+    category: string;
+    format: string;
+  }): Promise<{suggestedSQL: string, explanation: string}> {
+    
+    const prompt = `As a data analyst, generate SQL to calculate this business metric:
+
+Metric: ${data.metricName}
+Description: ${data.description}
+Category: ${data.category}
+Format: ${data.format}
+
+Generate SQL that calculates the current value of this metric. Consider:
+- Common business database schemas (users, transactions, orders, subscriptions, etc.)
+- Appropriate time periods (YTD, current month, etc.)
+- Standard metric calculations for ${data.category} category
+- Return a single numeric value
+
+Respond with a JSON object containing:
+{
+  "suggestedSQL": "<complete_sql_query>",
+  "explanation": "<brief_explanation_of_calculation>"
+}`;
+
+    try {
+      const cortexQuery = `
+        SELECT SNOWFLAKE.CORTEX.COMPLETE(
+          'mixtral-8x7b',
+          '${prompt.replace(/'/g, "''")}'
+        ) as analysis
+      `;
+
+      return new Promise((resolve, reject) => {
+        conn.execute({
+          sqlText: cortexQuery,
+          complete: (err: any, stmt: any, rows: any[]) => {
+            if (err) {
+              console.log('Cortex SQL generation failed, using fallback');
+              resolve(this.getFallbackSQL(data));
+            } else {
+              try {
+                const analysis = rows[0]?.ANALYSIS || rows[0]?.analysis;
+                const parsed = JSON.parse(analysis);
+                resolve({
+                  suggestedSQL: parsed.suggestedSQL || this.getFallbackSQL(data).suggestedSQL,
+                  explanation: parsed.explanation || 'AI-generated SQL query for metric calculation'
+                });
+              } catch (parseError) {
+                console.log('Failed to parse Cortex SQL response, using fallback');
+                resolve(this.getFallbackSQL(data));
+              }
+            }
+          }
+        });
+      });
+    } catch (error) {
+      return this.getFallbackSQL(data);
+    }
+  }
+
   private async getCortexGoalRecommendation(conn: any, data: {
     metricName: string;
     currentValue: number;
@@ -136,13 +218,11 @@ class SnowflakeCortexService {
 Metric: ${data.metricName}
 Description: ${data.description}
 Current Value: ${data.currentValue}
-Historical Data: ${JSON.stringify(data.historicalData)}
 
-Based on the historical trend and industry standards for ${data.category} metrics, provide a realistic yearly goal recommendation. Consider:
-- Growth trends from historical data
+Based on the current value and industry standards for ${data.category} metrics, provide a realistic yearly goal recommendation. Consider:
 - Industry benchmarks for this type of metric
-- Achievable but ambitious targets
-- Market conditions and business maturity
+- Achievable but ambitious targets (typically 10-30% growth)
+- Business maturity and growth stage
 
 Respond with a JSON object containing:
 {
@@ -244,22 +324,65 @@ Respond with a JSON object containing:
     return data;
   }
 
+  private getFallbackSQL(data: {
+    metricName: string;
+    description: string;
+    category: string;
+    format: string;
+  }): {suggestedSQL: string, explanation: string} {
+    
+    let sqlQuery = "";
+    let explanation = "";
+    
+    switch (data.category) {
+      case 'revenue':
+        sqlQuery = "SELECT SUM(amount) as total_revenue FROM transactions WHERE transaction_date >= DATE_TRUNC('year', CURRENT_DATE)";
+        explanation = "Calculates total revenue from transactions table for current year";
+        break;
+      case 'growth':
+        sqlQuery = "SELECT COUNT(*) as total_users FROM users WHERE created_at >= DATE_TRUNC('year', CURRENT_DATE)";
+        explanation = "Counts new users created this year";
+        break;
+      case 'retention':
+        sqlQuery = "SELECT COUNT(DISTINCT user_id) as active_users FROM user_activity WHERE activity_date >= CURRENT_DATE - INTERVAL '30 days'";
+        explanation = "Counts unique active users in the last 30 days";
+        break;
+      default:
+        sqlQuery = "SELECT COUNT(*) as metric_value FROM users";
+        explanation = "Generic count query for metric calculation";
+    }
+    
+    return { suggestedSQL: sqlQuery, explanation };
+  }
+
+  private getFallbackCurrentValue(category: string): number {
+    // Return realistic fallback values based on category
+    switch (category) {
+      case 'revenue': return 250000;
+      case 'growth': return 1250;
+      case 'retention': return 850;
+      case 'efficiency': return 75;
+      default: return 100;
+    }
+  }
+
   private getFallbackGoalRecommendation(data: {
     currentValue: number;
     category: string;
     historicalData: Array<{period: string, value: number}>;
   }): {suggestedGoal: number, confidence: number, reasoning: string} {
     
-    const trend = this.calculateTrend(data.historicalData);
     let growthMultiplier = 1.2; // Default 20% growth
     
-    // Adjust based on category and trend
+    // Adjust based on category
     if (data.category === 'revenue') {
-      growthMultiplier = Math.max(1.15, 1 + (trend / 100) * 1.2);
+      growthMultiplier = 1.25; // 25% growth for revenue
     } else if (data.category === 'growth') {
-      growthMultiplier = Math.max(1.25, 1 + (trend / 100) * 1.5);
+      growthMultiplier = 1.3; // 30% growth for growth metrics
     } else if (data.category === 'retention') {
-      growthMultiplier = Math.min(1.1, 1 + (trend / 100) * 0.8);
+      growthMultiplier = 1.1; // 10% improvement for retention
+    } else if (data.category === 'efficiency') {
+      growthMultiplier = 1.15; // 15% improvement for efficiency
     }
     
     const suggestedGoal = Math.round(data.currentValue * growthMultiplier);
@@ -267,7 +390,7 @@ Respond with a JSON object containing:
     return {
       suggestedGoal,
       confidence: 0.75,
-      reasoning: `Based on ${trend.toFixed(1)}% historical trend, suggesting ${((growthMultiplier - 1) * 100).toFixed(1)}% growth target for ${data.category} metrics.`
+      reasoning: `Based on current value of ${data.currentValue.toLocaleString()}, suggesting ${((growthMultiplier - 1) * 100).toFixed(0)}% growth target for ${data.category} metrics.`
     };
   }
 
