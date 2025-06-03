@@ -256,6 +256,12 @@ export default function MetricsManagement() {
       name: metric.name || "",
       description: metric.description || "",
       yearlyGoal: metric.yearlyGoal || "",
+      goalType: (metric as any).goalType || "yearly",
+      quarterlyGoals: (metric as any).quarterlyGoals || { Q1: "", Q2: "", Q3: "", Q4: "" },
+      monthlyGoals: (metric as any).monthlyGoals || { 
+        Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
+        Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
+      },
       category: metric.category || "revenue",
       format: metric.format || "currency",
       isIncreasing: metric.isIncreasing ?? true,
@@ -267,10 +273,33 @@ export default function MetricsManagement() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.yearlyGoal) {
+    // Validate required fields based on goal type
+    let isValid = true;
+    let errorMessage = "Please fill in all required fields.";
+
+    if (!formData.name) {
+      isValid = false;
+    } else if (formData.goalType === "yearly" && !formData.yearlyGoal) {
+      isValid = false;
+      errorMessage = "Please enter a yearly goal.";
+    } else if (formData.goalType === "quarterly") {
+      const hasAllQuarterlyGoals = Object.values(formData.quarterlyGoals).every(goal => goal.trim() !== "");
+      if (!hasAllQuarterlyGoals) {
+        isValid = false;
+        errorMessage = "Please enter goals for all quarters.";
+      }
+    } else if (formData.goalType === "monthly") {
+      const hasAllMonthlyGoals = Object.values(formData.monthlyGoals).every(goal => goal.trim() !== "");
+      if (!hasAllMonthlyGoals) {
+        isValid = false;
+        errorMessage = "Please enter goals for all months.";
+      }
+    }
+
+    if (!isValid) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields.",
+        description: errorMessage,
         variant: "destructive",
       });
       return;
@@ -404,27 +433,98 @@ export default function MetricsManagement() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Goal Type Selection */}
+                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Yearly Goal *</label>
-                      <Input
-                        value={formData.yearlyGoal}
-                        onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
-                        placeholder="e.g., $1,000,000"
-                        required
-                      />
+                      <label className="text-sm font-medium">Goal Type *</label>
+                      <Select 
+                        value={formData.goalType} 
+                        onValueChange={(value) => setFormData({ ...formData, goalType: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="yearly">Yearly Goal</SelectItem>
+                          <SelectItem value="quarterly">Quarterly Goals</SelectItem>
+                          <SelectItem value="monthly">Monthly Goals</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Priority</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max="12"
-                        value={formData.priority}
-                        onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
-                      />
-                    </div>
+                    {/* Yearly Goal Input */}
+                    {formData.goalType === "yearly" && (
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Yearly Goal *</label>
+                        <Input
+                          value={formData.yearlyGoal}
+                          onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
+                          placeholder="e.g., $1,000,000"
+                          required
+                        />
+                      </div>
+                    )}
+
+                    {/* Quarterly Goals Input */}
+                    {formData.goalType === "quarterly" && (
+                      <div className="space-y-3">
+                        <label className="text-sm font-medium">Quarterly Goals *</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {Object.keys(formData.quarterlyGoals).map((quarter) => (
+                            <div key={quarter} className="space-y-1">
+                              <label className="text-xs text-gray-600">{quarter}</label>
+                              <Input
+                                value={formData.quarterlyGoals[quarter]}
+                                onChange={(e) => setFormData({ 
+                                  ...formData, 
+                                  quarterlyGoals: { 
+                                    ...formData.quarterlyGoals, 
+                                    [quarter]: e.target.value 
+                                  }
+                                })}
+                                placeholder="Goal amount"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Monthly Goals Input */}
+                    {formData.goalType === "monthly" && (
+                      <div className="space-y-3">
+                        <label className="text-sm font-medium">Monthly Goals *</label>
+                        <div className="grid grid-cols-3 gap-3">
+                          {Object.keys(formData.monthlyGoals).map((month) => (
+                            <div key={month} className="space-y-1">
+                              <label className="text-xs text-gray-600">{month}</label>
+                              <Input
+                                value={formData.monthlyGoals[month]}
+                                onChange={(e) => setFormData({ 
+                                  ...formData, 
+                                  monthlyGoals: { 
+                                    ...formData.monthlyGoals, 
+                                    [month]: e.target.value 
+                                  }
+                                })}
+                                placeholder="Goal"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Priority</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={formData.priority}
+                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -646,6 +746,12 @@ export default function MetricsManagement() {
                   name: metric.name,
                   description: metric.description,
                   yearlyGoal: metric.yearlyGoal || "",
+                  goalType: "yearly",
+                  quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
+                  monthlyGoals: { 
+                    Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
+                    Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
+                  },
                   category: metric.category,
                   format: metric.format,
                   isIncreasing: true,
