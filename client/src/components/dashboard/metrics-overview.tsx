@@ -309,7 +309,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       parseInt(metric.goalProgress) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                       'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     }`}>
-                      {parseInt(metric.goalProgress) >= 100 ? '↗' : parseInt(metric.goalProgress) >= 90 ? '→' : '↘'} {metric.goalProgress}%
+                      {parseInt(metric.goalProgress) >= 100 ? '↗' : parseInt(metric.goalProgress) >= 90 ? '→' : '↘'} {metric.goalProgress}% to goal
                     </div>
                   </div>
                 </CardHeader>
@@ -325,24 +325,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     </div>
                   </div>
                   
-                  {/* Progress Indicator */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Goal Progress</span>
-                    <div className="flex items-center space-x-2">
-                      <span className={`text-lg font-bold ${
-                        parseInt(metric.goalProgress) >= 90 ? 'text-green-600' : 
-                        parseInt(metric.goalProgress) >= 70 ? 'text-blue-600' : 
-                        parseInt(metric.goalProgress) >= 50 ? 'text-yellow-600' : 'text-red-600'
-                      }`}>
-                        {metric.goalProgress}%
-                      </span>
-                      <div className={`w-3 h-3 rounded-full ${
-                        parseInt(metric.goalProgress) >= 90 ? 'bg-green-500' : 
-                        parseInt(metric.goalProgress) >= 70 ? 'bg-blue-500' : 
-                        parseInt(metric.goalProgress) >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                      }`}></div>
-                    </div>
-                  </div>
+
 
                   {/* Chart */}
                   <div className="h-32 -mx-2">
@@ -381,7 +364,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         parseInt(metric.goalProgress) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                         'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                       }`}>
-                        {parseInt(metric.goalProgress) >= 100 ? '↗' : parseInt(metric.goalProgress) >= 90 ? '→' : '↘'} {metric.goalProgress}%
+                        {parseInt(metric.goalProgress) >= 100 ? '↗' : parseInt(metric.goalProgress) >= 90 ? '→' : '↘'} {metric.goalProgress}% to goal
                       </div>
                     </div>
                   </CardHeader>
@@ -397,24 +380,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </div>
                     </div>
                     
-                    {/* Progress Indicator */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Goal Progress</span>
-                      <div className="flex items-center space-x-2">
-                        <span className={`text-lg font-bold ${
-                          parseInt(metric.goalProgress) >= 90 ? 'text-green-600' : 
-                          parseInt(metric.goalProgress) >= 70 ? 'text-blue-600' : 
-                          parseInt(metric.goalProgress) >= 50 ? 'text-yellow-600' : 'text-red-600'
-                        }`}>
-                          {metric.goalProgress}%
-                        </span>
-                        <div className={`w-3 h-3 rounded-full ${
-                          parseInt(metric.goalProgress) >= 90 ? 'bg-green-500' : 
-                          parseInt(metric.goalProgress) >= 70 ? 'bg-blue-500' : 
-                          parseInt(metric.goalProgress) >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}></div>
-                      </div>
-                    </div>
+
 
                     {/* Chart */}
                     <div className="h-32 -mx-2">
