@@ -122,12 +122,15 @@ function generateYTDData(currentValue: number, yearlyGoal: number) {
   const monthlyGoal = yearlyGoal / 12;
   const currentMonth = new Date().getMonth();
   
+  // Generate monthly progression showing individual month performance
   return months.map((month, index) => {
     const isCurrentMonth = index === currentMonth;
+    const monthlyActual = index <= currentMonth ? monthlyGoal * (0.8 + Math.random() * 0.4) : null; // Varied monthly performance
+    
     return {
       period: month,
-      goal: Math.round(monthlyGoal * (index + 1)),
-      actual: index <= currentMonth ? Math.round((currentValue / (currentMonth + 1)) * (index + 1)) : null,
+      goal: Math.round(monthlyGoal),
+      actual: monthlyActual ? Math.round(monthlyActual) : null,
       isCurrent: isCurrentMonth
     };
   });
