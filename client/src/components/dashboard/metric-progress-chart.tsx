@@ -363,7 +363,7 @@ export default function MetricProgressChart({ metric, timePeriod = "ytd" }: Metr
               connectNulls={false}
               dot={(props: any) => {
                 const { cx, cy, payload } = props;
-                if (!payload || payload.actual === null) return null;
+                if (!payload || payload.actual === null) return <g />;
                 return payload?.isCurrent ? (
                   <circle cx={cx} cy={cy} r={6} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
                 ) : (

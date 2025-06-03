@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Calendar } from "lucide-react";
 import MetricProgressChart from "./metric-progress-chart";
+import NorthStarMetrics from "./north-star-metrics";
 import type { KpiMetric } from "@/../../shared/schema";
 
 interface MetricsOverviewProps {
@@ -368,6 +369,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
           </Button>
         </div>
       </div>
+
+      {/* North Star Metrics - Always Visible */}
+      <NorthStarMetrics />
 
       {metrics.length === 0 ? (
         <Card className="p-12 text-center">
