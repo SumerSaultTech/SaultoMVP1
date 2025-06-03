@@ -60,6 +60,7 @@ export const kpiMetrics = pgTable("kpi_metrics", {
   priority: integer("priority").default(1), // 1-12 for ordering
   format: text("format").default("currency"), // currency, percentage, number
   isIncreasing: boolean("is_increasing").default(true), // whether higher values are better
+  isNorthStar: boolean("is_north_star").default(false), // whether this is a North Star metric
   lastCalculatedAt: timestamp("last_calculated_at"),
 });
 
