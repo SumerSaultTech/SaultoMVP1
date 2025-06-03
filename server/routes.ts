@@ -257,7 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // KPI Metrics
   app.get("/api/kpi-metrics", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics();
+      const metrics = await storage.getKpiMetrics(1);
       res.json(metrics);
     } catch (error) {
       res.status(500).json({ message: "Failed to get KPI metrics" });
@@ -266,13 +266,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/kpi-metrics", async (req, res) => {
     try {
-      const validatedData = insertKpiMetricSchema.parse(req.body);
+      // Add default companyId for single-tenant implementation
+      const dataWithCompanyId = { ...req.body, companyId: 1 };
+      console.log("Data being validated:", JSON.stringify(dataWithCompanyId, null, 2));
+      const validatedData = insertKpiMetricSchema.parse(dataWithCompanyId);
       const metric = await storage.createKpiMetric(validatedData);
       res.json(metric);
     } catch (error) {
       if (error instanceof z.ZodError) {
+        console.log("Validation errors:", JSON.stringify(error.errors, null, 2));
         res.status(400).json({ message: "Invalid data", errors: error.errors });
       } else {
+        console.log("Server error:", error);
         res.status(500).json({ message: "Failed to create KPI metric" });
       }
     }
