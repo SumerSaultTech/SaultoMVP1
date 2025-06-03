@@ -345,10 +345,10 @@ export default function MetricsManagement() {
           }
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6 h-[calc(100vh-160px)]">
+        <div className="flex gap-6 mt-6 h-[calc(100vh-160px)]">
           {/* Metrics Table - Takes up 1/2 of the width */}
-          <div className="flex flex-col">
-            <Card className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col">
+            <Card className="h-full flex flex-col">
               <CardHeader className="flex-shrink-0">
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
@@ -453,7 +453,7 @@ export default function MetricsManagement() {
           </div>
 
           {/* AI Assistant - Takes up 1/2 of the width */}
-          <div className="flex flex-col">
+          <div className="flex-1 flex flex-col">
             <MetricsAssistant 
               onMetricCreate={(metric) => {
                 setFormData({
