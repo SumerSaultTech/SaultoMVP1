@@ -6,6 +6,7 @@ import { dataConnectorService } from "./services/data-connector";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
 import { metricsAIService } from "./services/metrics-ai";
+import { snowflakeCortexService } from "./services/snowflake-cortex";
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -497,6 +498,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: `Failed to process chat: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  });
+
+  // Cortex Analysis Routes
+  app.post("/api/cortex/analyze-metric", async (req, res) => {
+    try {
+      const { metricName, sqlQuery, description, category, format } = req.body;
+      
+      if (!metricName || !sqlQuery) {
+        return res.status(400).json({ error: "Metric name and SQL query are required" });
+      }
+
+      const analysis = await snowflakeCortexService.analyzeMetricWithCortex({
+        metricName,
+        sqlQuery,
+        description: description || "",
+        category: category || "general",
+        format: format || "number"
+      });
+
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("Cortex analysis error:", error);
+      res.status(500).json({ error: `Failed to analyze metric: ${error.message}` });
+    }
+  });
+
+  app.get("/api/cortex/test", async (req, res) => {
+    try {
+      const result = await snowflakeCortexService.testCortexConnection();
+      res.json(result);
+    } catch (error: any) {
+      console.error("Cortex test error:", error);
+      res.status(500).json({ error: `Failed to test Cortex: ${error.message}` });
     }
   });
 
