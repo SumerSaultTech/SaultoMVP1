@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Bot } from "lucide-react";
+import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
@@ -178,282 +178,280 @@ export default function MetricsManagement() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto p-6">
-          <Header 
-            title="Metrics Management"
-            subtitle="Configure your business metrics and yearly goals"
-          />
-          <Card className="mt-6">
-            <CardContent className="p-6">
-              <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="animate-pulse flex space-x-4">
-                    <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/4"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/6"></div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="flex-1 space-y-6 p-8 pt-6">
+        <Header 
+          title="Metrics Management"
+          subtitle="Configure your business metrics and yearly goals"
+        />
+        <Card>
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse flex space-x-4">
+                  <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/6"></div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-7xl mx-auto p-6">
-        <Header 
-          title="Metrics Management"
-          subtitle="Configure your business metrics and yearly goals"
-          actions={
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={resetForm}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Metric
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>
-                    {editingMetric ? "Edit Metric" : "Add New Metric"}
-                  </DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="flex-1 space-y-6 p-8 pt-6">
+      <Header 
+        title="Metrics Management"
+        subtitle="Configure your business metrics and yearly goals"
+        actions={
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={resetForm}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Metric
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingMetric ? "Edit Metric" : "Add New Metric"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Metric Name *</label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g., Annual Recurring Revenue"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Description</label>
+                  <Textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Brief description of this metric"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Metric Name *</label>
-                    <Input
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g., Annual Recurring Revenue"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Description</label>
-                    <Textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Brief description of this metric"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Category</label>
-                      <Select 
-                        value={formData.category} 
-                        onValueChange={(value) => setFormData({ ...formData, category: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {METRIC_CATEGORIES.map((category) => (
-                            <SelectItem key={category.value} value={category.value}>
-                              {category.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Format</label>
-                      <Select 
-                        value={formData.format} 
-                        onValueChange={(value) => setFormData({ ...formData, format: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {METRIC_FORMATS.map((format) => (
-                            <SelectItem key={format.value} value={format.value}>
-                              {format.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Yearly Goal *</label>
-                      <Input
-                        value={formData.yearlyGoal}
-                        onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
-                        placeholder="e.g., $1,000,000"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Priority</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max="12"
-                        value={formData.priority}
-                        onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Goal Direction</label>
+                    <label className="text-sm font-medium">Category</label>
                     <Select 
-                      value={formData.isIncreasing ? "increasing" : "decreasing"} 
-                      onValueChange={(value) => setFormData({ ...formData, isIncreasing: value === "increasing" })}
+                      value={formData.category} 
+                      onValueChange={(value) => setFormData({ ...formData, category: value })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="increasing">Higher is Better</SelectItem>
-                        <SelectItem value="decreasing">Lower is Better</SelectItem>
+                        {METRIC_CATEGORIES.map((category) => (
+                          <SelectItem key={category.value} value={category.value}>
+                            {category.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="flex justify-end space-x-2 pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsDialogOpen(false)}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Format</label>
+                    <Select 
+                      value={formData.format} 
+                      onValueChange={(value) => setFormData({ ...formData, format: value })}
                     >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      disabled={createMetricMutation.isPending || updateMetricMutation.isPending}
-                    >
-                      <Save className="mr-2 h-4 w-4" />
-                      {editingMetric ? "Update" : "Create"}
-                    </Button>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {METRIC_FORMATS.map((format) => (
+                          <SelectItem key={format.value} value={format.value}>
+                            {format.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          }
-        />
+                </div>
 
-        <div className="flex gap-6 mt-6 h-[calc(100vh-160px)]">
-          {/* Metrics Table - Takes up 1/2 of the width */}
-          <div className="flex-1 flex flex-col">
-            <Card className="h-full flex flex-col">
-              <CardHeader className="flex-shrink-0">
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  Business Metrics Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-auto p-6">
-                {metricsArray.length === 0 ? (
-                  <div className="text-center py-12">
-                    <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No metrics configured</h3>
-                    <p className="text-gray-500 mb-4">
-                      Start by adding your first business metric to track against yearly goals.
-                    </p>
-                    <Button onClick={() => setIsDialogOpen(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Your First Metric
-                    </Button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Yearly Goal *</label>
+                    <Input
+                      value={formData.yearlyGoal}
+                      onChange={(e) => setFormData({ ...formData, yearlyGoal: e.target.value })}
+                      placeholder="e.g., $1,000,000"
+                      required
+                    />
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Priority</TableHead>
-                          <TableHead>Metric Name</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Yearly Goal</TableHead>
-                          <TableHead>Format</TableHead>
-                          <TableHead>Direction</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {metricsArray
-                          .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
-                          .map((metric: any) => {
-                            const categoryInfo = getCategoryInfo(metric.category);
-                            return (
-                              <TableRow key={metric.id}>
-                                <TableCell className="font-medium">
-                                  {metric.priority || 1}
-                                </TableCell>
-                                <TableCell>
-                                  <div>
-                                    <div className="font-medium">{metric.name}</div>
-                                    {metric.description && (
-                                      <div className="text-sm text-gray-500 mt-1">
-                                        {metric.description}
-                                      </div>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge className={categoryInfo.color}>
-                                    {categoryInfo.label}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {metric.yearlyGoal}
-                                </TableCell>
-                                <TableCell>
-                                  {getFormatLabel(metric.format)}
-                                </TableCell>
-                                <TableCell>
-                                  <span className={`text-sm ${
-                                    metric.isIncreasing 
-                                      ? "text-green-600" 
-                                      : "text-orange-600"
-                                  }`}>
-                                    {metric.isIncreasing ? "Higher is Better" : "Lower is Better"}
-                                  </span>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex space-x-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleEdit(metric)}
-                                    >
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => deleteMetricMutation.mutate(metric.id)}
-                                      disabled={deleteMetricMutation.isPending}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
 
-          {/* AI Assistant - Takes up 1/2 of the width */}
-          <div className="flex-1 flex flex-col">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Priority</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={formData.priority}
+                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Goal Direction</label>
+                  <Select 
+                    value={formData.isIncreasing ? "increasing" : "decreasing"} 
+                    onValueChange={(value) => setFormData({ ...formData, isIncreasing: value === "increasing" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="increasing">Higher is Better</SelectItem>
+                      <SelectItem value="decreasing">Lower is Better</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={createMetricMutation.isPending || updateMetricMutation.isPending}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {editingMetric ? "Update" : "Create"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      <div className="grid grid-cols-12 gap-6">
+        {/* Metrics Table */}
+        <div className="col-span-7">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Business Metrics Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {metricsArray.length === 0 ? (
+                <div className="text-center py-12">
+                  <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No metrics configured</h3>
+                  <p className="text-gray-500 mb-4">
+                    Start by adding your first business metric to track against yearly goals.
+                  </p>
+                  <Button onClick={() => setIsDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Your First Metric
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Priority</TableHead>
+                        <TableHead>Metric Name</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Yearly Goal</TableHead>
+                        <TableHead>Format</TableHead>
+                        <TableHead>Direction</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {metricsArray
+                        .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0))
+                        .map((metric: any) => {
+                          const categoryInfo = getCategoryInfo(metric.category);
+                          return (
+                            <TableRow key={metric.id}>
+                              <TableCell className="font-medium">
+                                {metric.priority || 1}
+                              </TableCell>
+                              <TableCell>
+                                <div>
+                                  <div className="font-medium">{metric.name}</div>
+                                  {metric.description && (
+                                    <div className="text-sm text-gray-500 mt-1">
+                                      {metric.description}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={categoryInfo.color}>
+                                  {categoryInfo.label}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {metric.yearlyGoal}
+                              </TableCell>
+                              <TableCell>
+                                {getFormatLabel(metric.format)}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`text-sm ${
+                                  metric.isIncreasing 
+                                    ? "text-green-600" 
+                                    : "text-orange-600"
+                                }`}>
+                                  {metric.isIncreasing ? "Higher is Better" : "Lower is Better"}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex space-x-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleEdit(metric)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => deleteMetricMutation.mutate(metric.id)}
+                                    disabled={deleteMetricMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* AI Assistant */}
+        <div className="col-span-5">
+          <div className="sticky top-6">
             <MetricsAssistant 
               onMetricCreate={(metric) => {
                 setFormData({
