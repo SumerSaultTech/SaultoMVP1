@@ -284,7 +284,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         </TabsList>
 
         <TabsContent value="all" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {metrics.map((metric: any) => (
               <Card key={metric.id} className="relative overflow-hidden">
                 <CardHeader className="pb-2">
@@ -329,7 +329,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
         {Object.entries(metricsByCategory).map(([category, categoryMetrics]: [string, any]) => (
           <TabsContent key={category} value={category} className="mt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(categoryMetrics as any[]).map((metric: any) => (
                 <Card key={metric.id} className="relative overflow-hidden">
                   <CardHeader className="pb-2">

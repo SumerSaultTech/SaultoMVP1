@@ -411,10 +411,7 @@ export default function NorthStarMetrics() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* Status Badge */}
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${progressStatus.bgColor} ${progressStatus.color}`}>
-                  {progress}%
-                </div>
+
               </CardContent>
             </Card>
           );
