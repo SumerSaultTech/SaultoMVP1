@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, DollarSign, Target } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TrendingUp, TrendingDown, DollarSign, Target, Calendar } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface NorthStarMetric {
@@ -33,13 +35,113 @@ const northStarMetrics: NorthStarMetric[] = [
   }
 ];
 
-// Generate YTD progress data for North Star metrics
-function generateNorthStarData(metric: NorthStarMetric) {
+// Generate progress data for North Star metrics based on time period
+function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
+  const currentValue = parseFloat(metric.value.replace(/[$,]/g, ''));
+  const yearlyGoal = parseFloat(metric.yearlyGoal.replace(/[$,]/g, ''));
+  
+  // Performance patterns for different metrics
+  const revenuePattern = [0.75, 0.82, 0.88, 0.95, 1.02, 1.08, 1.15, 1.22, 1.18, 1.25, 1.32, 1.40];
+  const profitPattern = [0.65, 0.72, 0.79, 0.86, 0.93, 1.00, 1.07, 1.14, 1.10, 1.17, 1.24, 1.31];
+  const pattern = metric.id === 'annual-revenue' ? revenuePattern : profitPattern;
+
+  switch (timePeriod) {
+    case "weekly":
+      return generateWeeklyNorthStarData(yearlyGoal, pattern);
+    case "monthly":
+      return generateMonthlyNorthStarData(yearlyGoal, pattern);
+    case "quarterly":
+      return generateQuarterlyNorthStarData(yearlyGoal, pattern);
+    case "ytd":
+    default:
+      return generateYTDNorthStarData(yearlyGoal, pattern);
+  }
+}
+
+function generateWeeklyNorthStarData(yearlyGoal: number, pattern: number[]) {
+  const today = new Date();
+  const currentDay = today.getDay();
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
+  
+  const dailyGoal = yearlyGoal / 365;
+  
+  return weekdays.map((day, index) => {
+    const dayProgress = dailyGoal * (index + 1);
+    const performanceMultiplier = pattern[index % 7] || 1.0;
+    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
+    
+    return {
+      period: day,
+      goal: Math.round(dayProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: index === currentDayIndex
+    };
+  });
+}
+
+function generateMonthlyNorthStarData(yearlyGoal: number, pattern: number[]) {
+  const today = new Date();
+  const currentDay = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  
+  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const dailyGoal = yearlyGoal / 365;
+  
+  return allDays.map((day, index) => {
+    const dayProgress = dailyGoal * day;
+    const performanceMultiplier = pattern[index % 30] || 1.0;
+    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
+    
+    return {
+      period: day.toString(),
+      goal: Math.round(dayProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: day === currentDay
+    };
+  });
+}
+
+function generateQuarterlyNorthStarData(yearlyGoal: number, pattern: number[]) {
+  const today = new Date();
+  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
+  const quarterStartMonth = (currentQuarter - 1) * 3;
+  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
+  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
+  
+  const weeks: Date[] = [];
+  const currentWeekStart = new Date(quarterStart);
+  const dayOfWeek = currentWeekStart.getDay();
+  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  
+  while (currentWeekStart <= quarterEnd) {
+    weeks.push(new Date(currentWeekStart));
+    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  }
+  
+  const weeklyGoal = yearlyGoal / 52;
+  
+  return weeks.map((weekStart, index) => {
+    const weekProgress = weeklyGoal * (index + 1);
+    const performanceMultiplier = pattern[index % 12] || 1.0;
+    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
+    
+    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
+    
+    return {
+      period: weekLabel,
+      goal: Math.round(weekProgress),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
+    };
+  });
+}
+
+function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
   const today = new Date();
   const yearStart = new Date(today.getFullYear(), 0, 1);
   const yearEnd = new Date(today.getFullYear(), 11, 31);
   
-  // Generate monthly data points for the year
   const months = [];
   const currentMonth = new Date(yearStart);
   
@@ -48,15 +150,7 @@ function generateNorthStarData(metric: NorthStarMetric) {
     currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
   
-  const currentValue = parseFloat(metric.value.replace(/[$,]/g, ''));
-  const yearlyGoal = parseFloat(metric.yearlyGoal.replace(/[$,]/g, ''));
   const monthlyGoal = yearlyGoal / 12;
-  
-  // Performance patterns for different metrics
-  const revenuePattern = [0.75, 0.82, 0.88, 0.95, 1.02, 1.08, 1.15, 1.22, 1.18, 1.25, 1.32, 1.40];
-  const profitPattern = [0.65, 0.72, 0.79, 0.86, 0.93, 1.00, 1.07, 1.14, 1.10, 1.17, 1.24, 1.31];
-  
-  const pattern = metric.id === 'annual-revenue' ? revenuePattern : profitPattern;
   
   return months.map((month, index) => {
     const goalProgress = monthlyGoal * (index + 1);
@@ -102,12 +196,45 @@ function getProgressStatus(progress: number) {
 }
 
 export default function NorthStarMetrics() {
+  const [northStarTimePeriod, setNorthStarTimePeriod] = useState("ytd");
+
+  // Time period options for North Star metrics
+  const northStarTimePeriodOptions = [
+    { value: "weekly", label: "Weekly View" },
+    { value: "monthly", label: "Monthly View" }, 
+    { value: "quarterly", label: "Quarterly View" },
+    { value: "ytd", label: "Year to Date" }
+  ];
+
+  const getTimePeriodLabel = (period: string) => {
+    const option = northStarTimePeriodOptions.find(opt => opt.value === period);
+    return option?.label || "Year to Date";
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center space-x-2">
-        <Target className="h-5 w-5 text-purple-600" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
-        <div className="h-px bg-gradient-to-r from-purple-300 to-transparent flex-1 ml-4"></div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <Target className="h-5 w-5 text-purple-600" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
+          <div className="h-px bg-gradient-to-r from-purple-300 to-transparent flex-1 ml-4"></div>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <Calendar className="h-4 w-4 text-purple-600" />
+          <Select value={northStarTimePeriod} onValueChange={setNorthStarTimePeriod}>
+            <SelectTrigger className="w-40 border-purple-200 focus:ring-purple-500">
+              <SelectValue placeholder="Select period" />
+            </SelectTrigger>
+            <SelectContent>
+              {northStarTimePeriodOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -116,7 +243,7 @@ export default function NorthStarMetrics() {
           const progressStatus = getProgressStatus(progress);
           const changeValue = parseFloat(metric.changePercent);
           const isPositive = changeValue >= 0;
-          const chartData = generateNorthStarData(metric);
+          const chartData = generateNorthStarData(metric, northStarTimePeriod);
 
           return (
             <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800">
@@ -167,10 +294,10 @@ export default function NorthStarMetrics() {
                   </div>
                 </div>
 
-                {/* Year-to-Date Chart */}
+                {/* Time Period Chart */}
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Year-to-Date Progress
+                    {getTimePeriodLabel(northStarTimePeriod)} Progress
                   </h4>
                   
                   <ResponsiveContainer width="100%" height={200}>
