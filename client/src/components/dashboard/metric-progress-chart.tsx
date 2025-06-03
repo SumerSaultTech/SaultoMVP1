@@ -6,6 +6,13 @@ interface MetricProgressChartProps {
   timePeriod?: string;
 }
 
+interface ChartDataPoint {
+  period: string;
+  goal: number;
+  actual: number | null;
+  isCurrent: boolean;
+}
+
 // Generate progress data based on metric and time period
 function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "ytd") {
   // Parse current value and yearly goal
@@ -40,23 +47,22 @@ function generateWeeklyData(metric: Partial<KpiMetric>, currentValue: number, ye
   const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   
-  // Show Monday through current day of week
-  const daysToShow = currentDay === 0 ? 7 : currentDay; // If Sunday (0), show full week
-  const visibleWeekdays = weekdays.slice(0, daysToShow);
+  // Show all weekdays for goal line, but actual only up to current day
+  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1; // Convert to 0-6 where Mon=0
   
   const dailyGoal = yearlyGoal / 365; // Daily goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
   
-  return visibleWeekdays.map((day, index) => {
+  return weekdays.map((day, index) => {
     const dayProgress = dailyGoal * (index + 1);
     const performanceMultiplier = performancePattern[index % 7] || 1.0;
-    const actualValue = dayProgress * performanceMultiplier;
+    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
     
     return {
       period: day,
       goal: Math.round(dayProgress),
-      actual: Math.round(actualValue),
-      isCurrent: index === daysToShow - 1
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: index === currentDayIndex
     };
   });
 }
@@ -66,21 +72,21 @@ function generateMonthlyData(metric: Partial<KpiMetric>, currentValue: number, y
   const currentDay = today.getDate(); // Current day of month (1-31)
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   
-  // Show days 1 through current day
-  const daysToShow = Array.from({ length: currentDay }, (_, i) => i + 1);
+  // Show all days in month for goal line, but actual only up to today
+  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   
   const dailyGoal = yearlyGoal / 365; // Daily goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
   
-  return daysToShow.map((day, index) => {
+  return allDays.map((day, index) => {
     const dayProgress = dailyGoal * day;
     const performanceMultiplier = performancePattern[index % 30] || 1.0;
-    const actualValue = dayProgress * performanceMultiplier;
+    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
     
     return {
       period: day.toString(),
       goal: Math.round(dayProgress),
-      actual: Math.round(actualValue),
+      actual: actualValue !== null ? Math.round(actualValue) : null,
       isCurrent: day === currentDay
     };
   });
@@ -90,19 +96,21 @@ function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number,
   const today = new Date();
   const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
   
-  // Get the start of current quarter
+  // Get the start and end of current quarter
   const quarterStartMonth = (currentQuarter - 1) * 3;
   const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
+  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
   
-  // Calculate weeks in current quarter up to today
-  const weeks = [];
+  // Generate all weeks in the quarter
+  const weeks: Date[] = [];
   const currentWeekStart = new Date(quarterStart);
   
   // Find the Monday of the week containing quarter start
   const dayOfWeek = currentWeekStart.getDay();
   currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   
-  while (currentWeekStart <= today) {
+  // Add all weeks in the quarter
+  while (currentWeekStart <= quarterEnd) {
     weeks.push(new Date(currentWeekStart));
     currentWeekStart.setDate(currentWeekStart.getDate() + 7);
   }
@@ -113,15 +121,15 @@ function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number,
   return weeks.map((weekStart, index) => {
     const weekProgress = weeklyGoal * (index + 1);
     const performanceMultiplier = performancePattern[index % 12] || 1.0;
-    const actualValue = weekProgress * performanceMultiplier;
+    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
     
     const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
     
     return {
       period: weekLabel,
       goal: Math.round(weekProgress),
-      actual: Math.round(actualValue),
-      isCurrent: index === weeks.length - 1
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
     };
   });
 }
@@ -129,16 +137,17 @@ function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number,
 function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
   const today = new Date();
   const yearStart = new Date(today.getFullYear(), 0, 1);
+  const yearEnd = new Date(today.getFullYear(), 11, 31);
   
-  // Calculate weeks from year start to now
-  const weeks = [];
+  // Generate all weeks in the year
+  const weeks: Date[] = [];
   const currentWeekStart = new Date(yearStart);
   
   // Find the Monday of the first week of the year
   const dayOfWeek = currentWeekStart.getDay();
   currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   
-  while (currentWeekStart <= today) {
+  while (currentWeekStart <= yearEnd) {
     weeks.push(new Date(currentWeekStart));
     currentWeekStart.setDate(currentWeekStart.getDate() + 7);
   }
@@ -149,7 +158,7 @@ function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearl
   return weeks.map((weekStart, index) => {
     const weekProgress = weeklyGoal * (index + 1);
     const performanceMultiplier = performancePattern[index % 52] || 1.0;
-    const actualValue = weekProgress * performanceMultiplier;
+    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
     
     // Format as "W1", "W2", etc. or show date for larger datasets
     const weekLabel = weeks.length > 20 ? 
@@ -159,8 +168,8 @@ function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearl
     return {
       period: weekLabel,
       goal: Math.round(weekProgress),
-      actual: Math.round(actualValue),
-      isCurrent: index === weeks.length - 1
+      actual: actualValue !== null ? Math.round(actualValue) : null,
+      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
     };
   });
 }
@@ -239,10 +248,12 @@ function getProgressStatus(actual: number, goal: number) {
 
 export default function MetricProgressChart({ metric, timePeriod = "ytd" }: MetricProgressChartProps) {
   const progressData = generateProgressData(metric, timePeriod);
-  const currentData = progressData[progressData.length - 1];
-  const goalProgress = parseFloat(metric.goalProgress || "0");
   
-  if (!currentData) return null;
+  // Find the last data point with actual value (not null)
+  const currentData = progressData.reverse().find(data => data.actual !== null);
+  progressData.reverse(); // Restore original order
+  
+  if (!currentData || currentData.actual === null) return null;
 
   const progressStatus = getProgressStatus(currentData.actual, currentData.goal);
 
