@@ -356,6 +356,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test Snowflake connection endpoint
+  app.get("/api/snowflake/test", async (req, res) => {
+    try {
+      console.log("Testing Snowflake connection...");
+      const testQuery = "SELECT 1 as test_value";
+      const result = await snowflakeCalculatorService.testConnection(testQuery);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: "Successfully connected to Snowflake",
+          data: result.data
+        });
+      } else {
+        res.status(500).json({ 
+          success: false, 
+          message: "Failed to connect to Snowflake",
+          error: result.error 
+        });
+      }
+    } catch (error) {
+      console.error("Snowflake test error:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Snowflake connection test failed" 
+      });
+    }
+  });
+
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
       const metrics = await storage.getKpiMetrics(1748544793859);
