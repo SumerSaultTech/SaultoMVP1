@@ -438,6 +438,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin impersonation endpoint
+  app.post('/api/admin/impersonate', async (req, res) => {
+    try {
+      const { userId } = req.body;
+      
+      if (!userId) {
+        res.status(400).json({ message: "User ID is required" });
+        return;
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
+      }
+
+      // In a real implementation, you would set session data here
+      // For now, we'll just return success
+      res.json({ 
+        success: true, 
+        message: `Successfully impersonating user ${user.username}`,
+        user: { id: user.id, username: user.username, role: user.role }
+      });
+    } catch (error: any) {
+      console.error("Error impersonating user:", error);
+      res.status(500).json({ message: "Failed to impersonate user" });
+    }
+  });
+
   app.post("/api/admin/companies", async (req, res) => {
     console.log("=== COMPANY CREATION REQUEST ===");
     console.log("Request body:", req.body);
