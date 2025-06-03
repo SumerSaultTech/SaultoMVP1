@@ -239,26 +239,21 @@ export default function NorthStarMetrics() {
     }
   };
 
-  // Calculate adaptive current value based on actual chart data
-  const getAdaptiveCurrentValue = (metric: NorthStarMetric, timePeriod: string) => {
+  // Get the EXACT same values that are displayed in the chart
+  const getChartDisplayValues = (metric: NorthStarMetric, timePeriod: string) => {
     const chartData = generateNorthStarData(metric, timePeriod);
     
     // Find the most recent actual data point from the chart
     const actualDataPoints = chartData.filter(point => point.actual !== null);
-    if (actualDataPoints.length === 0) return "0";
+    const currentActual = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].actual : 0;
     
-    // Get the latest actual value from the chart data
-    const latestActual = actualDataPoints[actualDataPoints.length - 1].actual;
-    return latestActual?.toString() || "0";
-  };
-
-  // Calculate adaptive goal based on chart data for better alignment
-  const getAdaptiveGoalFromChart = (metric: NorthStarMetric, timePeriod: string) => {
-    const chartData = generateNorthStarData(metric, timePeriod);
+    // Get the corresponding goal for that same data point
+    const currentGoal = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].goal : chartData[chartData.length - 1]?.goal || 0;
     
-    // Get the final goal value from the chart data
-    const lastDataPoint = chartData[chartData.length - 1];
-    return lastDataPoint?.goal?.toString() || getAdaptiveGoal(metric.yearlyGoal, timePeriod);
+    return {
+      current: currentActual || 0,
+      goal: currentGoal || 0
+    };
   };
 
   // Calculate YTD progress vs YTD goal for "on pace" indicator
@@ -309,9 +304,9 @@ export default function NorthStarMetrics() {
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {northStarMetrics.map((metric) => {
-          const adaptiveGoal = getAdaptiveGoalFromChart(metric, northStarTimePeriod);
-          const adaptiveCurrentValue = getAdaptiveCurrentValue(metric, northStarTimePeriod);
-          const progress = calculateProgress(adaptiveCurrentValue, adaptiveGoal);
+          // Get the EXACT same values used in the chart
+          const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
+          const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
           const progressStatus = getProgressStatus(progress);
           
           // Use YTD progress for "on pace" indicator regardless of selected time period
@@ -343,10 +338,10 @@ export default function NorthStarMetrics() {
                 {/* Current Value */}
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatValue(adaptiveCurrentValue, metric.format)}
+                    {formatValue(chartDisplayValues.current, metric.format)}
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
-                    of {formatValue(adaptiveGoal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
+                    of {formatValue(chartDisplayValues.goal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
                   </div>
                 </div>
 
