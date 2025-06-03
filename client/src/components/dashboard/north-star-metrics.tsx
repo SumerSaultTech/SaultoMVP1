@@ -261,6 +261,26 @@ export default function NorthStarMetrics() {
     return lastDataPoint?.goal?.toString() || getAdaptiveGoal(metric.yearlyGoal, timePeriod);
   };
 
+  // Calculate YTD progress vs YTD goal for "on pace" indicator
+  const getYTDProgress = (metric: NorthStarMetric) => {
+    const ytdChartData = generateNorthStarData(metric, "ytd");
+    
+    // Find the most recent actual data point from YTD chart
+    const actualDataPoints = ytdChartData.filter(point => point.actual !== null);
+    if (actualDataPoints.length === 0) return { current: 0, goal: 0, progress: 0 };
+    
+    // Get the latest actual value and corresponding goal
+    const latestPoint = actualDataPoints[actualDataPoints.length - 1];
+    const currentYTD = latestPoint.actual || 0;
+    const goalYTD = latestPoint.goal || 1;
+    
+    return {
+      current: currentYTD,
+      goal: goalYTD,
+      progress: Math.round((currentYTD / goalYTD) * 100)
+    };
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
