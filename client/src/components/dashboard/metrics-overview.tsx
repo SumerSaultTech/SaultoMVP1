@@ -234,7 +234,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   };
 
   const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string) => {
-    const current = parseFloat(currentValue.replace(/[$,]/g, ''));
+    const current = getAdaptiveActual(currentValue, timePeriod);
     const yearly = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
     
     let periodGoal: number;
@@ -255,6 +255,32 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     }
     
     return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
+  };
+
+  const getAdaptiveActual = (yearlyValue: string, timePeriod: string) => {
+    const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+    
+    switch (timePeriod) {
+      case "weekly":
+        return yearly / 52; // Simulate weekly performance
+      case "monthly":
+        return yearly / 12; // Simulate monthly performance
+      case "quarterly":
+        return yearly / 4; // Simulate quarterly performance
+      case "ytd":
+      default:
+        return yearly; // Full yearly value
+    }
+  };
+
+  const formatActualValue = (value: number) => {
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(1)}M`;
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(0)}K`;
+    } else {
+      return `$${Math.round(value).toLocaleString()}`;
+    }
   };
 
   // Group metrics by category
@@ -379,7 +405,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   {/* Current Value */}
                   <div>
                     <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {metric.value}
+                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod))}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
                       vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
@@ -434,10 +460,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     {/* Current Value */}
                     <div>
                       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {metric.value}
+                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod))}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        vs. {metric.yearlyGoal} goal
+                        vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
                       </div>
                     </div>
                     
