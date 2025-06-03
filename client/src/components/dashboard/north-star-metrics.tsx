@@ -228,25 +228,26 @@ export default function NorthStarMetrics() {
     }
   };
 
-  // Calculate adaptive current value based on time period
-  const getAdaptiveCurrentValue = (currentValue: string, timePeriod: string) => {
-    const yearlyValue = parseFloat(currentValue.replace(/[$,]/g, ''));
-    const today = new Date();
+  // Calculate adaptive current value based on actual chart data
+  const getAdaptiveCurrentValue = (metric: NorthStarMetric, timePeriod: string) => {
+    const chartData = generateNorthStarData(metric, timePeriod);
     
-    switch (timePeriod) {
-      case "weekly":
-        // Show this week's progress (weekly rate)
-        return (yearlyValue / 52).toFixed(0);
-      case "monthly":
-        // Show this month's progress (monthly rate)
-        return (yearlyValue / 12).toFixed(0);
-      case "quarterly":
-        // Show this quarter's progress (quarterly rate)
-        return (yearlyValue / 4).toFixed(0);
-      case "ytd":
-      default:
-        return yearlyValue.toFixed(0);
-    }
+    // Find the most recent actual data point from the chart
+    const actualDataPoints = chartData.filter(point => point.actual !== null);
+    if (actualDataPoints.length === 0) return "0";
+    
+    // Get the latest actual value from the chart data
+    const latestActual = actualDataPoints[actualDataPoints.length - 1].actual;
+    return latestActual?.toString() || "0";
+  };
+
+  // Calculate adaptive goal based on chart data for better alignment
+  const getAdaptiveGoalFromChart = (metric: NorthStarMetric, timePeriod: string) => {
+    const chartData = generateNorthStarData(metric, timePeriod);
+    
+    // Get the final goal value from the chart data
+    const lastDataPoint = chartData[chartData.length - 1];
+    return lastDataPoint?.goal?.toString() || getAdaptiveGoal(metric.yearlyGoal, timePeriod);
   };
 
   return (
@@ -277,8 +278,8 @@ export default function NorthStarMetrics() {
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {northStarMetrics.map((metric) => {
-          const adaptiveGoal = getAdaptiveGoal(metric.yearlyGoal, northStarTimePeriod);
-          const adaptiveCurrentValue = getAdaptiveCurrentValue(metric.value, northStarTimePeriod);
+          const adaptiveGoal = getAdaptiveGoalFromChart(metric, northStarTimePeriod);
+          const adaptiveCurrentValue = getAdaptiveCurrentValue(metric, northStarTimePeriod);
           const progress = calculateProgress(adaptiveCurrentValue, adaptiveGoal);
           const progressStatus = getProgressStatus(progress);
           const changeValue = parseFloat(metric.changePercent);
