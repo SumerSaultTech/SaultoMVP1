@@ -20,12 +20,8 @@ function useNorthStarMetrics() {
   return useQuery({
     queryKey: ["/api/kpi-metrics"],
     select: (data: any[]) => {
-      // Filter for metrics marked as North Star (revenue and profit)
-      return data.filter(metric => 
-        metric.name.toLowerCase().includes('revenue') || 
-        metric.name.toLowerCase().includes('profit') ||
-        metric.category === 'north-star'
-      ).slice(0, 2); // Take first 2 North Star metrics
+      // Filter for metrics marked as North Star using the isNorthStar field
+      return data.filter(metric => metric.isNorthStar === true);
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 10 * 60 * 1000, // 10 minutes
@@ -273,15 +269,21 @@ export default function NorthStarMetrics() {
     }
   };
 
-  // Get the EXACT same values that are displayed in the chart
-  const getChartDisplayValues = (metric: NorthStarMetric, timePeriod: string) => {
-    const chartData = generateNorthStarData(metric, timePeriod);
+  // Get authentic calculated values only
+  const getMetricValues = (metric: any) => {
+    if (!metric.value) {
+      return {
+        currentActual: null,
+        yearlyGoal: parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0'),
+        hasData: false
+      };
+    }
     
-    // Find the most recent actual data point from the chart
-    const actualDataPoints = chartData.filter(point => point.actual !== null);
-    const currentActual = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].actual : 0;
-    
-    // Get the corresponding goal for that same data point
+    return {
+      currentActual: parseFloat(metric.value.replace(/[$,]/g, '')),
+      yearlyGoal: parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0'),
+      hasData: true
+    };
     const currentGoal = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].goal : chartData[chartData.length - 1]?.goal || 0;
     
     return {
