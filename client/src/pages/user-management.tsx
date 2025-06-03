@@ -97,24 +97,7 @@ export default function UserManagement() {
     },
   });
 
-  const resendInviteMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      return await apiRequest("/api/users/resend-invite", "POST", { userId });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Invitation email sent successfully",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to send invitation",
-        variant: "destructive",
-      });
-    },
-  });
+
 
   const handleCreateUser = () => {
     if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password.trim() || !newUser.companyId) {
@@ -185,6 +168,16 @@ export default function UserManagement() {
                 />
               </div>
               <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="Enter email"
+                />
+              </div>
+              <div>
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
@@ -239,7 +232,7 @@ export default function UserManagement() {
               <Button 
                 onClick={() => {
                   setShowCreateForm(false);
-                  setNewUser({ username: "", password: "", companyId: "", role: "user" });
+                  setNewUser({ username: "", email: "", password: "", companyId: "", role: "user" });
                 }}
                 variant="outline"
               >
@@ -270,7 +263,7 @@ export default function UserManagement() {
                   <Building2 className="h-4 w-4" />
                   <span>{userCompany?.name || "Unknown Company"}</span>
                 </div>
-                <div className="mt-2">
+                <div className="mt-2 flex items-center justify-between">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                     user.role === 'admin' ? 'bg-red-100 text-red-800' :
                     user.role === 'user' ? 'bg-blue-100 text-blue-800' :
@@ -278,6 +271,16 @@ export default function UserManagement() {
                   }`}>
                     {user.role}
                   </span>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => impersonateUserMutation.mutate(user.id)}
+                    disabled={impersonateUserMutation.isPending}
+                    className="ml-2"
+                  >
+                    <UserCheck className="h-4 w-4 mr-1" />
+                    Impersonate
+                  </Button>
                 </div>
               </CardContent>
             </Card>
