@@ -18,30 +18,23 @@ function getStatusColor(goalProgress: string) {
 
 export default function MetricsSummary({ metrics }: MetricsSummaryProps) {
   return (
-    <Card>
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white">
-          Metrics Status Overview
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-3 gap-4">
-          {metrics.slice(0, 12).map((metric) => (
-            <div
-              key={metric.id}
-              className="flex flex-col items-center text-center p-3 rounded-lg border bg-gray-50 dark:bg-gray-800"
-            >
-              <div className={`w-4 h-4 rounded-full mb-2 ${getStatusColor(metric.goalProgress)}`}></div>
-              <div className="text-xs font-medium text-gray-900 dark:text-white mb-1">
-                {metric.name}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                {metric.goalProgress}%
-              </div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+        Metrics Status
+      </h3>
+      <div className="grid grid-cols-3 gap-3">
+        {metrics.slice(0, 9).map((metric) => (
+          <div
+            key={metric.id}
+            className="flex items-center space-x-2"
+          >
+            <div className={`w-3 h-3 rounded-full ${getStatusColor(metric.goalProgress)}`}></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
+              {metric.name.split(' ').slice(0, 2).join(' ')}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
