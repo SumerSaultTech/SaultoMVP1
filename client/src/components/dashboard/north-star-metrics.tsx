@@ -168,9 +168,13 @@ function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
   });
 }
 
-function formatValue(value: string, format: string): string {
+function formatValue(value: string | number, format: string): string {
+  if (!value && value !== 0) return '0';
+  
+  const valueStr = typeof value === 'number' ? value.toString() : value;
+  
   if (format === 'currency') {
-    const numValue = parseFloat(value.replace(/[$,]/g, ''));
+    const numValue = parseFloat(valueStr.replace(/[$,]/g, '')) || 0;
     if (numValue >= 1000000) {
       return `$${(numValue / 1000000).toFixed(1)}M`;
     } else if (numValue >= 1000) {
@@ -179,20 +183,27 @@ function formatValue(value: string, format: string): string {
       return `$${numValue.toLocaleString()}`;
     }
   }
-  return value;
+  return valueStr;
 }
 
-function calculateProgress(currentValue: string, goalValue: string): number {
-  const current = parseFloat(currentValue.replace(/[$,]/g, ''));
-  const goal = parseFloat(goalValue.replace(/[$,]/g, ''));
+function calculateProgress(currentValue: string | number, goalValue: string | number): number {
+  if (!currentValue && currentValue !== 0) return 0;
+  if (!goalValue && goalValue !== 0) return 0;
+  
+  const currentStr = typeof currentValue === 'number' ? currentValue.toString() : currentValue;
+  const goalStr = typeof goalValue === 'number' ? goalValue.toString() : goalValue;
+  
+  const current = parseFloat(currentStr.replace(/[$,]/g, '')) || 0;
+  const goal = parseFloat(goalStr.replace(/[$,]/g, '')) || 1;
+  
   return goal > 0 ? Math.round((current / goal) * 100) : 0;
 }
 
 function getProgressStatus(progress: number) {
-  if (progress >= 90) return { color: 'text-green-600', bgColor: 'bg-green-100', status: 'excellent' };
-  if (progress >= 75) return { color: 'text-blue-600', bgColor: 'bg-blue-100', status: 'good' };
-  if (progress >= 50) return { color: 'text-yellow-600', bgColor: 'bg-yellow-100', status: 'fair' };
-  return { color: 'text-red-600', bgColor: 'bg-red-100', status: 'needs attention' };
+  if (progress >= 90) return { color: 'text-green-600', bgColor: 'bg-green-100' };
+  if (progress >= 75) return { color: 'text-blue-600', bgColor: 'bg-blue-100' };
+  if (progress >= 50) return { color: 'text-yellow-600', bgColor: 'bg-yellow-100' };
+  return { color: 'text-red-600', bgColor: 'bg-red-100' };
 }
 
 export default function NorthStarMetrics() {
@@ -402,7 +413,7 @@ export default function NorthStarMetrics() {
 
                 {/* Status Badge */}
                 <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${progressStatus.bgColor} ${progressStatus.color}`}>
-                  {progressStatus.status.charAt(0).toUpperCase() + progressStatus.status.slice(1)}
+                  {progress}%
                 </div>
               </CardContent>
             </Card>
