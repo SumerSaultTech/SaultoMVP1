@@ -1,4 +1,5 @@
 import {
+  companies,
   dataSources,
   sqlModels,
   kpiMetrics,
@@ -6,6 +7,8 @@ import {
   pipelineActivities,
   setupStatus,
   users,
+  type Company,
+  type InsertCompany,
   type DataSource,
   type SqlModel,
   type KpiMetric,
@@ -23,43 +26,48 @@ import {
 } from "@shared/schema";
 
 export interface IStorage {
+  // Companies
+  getCompanies(): Promise<Company[]>;
+  getCompany(id: number): Promise<Company | undefined>;
+  createCompany(company: InsertCompany): Promise<Company>;
+
   // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
-  // Data Sources
-  getDataSources(): Promise<DataSource[]>;
+  // Data Sources (company-scoped)
+  getDataSources(companyId: number): Promise<DataSource[]>;
   getDataSource(id: number): Promise<DataSource | undefined>;
   createDataSource(dataSource: InsertDataSource): Promise<DataSource>;
   updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined>;
 
-  // SQL Models
-  getSqlModels(): Promise<SqlModel[]>;
-  getSqlModelsByLayer(layer: string): Promise<SqlModel[]>;
+  // SQL Models (company-scoped)
+  getSqlModels(companyId: number): Promise<SqlModel[]>;
+  getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]>;
   getSqlModel(id: number): Promise<SqlModel | undefined>;
-  getSqlModelByName(name: string): Promise<SqlModel | undefined>;
+  getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined>;
   createSqlModel(model: InsertSqlModel): Promise<SqlModel>;
   updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined>;
 
-  // KPI Metrics
-  getKpiMetrics(): Promise<KpiMetric[]>;
+  // KPI Metrics (company-scoped)
+  getKpiMetrics(companyId: number): Promise<KpiMetric[]>;
   getKpiMetric(id: number): Promise<KpiMetric | undefined>;
   createKpiMetric(metric: InsertKpiMetric): Promise<KpiMetric>;
   updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined>;
   deleteKpiMetric(id: number): Promise<boolean>;
 
-  // Chat Messages
-  getChatMessages(): Promise<ChatMessage[]>;
+  // Chat Messages (company-scoped)
+  getChatMessages(companyId: number): Promise<ChatMessage[]>;
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
 
-  // Pipeline Activities
-  getPipelineActivities(limit?: number): Promise<PipelineActivity[]>;
+  // Pipeline Activities (company-scoped)
+  getPipelineActivities(companyId: number, limit?: number): Promise<PipelineActivity[]>;
   createPipelineActivity(activity: InsertPipelineActivity): Promise<PipelineActivity>;
 
-  // Setup Status
-  getSetupStatus(): Promise<SetupStatus | undefined>;
-  updateSetupStatus(updates: Partial<InsertSetupStatus>): Promise<SetupStatus>;
+  // Setup Status (company-scoped)
+  getSetupStatus(companyId: number): Promise<SetupStatus | undefined>;
+  updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus>;
 }
 
 export class MemStorage implements IStorage {
