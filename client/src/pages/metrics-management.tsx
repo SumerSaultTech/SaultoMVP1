@@ -345,17 +345,17 @@ export default function MetricsManagement() {
           }
         />
 
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 mt-6">
-          {/* Metrics Table - Takes up 3/5 of the width */}
-          <div className="xl:col-span-3">
-            <Card className="h-[calc(100vh-200px)]">
-              <CardHeader>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6 h-[calc(100vh-160px)]">
+          {/* Metrics Table - Takes up 1/2 of the width */}
+          <div className="flex flex-col">
+            <Card className="flex-1 flex flex-col">
+              <CardHeader className="flex-shrink-0">
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
                   Business Metrics Configuration
                 </CardTitle>
               </CardHeader>
-              <CardContent className="h-[calc(100%-80px)] overflow-auto">
+              <CardContent className="flex-1 overflow-auto p-6">
                 {metricsArray.length === 0 ? (
                   <div className="text-center py-12">
                     <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -452,26 +452,22 @@ export default function MetricsManagement() {
             </Card>
           </div>
 
-          {/* AI Assistant - Takes up 2/5 of the width */}
-          <div className="xl:col-span-2">
-            <Card className="h-[calc(100vh-200px)]">
-              <CardContent className="p-0 h-full">
-                <MetricsAssistant 
-                  onMetricCreate={(metric) => {
-                    setFormData({
-                      name: metric.name,
-                      description: metric.description,
-                      yearlyGoal: metric.yearlyGoal || "",
-                      category: metric.category,
-                      format: metric.format,
-                      isIncreasing: true,
-                      priority: 1
-                    });
-                    setIsDialogOpen(true);
-                  }}
-                />
-              </CardContent>
-            </Card>
+          {/* AI Assistant - Takes up 1/2 of the width */}
+          <div className="flex flex-col">
+            <MetricsAssistant 
+              onMetricCreate={(metric) => {
+                setFormData({
+                  name: metric.name,
+                  description: metric.description,
+                  yearlyGoal: metric.yearlyGoal || "",
+                  category: metric.category,
+                  format: metric.format,
+                  isIncreasing: true,
+                  priority: 1
+                });
+                setIsDialogOpen(true);
+              }}
+            />
           </div>
         </div>
       </div>

@@ -247,7 +247,7 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
   ];
 
   return (
-    <Card className="h-[600px] flex flex-col">
+    <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-blue-600" />
