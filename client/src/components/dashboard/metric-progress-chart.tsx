@@ -36,88 +36,131 @@ function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "
 }
 
 function generateWeeklyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const currentWeek = Math.floor((new Date().getTime() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  const weeks = Array.from({ length: Math.min(currentWeek, 12) }, (_, i) => `W${i + 1}`);
+  const today = new Date();
+  const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   
+  // Show Monday through current day of week
+  const daysToShow = currentDay === 0 ? 7 : currentDay; // If Sunday (0), show full week
+  const visibleWeekdays = weekdays.slice(0, daysToShow);
+  
+  const dailyGoal = yearlyGoal / 365; // Daily goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
-  const weeklyGoal = yearlyGoal / 52;
   
-  return weeks.map((week, index) => {
-    const weekNumber = index + 1;
-    const goalProgress = weeklyGoal * weekNumber;
-    const performanceMultiplier = performancePattern[index % 12] || 1.0;
-    const actualValue = goalProgress * performanceMultiplier;
+  return visibleWeekdays.map((day, index) => {
+    const dayProgress = dailyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index % 7] || 1.0;
+    const actualValue = dayProgress * performanceMultiplier;
     
     return {
-      period: week,
-      goal: Math.round(goalProgress),
+      period: day,
+      goal: Math.round(dayProgress),
       actual: Math.round(actualValue),
-      isCurrent: weekNumber === currentWeek
+      isCurrent: index === daysToShow - 1
     };
   });
 }
 
 function generateMonthlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const currentMonth = new Date().getMonth() + 1;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const today = new Date();
+  const currentDay = today.getDate(); // Current day of month (1-31)
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   
+  // Show days 1 through current day
+  const daysToShow = Array.from({ length: currentDay }, (_, i) => i + 1);
+  
+  const dailyGoal = yearlyGoal / 365; // Daily goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
-  const monthlyGoal = yearlyGoal / 12;
   
-  return months.slice(0, currentMonth).map((month, index) => {
-    const monthNumber = index + 1;
-    const goalProgress = monthlyGoal * monthNumber;
-    const performanceMultiplier = performancePattern[index] || 1.0;
-    const actualValue = goalProgress * performanceMultiplier;
+  return daysToShow.map((day, index) => {
+    const dayProgress = dailyGoal * day;
+    const performanceMultiplier = performancePattern[index % 30] || 1.0;
+    const actualValue = dayProgress * performanceMultiplier;
     
     return {
-      period: month,
-      goal: Math.round(goalProgress),
+      period: day.toString(),
+      goal: Math.round(dayProgress),
       actual: Math.round(actualValue),
-      isCurrent: monthNumber === currentMonth
+      isCurrent: day === currentDay
     };
   });
 }
 
 function generateQuarterlyData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const currentQuarter = Math.floor(new Date().getMonth() / 3) + 1;
-  const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+  const today = new Date();
+  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
   
+  // Get the start of current quarter
+  const quarterStartMonth = (currentQuarter - 1) * 3;
+  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
+  
+  // Calculate weeks in current quarter up to today
+  const weeks = [];
+  const currentWeekStart = new Date(quarterStart);
+  
+  // Find the Monday of the week containing quarter start
+  const dayOfWeek = currentWeekStart.getDay();
+  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  
+  while (currentWeekStart <= today) {
+    weeks.push(new Date(currentWeekStart));
+    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  }
+  
+  const weeklyGoal = yearlyGoal / 52; // Weekly goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
-  const quarterlyGoal = yearlyGoal / 4;
   
-  return quarters.slice(0, currentQuarter).map((quarter, index) => {
-    const quarterNumber = index + 1;
-    const goalProgress = quarterlyGoal * quarterNumber;
-    const performanceMultiplier = performancePattern[index * 3] || 1.0;
-    const actualValue = goalProgress * performanceMultiplier;
+  return weeks.map((weekStart, index) => {
+    const weekProgress = weeklyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index % 12] || 1.0;
+    const actualValue = weekProgress * performanceMultiplier;
+    
+    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
     
     return {
-      period: quarter,
-      goal: Math.round(goalProgress),
+      period: weekLabel,
+      goal: Math.round(weekProgress),
       actual: Math.round(actualValue),
-      isCurrent: quarterNumber === currentQuarter
+      isCurrent: index === weeks.length - 1
     };
   });
 }
 
 function generateYTDData(metric: Partial<KpiMetric>, currentValue: number, yearlyGoal: number) {
-  const currentMonth = new Date().getMonth() + 1;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const today = new Date();
+  const yearStart = new Date(today.getFullYear(), 0, 1);
   
+  // Calculate weeks from year start to now
+  const weeks = [];
+  const currentWeekStart = new Date(yearStart);
+  
+  // Find the Monday of the first week of the year
+  const dayOfWeek = currentWeekStart.getDay();
+  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  
+  while (currentWeekStart <= today) {
+    weeks.push(new Date(currentWeekStart));
+    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  }
+  
+  const weeklyGoal = yearlyGoal / 52; // Weekly goal based on yearly target
   const performancePattern = getPerformancePattern(metric.name || '');
   
-  return months.slice(0, currentMonth).map((month, index) => {
-    const monthNumber = index + 1;
-    const goalProgress = (yearlyGoal / 12) * monthNumber;
-    const performanceMultiplier = performancePattern[index] || 1.0;
-    const actualValue = goalProgress * performanceMultiplier;
+  return weeks.map((weekStart, index) => {
+    const weekProgress = weeklyGoal * (index + 1);
+    const performanceMultiplier = performancePattern[index % 52] || 1.0;
+    const actualValue = weekProgress * performanceMultiplier;
+    
+    // Format as "W1", "W2", etc. or show date for larger datasets
+    const weekLabel = weeks.length > 20 ? 
+      `${weekStart.getMonth() + 1}/${weekStart.getDate()}` : 
+      `W${index + 1}`;
     
     return {
-      period: month,
-      goal: Math.round(goalProgress),
+      period: weekLabel,
+      goal: Math.round(weekProgress),
       actual: Math.round(actualValue),
-      isCurrent: monthNumber === currentMonth
+      isCurrent: index === weeks.length - 1
     };
   });
 }
