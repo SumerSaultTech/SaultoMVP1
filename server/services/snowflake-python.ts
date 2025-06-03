@@ -11,6 +11,12 @@ interface SnowflakeResult {
 export class SnowflakePythonService {
   
   async executeQuery(sql: string): Promise<SnowflakeResult> {
+    // Use direct Python execution since service isn't available
+    return this.executeQueryDirect(sql);
+  }
+
+  // Fallback method using direct Python execution
+  private async executeQueryDirect(sql: string): Promise<SnowflakeResult> {
     return new Promise((resolve) => {
       // Create temporary Python script with SQL query
       const scriptContent = `
@@ -20,14 +26,20 @@ import sys
 import os
 
 try:
+    # Clean account identifier
+    account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
+    if ".snowflakecomputing.com" in account_id:
+        account_id = account_id.replace(".snowflakecomputing.com", "")
+    
     # Connect to Snowflake
     conn = snowflake.connector.connect(
-        account='${process.env.SNOWFLAKE_ACCOUNT}',
-        user='${process.env.SNOWFLAKE_USERNAME}',
-        password='${process.env.SNOWFLAKE_PASSWORD}',
-        warehouse='${process.env.SNOWFLAKE_WAREHOUSE}',
+        account=account_id,
+        user=os.getenv("SNOWFLAKE_USERNAME"),
+        password=os.getenv("SNOWFLAKE_PASSWORD"),
+        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
         database='MIAS_DATA_DB',
-        schema='${process.env.SNOWFLAKE_SCHEMA || 'PUBLIC'}'
+        schema='PUBLIC',
+        role='SYSADMIN'
     )
     
     cursor = conn.cursor()

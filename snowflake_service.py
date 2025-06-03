@@ -95,5 +95,57 @@ def test_snowflake_connection():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/execute-query', methods=['POST'])
+def execute_query():
+    try:
+        data = request.get_json()
+        sql = data.get('sql', '')
+        database = data.get('database', 'MIAS_DATA_DB')
+        
+        if not sql:
+            return jsonify({'success': False, 'error': 'SQL query is required'}), 400
+        
+        # Clean account identifier
+        account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
+        if ".snowflakecomputing.com" in account_id:
+            account_id = account_id.replace(".snowflakecomputing.com", "")
+        
+        print(f"Executing query in {database}: {sql[:100]}...")
+        
+        conn = snowflake.connector.connect(
+            user=os.getenv("SNOWFLAKE_USERNAME"),
+            password=os.getenv("SNOWFLAKE_PASSWORD"),
+            account=account_id,
+            warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
+            database=database,
+            schema='PUBLIC',
+            role='SYSADMIN'
+        )
+        
+        cs = conn.cursor()
+        cs.execute(sql)
+        
+        # Fetch results
+        results = cs.fetchall()
+        columns = [desc[0] for desc in cs.description] if cs.description else []
+        
+        # Convert to list of dictionaries
+        data = []
+        for row in results:
+            row_dict = {}
+            for i, value in enumerate(row):
+                row_dict[columns[i]] = value
+            data.append(row_dict)
+        
+        cs.close()
+        conn.close()
+        
+        print(f"Query executed successfully, returned {len(data)} rows")
+        return jsonify({'success': True, 'data': data})
+        
+    except Exception as e:
+        print(f"Query execution error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
