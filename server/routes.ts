@@ -8,6 +8,7 @@ import { sqlRunner } from "./services/sqlRunner";
 import { metricsAIService } from "./services/metrics-ai";
 import { snowflakeCortexService } from "./services/snowflake-cortex";
 import { snowflakeMetricsService } from "./services/snowflake-metrics";
+import { snowflakeCalculatorService } from "./services/snowflake-calculator";
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -321,9 +322,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // New Snowflake calculation endpoints
+  app.post("/api/kpi-metrics/:id/calculate", async (req, res) => {
+    try {
+      const metricId = parseInt(req.params.id);
+      const result = await snowflakeCalculatorService.calculateMetric(metricId);
+      res.json(result);
+    } catch (error) {
+      console.error("Error calculating metric:", error);
+      res.status(500).json({ message: "Failed to calculate metric" });
+    }
+  });
+
+  app.post("/api/kpi-metrics/calculate-all", async (req, res) => {
+    try {
+      const companyId = 1748544793859; // MIAS_DATA company ID
+      const results = await snowflakeCalculatorService.calculateAllMetrics(companyId);
+      res.json(results);
+    } catch (error) {
+      console.error("Error calculating all metrics:", error);
+      res.status(500).json({ message: "Failed to calculate metrics" });
+    }
+  });
+
+  app.get("/api/kpi-metrics/stale", async (req, res) => {
+    try {
+      const companyId = 1748544793859; // MIAS_DATA company ID
+      const staleMetrics = await snowflakeCalculatorService.getStaleMetrics(companyId);
+      res.json({ staleMetrics });
+    } catch (error) {
+      console.error("Error getting stale metrics:", error);
+      res.status(500).json({ message: "Failed to get stale metrics" });
+    }
+  });
+
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics();
+      const metrics = await storage.getKpiMetrics(1748544793859);
       const results = [];
 
       for (const metric of metrics) {
