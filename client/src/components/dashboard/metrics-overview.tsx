@@ -233,8 +233,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     }
   };
 
-  const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string) => {
-    const current = getAdaptiveActual(currentValue, timePeriod);
+  const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string, metricId: number) => {
+    const current = getAdaptiveActual(currentValue, timePeriod, metricId);
     const yearly = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
     
     let periodGoal: number;
@@ -257,19 +257,67 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
   };
 
-  const getAdaptiveActual = (yearlyValue: string, timePeriod: string) => {
+  const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number) => {
     const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+    
+    // Create realistic business scenarios where short-term performance differs from yearly
+    const performanceMultipliers: Record<string, Record<number, number>> = {
+      weekly: {
+        1: 1.3,   // ARR: Strong weekly performance
+        2: 0.8,   // MRR: Weak this week
+        3: 1.1,   // CAC: Slightly higher cost this week
+        4: 0.9,   // LTV: Lower this week
+        5: 1.4,   // Churn: Much worse this week
+        6: 1.2,   // NRR: Strong weekly retention
+        7: 1.1,   // DAU: Good week for users
+        8: 1.5,   // Conversion: Excellent week
+        9: 0.7,   // Deal size: Smaller deals this week
+        10: 0.8,  // Sales cycle: Faster this week (better)
+        11: 0.9,  // CSAT: Lower this week
+        12: 1.3   // Adoption: Great weekly adoption
+      },
+      monthly: {
+        1: 1.1,   // ARR: Good monthly growth
+        2: 0.95,  // MRR: Slightly behind this month
+        3: 1.05,  // CAC: A bit higher this month
+        4: 1.0,   // LTV: On track this month
+        5: 1.2,   // Churn: Bad month for retention
+        6: 1.1,   // NRR: Strong month
+        7: 0.9,   // DAU: Slower month
+        8: 1.2,   // Conversion: Strong conversion month
+        9: 0.85,  // Deal size: Smaller deals this month
+        10: 0.9,  // Sales cycle: Faster this month
+        11: 1.05, // CSAT: Slightly better
+        12: 1.1   // Adoption: Good monthly progress
+      },
+      quarterly: {
+        1: 1.05,  // ARR: Slightly ahead for quarter
+        2: 0.98,  // MRR: A bit behind quarterly target
+        3: 1.08,  // CAC: Higher costs this quarter
+        4: 0.95,  // LTV: Lower this quarter
+        5: 1.1,   // Churn: Higher churn this quarter
+        6: 1.08,  // NRR: Good quarterly retention
+        7: 0.95,  // DAU: Behind quarterly target
+        8: 1.15,  // Conversion: Excellent quarter
+        9: 0.9,   // Deal size: Smaller average deals
+        10: 0.85, // Sales cycle: Much faster quarter
+        11: 1.02, // CSAT: Slightly up
+        12: 1.05  // Adoption: Steady quarterly growth
+      }
+    };
+    
+    const multiplier = performanceMultipliers[timePeriod]?.[metricId] || 1.0;
     
     switch (timePeriod) {
       case "weekly":
-        return yearly / 52; // Simulate weekly performance
+        return (yearly / 52) * multiplier;
       case "monthly":
-        return yearly / 12; // Simulate monthly performance
+        return (yearly / 12) * multiplier;
       case "quarterly":
-        return yearly / 4; // Simulate quarterly performance
+        return (yearly / 4) * multiplier;
       case "ytd":
       default:
-        return yearly; // Full yearly value
+        return yearly; // Full yearly value (no multiplier for YTD)
     }
   };
 
@@ -376,8 +424,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                 {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'bg-green-500' : 
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
+                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
                 
                 <CardHeader className="pb-3">
@@ -391,11 +439,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </p>
                     </div>
                     <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                       'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     }`}>
-                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod)}% to goal
+                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
                     </div>
                   </div>
                 </CardHeader>
@@ -404,7 +452,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   {/* Current Value */}
                   <div>
                     <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod))}
+                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
                       vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
@@ -430,8 +478,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                 <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                   {/* Goal progress indicator */}
                   <div className={`absolute top-0 left-0 w-full h-1 ${
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'bg-green-500' : 
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                   }`}></div>
                   
                   <CardHeader className="pb-3">
@@ -445,11 +493,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         </p>
                       </div>
                       <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                         'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                       }`}>
-                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod)}% to goal
+                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? '↗' : getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? '→' : '↘'} {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
                       </div>
                     </div>
                   </CardHeader>
@@ -458,7 +506,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     {/* Current Value */}
                     <div>
                       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod))}
+                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
                         vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
