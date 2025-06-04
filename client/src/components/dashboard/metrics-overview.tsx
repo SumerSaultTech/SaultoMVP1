@@ -48,21 +48,19 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     if (isNaN(numValue) || numValue === null || numValue === undefined) {
       return format === 'currency' ? '$0' : '0';
     }
-    
-    switch (format) {
-      case 'currency':
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0
-        }).format(numValue);
-      case 'percentage':
-        return `${numValue.toFixed(1)}%`;
-      case 'number':
-        return numValue.toLocaleString();
-      default:
-        return numValue.toString();
+
+    // Format based on type
+    if (format === 'currency') {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(numValue);
+    } else if (format === 'percentage') {
+      return `${numValue.toFixed(1)}%`;
+    } else {
+      return new Intl.NumberFormat('en-US').format(numValue);
     }
   };
 

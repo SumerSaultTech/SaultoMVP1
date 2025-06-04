@@ -2,8 +2,19 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import type { KpiMetric } from '@shared/schema';
 
 interface MetricProgressChartProps {
-  metric: Partial<KpiMetric>;
-  timePeriod?: string;
+  metric: {
+    metricId: number;
+    currentValue: number;
+    yearlyGoal: number;
+    format: string;
+    timeSeriesData: {
+      weekly: Array<{ period: string; actual: number; goal: number }>;
+      monthly: Array<{ period: string; actual: number; goal: number }>;
+      quarterly: Array<{ period: string; actual: number; goal: number }>;
+      ytd: Array<{ period: string; actual: number; goal: number }>;
+    };
+  };
+  timePeriod: string;
 }
 
 interface ChartDataPoint {
@@ -13,87 +24,98 @@ interface ChartDataPoint {
   isCurrent: boolean;
 }
 
-// Adaptive calculations to match the main component
-function getAdaptiveActual(yearlyValue: string, timePeriod: string, metricId: number) {
-  const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+// Get data for the selected time period using authentic calculated data
+function getTimeSeriesData(metric: MetricProgressChartProps['metric'], timePeriod: string) {
+  switch (timePeriod) {
+    case "weekly":
+      return metric.timeSeriesData.weekly || [];
+    case "monthly":
+      return metric.timeSeriesData.monthly || [];
+    case "quarterly":
+      return metric.timeSeriesData.quarterly || [];
+    case "ytd":
+      return metric.timeSeriesData.ytd || [];
+    default:
+      return metric.timeSeriesData.monthly || [];
+  }
+}
+
+export default function MetricProgressChart({ metric, timePeriod }: MetricProgressChartProps) {
+  const data = getTimeSeriesData(metric, timePeriod);
   
-  const performanceMultipliers: Record<string, Record<number, number>> = {
-    weekly: {
-      1: 1.3, 2: 0.8, 3: 1.1, 4: 0.9, 5: 1.4, 6: 1.2, 7: 1.1, 8: 1.5, 9: 0.7, 10: 0.8, 11: 0.9, 12: 1.3
-    },
-    monthly: {
-      1: 1.1, 2: 0.95, 3: 1.05, 4: 1.0, 5: 1.2, 6: 1.1, 7: 0.9, 8: 1.2, 9: 0.85, 10: 0.9, 11: 1.05, 12: 1.1
-    },
-    quarterly: {
-      1: 1.05, 2: 0.98, 3: 1.08, 4: 0.95, 5: 1.1, 6: 1.08, 7: 0.95, 8: 1.15, 9: 0.9, 10: 0.85, 11: 1.02, 12: 1.05
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-32 flex items-center justify-center text-gray-500 text-sm">
+        No data available for {timePeriod} view
+      </div>
+    );
+  }
+
+  const formatValue = (value: number): string => {
+    if (metric.format === 'currency') {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(value);
+    } else if (metric.format === 'percentage') {
+      return `${value.toFixed(1)}%`;
+    } else {
+      return new Intl.NumberFormat('en-US').format(value);
     }
   };
-  
-  const multiplier = performanceMultipliers[timePeriod]?.[metricId] || 1.0;
-  
-  switch (timePeriod) {
-    case "weekly":
-      return (yearly / 52) * multiplier;
-    case "monthly":
-      return (yearly / 12) * multiplier;
-    case "quarterly":
-      return (yearly / 4) * multiplier;
-    case "ytd":
-    default:
-      return yearly;
-  }
+
+  return (
+    <div className="h-32">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis 
+            dataKey="period" 
+            tick={{ fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis 
+            tick={{ fontSize: 10 }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={formatValue}
+          />
+          <Tooltip 
+            formatter={(value: number, name: string) => [
+              formatValue(value), 
+              name === 'actual' ? 'Actual' : 'Goal'
+            ]}
+            labelStyle={{ fontSize: '12px' }}
+            contentStyle={{ 
+              backgroundColor: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              fontSize: '12px'
+            }}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="goal" 
+            stroke="#9ca3af" 
+            strokeWidth={2}
+            strokeDasharray="4 4"
+            dot={false}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="actual" 
+            stroke="#2563eb" 
+            strokeWidth={2}
+            dot={{ fill: '#2563eb', r: 3 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
-
-// Generate progress data based on metric and time period
-function generateProgressData(metric: any, timePeriod: string = "ytd") {
-  const currentValueStr = metric?.value || metric?.currentValue || "0";
-  const yearlyGoalStr = metric?.yearlyGoal || "0";
-  const metricId = metric?.id || metric?.metricId || 1;
-  
-  const yearlyGoal = parseFloat(String(yearlyGoalStr).replace(/[$,%\s]/g, '')) || 100;
-  const currentValue = getAdaptiveActual(String(currentValueStr), timePeriod, metricId);
-  
-  if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
-    return [];
-  }
-
-  switch (timePeriod) {
-    case "weekly":
-      return generateWeeklyData(currentValue, yearlyGoal);
-    case "monthly":
-      return generateMonthlyData(currentValue, yearlyGoal);
-    case "quarterly":
-      return generateQuarterlyData(currentValue, yearlyGoal);
-    case "ytd":
-    default:
-      return generateYTDData(currentValue, yearlyGoal);
-  }
-}
-
-function generateWeeklyData(currentValue: number, yearlyGoal: number) {
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weeklyGoal = yearlyGoal / 52;
-  const dailyGoal = weeklyGoal / 7;
-  const currentDay = new Date().getDay();
-  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
-  
-  return weekdays.map((day, index) => {
-    const cumulativeGoal = dailyGoal * (index + 1);
-    const cumulativeActual = index <= currentDayIndex ? (currentValue / 7) * (index + 1) : null;
-    
-    return {
-      period: day,
-      goal: Math.round(cumulativeGoal),
-      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
-      isCurrent: index === currentDayIndex
-    };
-  });
-}
-
-function generateMonthlyData(currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentDay = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   
   const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const monthlyGoal = yearlyGoal / 12;
