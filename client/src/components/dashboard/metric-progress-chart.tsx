@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
 
 interface MetricProgressChartProps {
   metric: {
@@ -16,24 +16,49 @@ interface MetricProgressChartProps {
   timePeriod: string;
 }
 
-// Get data for the selected time period using authentic calculated data
-function getTimeSeriesData(metric: MetricProgressChartProps['metric'], timePeriod: string) {
+// Get data for the selected time period and calculate cumulative sums
+function getCumulativeData(metric: MetricProgressChartProps['metric'], timePeriod: string) {
+  let rawData: Array<{ period: string; actual: number; goal: number }> = [];
+  
   switch (timePeriod) {
     case "weekly":
-      return metric.timeSeriesData.weekly || [];
+      rawData = metric.timeSeriesData.weekly || [];
+      break;
     case "monthly":
-      return metric.timeSeriesData.monthly || [];
+      rawData = metric.timeSeriesData.monthly || [];
+      break;
     case "quarterly":
-      return metric.timeSeriesData.quarterly || [];
+      rawData = metric.timeSeriesData.quarterly || [];
+      break;
     case "ytd":
-      return metric.timeSeriesData.ytd || [];
+      rawData = metric.timeSeriesData.ytd || [];
+      break;
     default:
-      return metric.timeSeriesData.monthly || [];
+      rawData = metric.timeSeriesData.monthly || [];
   }
+
+  // Calculate cumulative sums
+  let cumulativeActual = 0;
+  let cumulativeGoal = 0;
+  
+  return rawData.map((item) => {
+    cumulativeActual += item.actual;
+    cumulativeGoal += item.goal;
+    
+    return {
+      period: item.period,
+      actual: item.actual,
+      goal: item.goal,
+      cumulativeActual,
+      cumulativeGoal,
+      // Calculate cumulative percentage
+      cumulativeProgress: cumulativeGoal > 0 ? (cumulativeActual / cumulativeGoal) * 100 : 0
+    };
+  });
 }
 
 export default function MetricProgressChart({ metric, timePeriod }: MetricProgressChartProps) {
-  const data = getTimeSeriesData(metric, timePeriod);
+  const data = getCumulativeData(metric, timePeriod);
   
   if (!data || data.length === 0) {
     return (
@@ -48,62 +73,75 @@ export default function MetricProgressChart({ metric, timePeriod }: MetricProgre
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
+        notation: 'compact',
+        maximumFractionDigits: 1,
+      }).format(value);
+    }
+    return new Intl.NumberFormat('en-US', { notation: 'compact' }).format(value);
+  };
+
+  const formatTooltipValue = (value: number): string => {
+    if (metric.format === 'currency') {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
       }).format(value);
-    } else if (metric.format === 'percentage') {
-      return `${value.toFixed(1)}%`;
-    } else {
-      return new Intl.NumberFormat('en-US').format(value);
     }
+    return new Intl.NumberFormat('en-US').format(value);
   };
 
   return (
     <div className="h-32">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <AreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <defs>
+            <linearGradient id={`cumulativeGradient-${metric.metricId}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.05}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
           <XAxis 
             dataKey="period" 
-            tick={{ fontSize: 10 }}
             axisLine={false}
             tickLine={false}
+            fontSize={9}
+            tick={{ fill: '#666' }}
           />
           <YAxis 
-            tick={{ fontSize: 10 }}
             axisLine={false}
             tickLine={false}
+            fontSize={9}
+            tick={{ fill: '#666' }}
             tickFormatter={formatValue}
+            domain={['dataMin', 'dataMax']}
           />
           <Tooltip 
-            formatter={(value: number, name: string) => [
-              formatValue(value), 
-              name === 'actual' ? 'Actual' : 'Goal'
-            ]}
-            labelStyle={{ fontSize: '12px' }}
+            labelStyle={{ color: '#666', fontSize: '11px' }}
             contentStyle={{ 
-              backgroundColor: 'white',
-              border: '1px solid #e5e7eb',
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              border: '1px solid #e2e8f0',
               borderRadius: '6px',
-              fontSize: '12px'
+              fontSize: '11px',
+              padding: '8px'
+            }}
+            formatter={(value: number, name: string) => {
+              if (name === 'cumulativeActual') return [formatTooltipValue(value), 'Cumulative Total'];
+              if (name === 'cumulativeGoal') return [formatTooltipValue(value), 'Cumulative Goal'];
+              return [formatTooltipValue(value), name];
             }}
           />
-          <Line 
-            type="monotone" 
-            dataKey="goal" 
-            stroke="#9ca3af" 
+          <Area
+            type="monotone"
+            dataKey="cumulativeActual"
+            stroke="#8b5cf6"
             strokeWidth={2}
-            strokeDasharray="4 4"
-            dot={false}
+            fill={`url(#cumulativeGradient-${metric.metricId})`}
+            dot={{ fill: '#8b5cf6', strokeWidth: 0, r: 2 }}
           />
-          <Line 
-            type="monotone" 
-            dataKey="actual" 
-            stroke="#2563eb" 
-            strokeWidth={2}
-            dot={{ fill: '#2563eb', r: 3 }}
-          />
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );
