@@ -555,4 +555,4 @@ class PersistentMemStorage extends MemStorage {
   }
 }
 
-export const storage = new PersistentMemStorage();
+export const storage = new DatabaseStorage();
