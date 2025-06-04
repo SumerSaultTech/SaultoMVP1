@@ -20,8 +20,6 @@ interface ColumnPreviewProps {
 }
 
 function ColumnPreview({ tableName }: ColumnPreviewProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  
   const { data: columns, isLoading } = useQuery({
     queryKey: ["/api/snowflake/columns", tableName],
     queryFn: async () => {
@@ -29,58 +27,41 @@ function ColumnPreview({ tableName }: ColumnPreviewProps) {
       if (!response.ok) throw new Error('Failed to fetch columns');
       return response.json();
     },
-    enabled: isExpanded,
   });
 
-  if (!isExpanded) {
+  if (isLoading) {
     return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsExpanded(true);
-        }}
-        className="flex items-center text-xs text-gray-500 hover:text-gray-700 mt-2"
-      >
-        <ChevronRight className="w-3 h-3 mr-1" />
-        Show columns
-      </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="h-8 bg-gray-200 rounded animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!columns || columns.length === 0) {
+    return (
+      <div className="text-gray-500 text-sm">
+        No column information available for this table.
+      </div>
     );
   }
 
   return (
-    <div className="mt-2">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsExpanded(false);
-        }}
-        className="flex items-center text-xs text-gray-500 hover:text-gray-700 mb-2"
-      >
-        <ChevronDown className="w-3 h-3 mr-1" />
-        Hide columns
-      </button>
-      
-      {isLoading ? (
-        <div className="space-y-1">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-3 bg-gray-200 rounded animate-pulse" />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-1 max-h-24 overflow-y-auto">
-          {columns?.slice(0, 8).map((column: any, index: number) => (
-            <div key={index} className="text-xs text-gray-600 truncate">
-              <span className="font-mono">{column.COLUMN_NAME}</span>
-              <span className="text-gray-400 ml-1">({column.DATA_TYPE})</span>
-            </div>
-          ))}
-          {columns?.length > 8 && (
-            <div className="text-xs text-gray-400">
-              +{columns.length - 8} more columns
-            </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {columns.map((column: any, index: number) => (
+        <div key={index} className="bg-white border rounded-lg p-3 shadow-sm">
+          <div className="font-mono text-sm font-medium text-gray-900 truncate">
+            {column.COLUMN_NAME}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            {column.DATA_TYPE}
+          </div>
+          {column.IS_NULLABLE === 'YES' && (
+            <div className="text-xs text-gray-400 mt-1">nullable</div>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -204,7 +185,6 @@ export default function DataBrowser() {
                         {table.ROW_COUNT || 0} rows
                       </Badge>
                     </div>
-                    <ColumnPreview tableName={table.TABLE_NAME} />
                   </CardContent>
                 </Card>
               ))}
@@ -302,6 +282,14 @@ export default function DataBrowser() {
                 </div>
               )}
             </div>
+
+            {/* Column Preview */}
+            {selectedTable && (
+              <div className="px-6 py-4 border-b bg-gray-50">
+                <h3 className="text-lg font-semibold mb-3">Table Schema: {selectedTable}</h3>
+                <ColumnPreview tableName={selectedTable} />
+              </div>
+            )}
 
             {/* Data Table */}
             <div className="flex-1 overflow-auto p-6">
