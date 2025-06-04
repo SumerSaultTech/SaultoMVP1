@@ -399,7 +399,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log("Executing SQL query:", sql);
-      const result = await snowflakePythonService.executeQuery(sql);
+      
+      // Use the dedicated Python service for reliable execution
+      const { spawn } = require('child_process');
+      const result = await new Promise<any>((resolve) => {
+        const pythonProcess = spawn('python', ['snowflake_query_service.py', sql], {
+          cwd: process.cwd()
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        
+        pythonProcess.stdout.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+        
+        pythonProcess.stderr.on('data', (data: Buffer) => {
+          errorOutput += data.toString();
+        });
+        
+        pythonProcess.on('close', (code: number) => {
+          if (code === 0 && output) {
+            try {
+              const result = JSON.parse(output);
+              resolve(result);
+            } catch (e) {
+              resolve({ success: false, error: "Failed to parse result" });
+            }
+          } else {
+            resolve({ success: false, error: errorOutput || "Process failed" });
+          }
+        });
+      });
       
       if (result.success) {
         // Format columns for frontend
