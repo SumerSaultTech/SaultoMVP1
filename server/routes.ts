@@ -385,6 +385,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Calculate real metric values from MIAS_DATA_DB
+  app.post("/api/metrics/calculate-real", async (req, res) => {
+    try {
+      const { metricName } = req.body;
+      
+      if (!metricName) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Metric name is required" 
+        });
+      }
+
+      console.log(`Calculating real metric value for: ${metricName}`);
+      
+      const { realDataService } = await import("./services/real-data-service");
+      const result = await realDataService.calculateMetric(metricName);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          metricName: metricName,
+          value: result.value,
+          source: "MIAS_DATA_DB",
+          calculatedAt: new Date().toISOString()
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error
+        });
+      }
+      
+    } catch (error) {
+      console.error("Real metric calculation error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to calculate real metric value" 
+      });
+    }
+  });
+
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
       const metrics = await storage.getKpiMetrics(1748544793859);
