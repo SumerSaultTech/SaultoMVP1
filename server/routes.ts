@@ -9,6 +9,7 @@ import { metricsAIService } from "./services/metrics-ai";
 import { snowflakeCortexService } from "./services/snowflake-cortex";
 import { snowflakeMetricsService } from "./services/snowflake-metrics";
 import { snowflakeCalculatorService } from "./services/snowflake-calculator";
+import { snowflakePythonService } from "./services/snowflake-python";
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -381,6 +382,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         message: "MIAS_DATA_DB connection test failed" 
+      });
+    }
+  });
+
+  // Execute SQL query against MIAS_DATA_DB
+  app.post("/api/snowflake/query", async (req, res) => {
+    try {
+      const { sql } = req.body;
+      
+      if (!sql) {
+        return res.status(400).json({
+          success: false,
+          error: "SQL query is required"
+        });
+      }
+
+      console.log("Executing SQL query:", sql);
+      const result = await snowflakePythonService.executeQuery(sql);
+      
+      if (result.success) {
+        // Format columns for frontend
+        const columns = result.data && result.data.length > 0 
+          ? Object.keys(result.data[0]) 
+          : [];
+        
+        res.json({
+          success: true,
+          data: result.data || [],
+          columns: columns
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error || "Query execution failed"
+        });
+      }
+    } catch (error) {
+      console.error("SQL query error:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
