@@ -416,4 +416,143 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+import fs from 'fs';
+import path from 'path';
+
+// File-based persistence for metrics
+const METRICS_FILE = path.join(process.cwd(), 'metrics-data.json');
+
+class PersistentMemStorage extends MemStorage {
+  constructor() {
+    super();
+    this.loadFromFile();
+  }
+
+  private loadFromFile() {
+    try {
+      if (fs.existsSync(METRICS_FILE)) {
+        const data = JSON.parse(fs.readFileSync(METRICS_FILE, 'utf8'));
+        
+        // Restore metrics
+        if (data.kpiMetrics) {
+          for (const [id, metric] of Object.entries(data.kpiMetrics as Record<string, any>)) {
+            this.kpiMetrics.set(parseInt(id), {
+              ...metric,
+              lastCalculatedAt: metric.lastCalculatedAt ? new Date(metric.lastCalculatedAt) : null
+            });
+          }
+          this.currentId = Math.max(this.currentId, ...Array.from(this.kpiMetrics.keys())) + 1;
+        }
+        
+        console.log(`✓ Loaded ${this.kpiMetrics.size} metrics from persistent storage`);
+      } else {
+        this.initializeDefaultMetrics();
+      }
+    } catch (error) {
+      console.error("Error loading metrics from file:", error);
+      this.initializeDefaultMetrics();
+    }
+  }
+
+  private saveToFile() {
+    try {
+      const data = {
+        kpiMetrics: Object.fromEntries(this.kpiMetrics.entries())
+      };
+      fs.writeFileSync(METRICS_FILE, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error("Error saving metrics to file:", error);
+    }
+  }
+
+  private initializeDefaultMetrics() {
+    const metrics = [
+      {
+        name: "Annual Revenue",
+        description: "Total Annual Revenue based on QuickBooks transactions",
+        yearlyGoal: "3000000",
+        goalType: "yearly" as const,
+        quarterlyGoals: {Q1: "", Q2: "", Q3: "", Q4: ""},
+        monthlyGoals: {Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "", Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""},
+        category: "revenue",
+        format: "currency",
+        isIncreasing: true,
+        isNorthStar: true,
+        sqlQuery: "SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;",
+        companyId: 1
+      },
+      {
+        name: "Monthly Deal Value",
+        description: "Total value of deals closed each month from HubSpot",
+        yearlyGoal: "1200000",
+        goalType: "yearly" as const,
+        quarterlyGoals: {Q1: "", Q2: "", Q3: "", Q4: ""},
+        monthlyGoals: {Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "", Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""},
+        category: "sales",
+        format: "currency",
+        isIncreasing: true,
+        isNorthStar: false,
+        sqlQuery: "SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;",
+        companyId: 1
+      },
+      {
+        name: "Monthly Expenses",
+        description: "Total business expenses from QuickBooks",
+        yearlyGoal: "600000",
+        goalType: "yearly" as const,
+        quarterlyGoals: {Q1: "", Q2: "", Q3: "", Q4: ""},
+        monthlyGoals: {Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "", Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""},
+        category: "finance",
+        format: "currency",
+        isIncreasing: false,
+        isNorthStar: false,
+        sqlQuery: "SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= '2024-01-01' AND AMOUNT > 0 GROUP BY EXPENSE_DATE ORDER BY EXPENSE_DATE;",
+        companyId: 1
+      }
+    ];
+
+    try {
+      for (const metric of metrics) {
+        const id = this.currentId++;
+        const kpiMetric: KpiMetric = { 
+          ...metric, 
+          id, 
+          value: null,
+          changePercent: null,
+          currentProgress: null,
+          timePeriod: "monthly",
+          lastCalculatedAt: null 
+        };
+        this.kpiMetrics.set(id, kpiMetric);
+      }
+      this.saveToFile();
+      console.log("✓ Initialized default MIAS_DATA metrics");
+    } catch (error) {
+      console.error("Error initializing default metrics:", error);
+    }
+  }
+
+  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
+    const result = await super.createKpiMetric(insertMetric);
+    this.saveToFile();
+    return result;
+  }
+
+  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> {
+    const result = await super.updateKpiMetric(id, updates);
+    if (result) {
+      this.saveToFile();
+    }
+    return result;
+  }
+
+  async deleteKpiMetric(id: number): Promise<boolean> {
+    const result = await super.deleteKpiMetric(id);
+    if (result) {
+      this.saveToFile();
+    }
+    return result;
+  }
+}
+
+export const storage = new PersistentMemStorage();

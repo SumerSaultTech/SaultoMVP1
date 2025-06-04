@@ -1,0 +1,118 @@
+{
+  "kpiMetrics": {
+    "1": {
+      "name": "Annual Revenue",
+      "description": "Total Annual Revenue based on QuickBooks transactions",
+      "yearlyGoal": "3000000",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "revenue",
+      "format": "currency",
+      "isIncreasing": true,
+      "isNorthStar": true,
+      "sqlQuery": "SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;",
+      "companyId": 1,
+      "id": 1,
+      "value": null,
+      "changePercent": null,
+      "currentProgress": null,
+      "timePeriod": "monthly",
+      "lastCalculatedAt": null
+    },
+    "2": {
+      "name": "Monthly Deal Value",
+      "description": "Total value of deals closed each month from HubSpot",
+      "yearlyGoal": "1200000",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "sales",
+      "format": "currency",
+      "isIncreasing": true,
+      "isNorthStar": false,
+      "sqlQuery": "SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;",
+      "companyId": 1,
+      "id": 2,
+      "value": null,
+      "changePercent": null,
+      "currentProgress": null,
+      "timePeriod": "monthly",
+      "lastCalculatedAt": null
+    },
+    "3": {
+      "name": "Monthly Expenses",
+      "description": "Total business expenses from QuickBooks",
+      "yearlyGoal": "600000",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "finance",
+      "format": "currency",
+      "isIncreasing": false,
+      "isNorthStar": false,
+      "sqlQuery": "SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= '2024-01-01' AND AMOUNT > 0 GROUP BY EXPENSE_DATE ORDER BY EXPENSE_DATE;",
+      "companyId": 1,
+      "id": 3,
+      "value": null,
+      "changePercent": null,
+      "currentProgress": null,
+      "timePeriod": "monthly",
+      "lastCalculatedAt": null
+    }
+  }
+}
