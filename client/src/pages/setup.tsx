@@ -511,10 +511,10 @@ export default function Setup() {
               Start New Setup
             </Button>
             <Button 
-              onClick={() => window.location.href = "/"}
+              onClick={() => window.location.href = "/data-browser"}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
             >
-              Go to Dashboard
+              Browse Your Data
             </Button>
           </div>
         </CardContent>
