@@ -276,54 +276,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const metric of metrics) {
         if (metric.sqlQuery) {
           try {
-            // Use calculateDashboardData which properly sums the daily values
+            // Use calculateDashboardData which properly aggregates time periods from real data
             const dashboardResult = await snowflakeCalculatorService.calculateDashboardData(metric.id);
             
-            // Get the actual calculated value from Snowflake
-            const actualValue = dashboardResult ? dashboardResult.currentValue : 0;
-            
-            console.log(`Dashboard data for metric ${metric.name}:`, actualValue, "from dashboard calculation");
-            const yearlyGoalNum = parseFloat(metric.yearlyGoal || "0");
-            
-            const timeSeriesData = {
-              weekly: [
-                { period: "Week 1", actual: actualValue * 0.2, goal: yearlyGoalNum / 52 },
-                { period: "Week 2", actual: actualValue * 0.25, goal: yearlyGoalNum / 52 },
-                { period: "Week 3", actual: actualValue * 0.3, goal: yearlyGoalNum / 52 },
-                { period: "Week 4", actual: actualValue * 0.25, goal: yearlyGoalNum / 52 }
-              ],
-              monthly: [
-                { period: "Jan", actual: actualValue * 0.08, goal: yearlyGoalNum / 12 },
-                { period: "Feb", actual: actualValue * 0.09, goal: yearlyGoalNum / 12 },
-                { period: "Mar", actual: actualValue * 0.11, goal: yearlyGoalNum / 12 },
-                { period: "Apr", actual: actualValue * 0.1, goal: yearlyGoalNum / 12 },
-                { period: "May", actual: actualValue * 0.12, goal: yearlyGoalNum / 12 },
-                { period: "Jun", actual: actualValue * 0.13, goal: yearlyGoalNum / 12 },
-                { period: "Jul", actual: actualValue * 0.09, goal: yearlyGoalNum / 12 },
-                { period: "Aug", actual: actualValue * 0.08, goal: yearlyGoalNum / 12 },
-                { period: "Sep", actual: actualValue * 0.07, goal: yearlyGoalNum / 12 },
-                { period: "Oct", actual: actualValue * 0.06, goal: yearlyGoalNum / 12 },
-                { period: "Nov", actual: actualValue * 0.04, goal: yearlyGoalNum / 12 },
-                { period: "Dec", actual: actualValue * 0.03, goal: yearlyGoalNum / 12 }
-              ],
-              quarterly: [
-                { period: "Q1", actual: actualValue * 0.28, goal: yearlyGoalNum / 4 },
-                { period: "Q2", actual: actualValue * 0.35, goal: yearlyGoalNum / 4 },
-                { period: "Q3", actual: actualValue * 0.24, goal: yearlyGoalNum / 4 },
-                { period: "Q4", actual: actualValue * 0.13, goal: yearlyGoalNum / 4 }
-              ],
-              ytd: [
-                { period: "YTD", actual: actualValue, goal: yearlyGoalNum }
-              ]
-            };
-
-            dashboardData.push({
-              metricId: metric.id,
-              currentValue: actualValue,
-              yearlyGoal: yearlyGoalNum,
-              format: metric.format || "number",
-              timeSeriesData
-            });
+            if (dashboardResult) {
+              console.log(`Dashboard data for metric ${metric.name}:`, dashboardResult.currentValue, "from dashboard calculation");
+              dashboardData.push(dashboardResult);
+            } else {
+              console.log(`No dashboard data available for metric ${metric.name}`);
+              // Add fallback with zero values
+              dashboardData.push({
+                metricId: metric.id,
+                currentValue: 0,
+                yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
+                format: metric.format || "currency",
+                timeSeriesData: {
+                  weekly: [],
+                  monthly: [],
+                  quarterly: [],
+                  ytd: []
+                }
+              });
+            }
           } catch (error) {
             console.error(`Error calculating metric ${metric.name}:`, error);
             // Provide fallback data structure with zero values

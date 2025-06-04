@@ -277,6 +277,8 @@ export class SnowflakeCalculatorService {
       const yearlyGoal = parseFloat(metric.yearlyGoal || '0');
       const currentValue = totalSum;
 
+      console.log(`Returning dashboard data with currentValue: ${currentValue}`);
+
       return {
         metricId,
         currentValue,
