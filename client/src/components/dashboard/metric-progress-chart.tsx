@@ -50,8 +50,8 @@ function generateProgressData(metric: any, timePeriod: string = "ytd") {
   const yearlyGoalStr = metric?.yearlyGoal || "0";
   const metricId = metric?.id || metric?.metricId || 1;
   
-  const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
-  const currentValue = getAdaptiveActual(currentValueStr, timePeriod, metricId);
+  const yearlyGoal = parseFloat(String(yearlyGoalStr).replace(/[$,%\s]/g, '')) || 100;
+  const currentValue = getAdaptiveActual(String(currentValueStr), timePeriod, metricId);
   
   if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
     return [];
