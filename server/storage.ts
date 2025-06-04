@@ -264,4 +264,156 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Use database storage for persistence
+import { db } from "./db";
+import { eq } from "drizzle-orm";
+
+export class DatabaseStorage implements IStorage {
+  // Companies
+  async getCompanies(): Promise<Company[]> {
+    return await db.select().from(companies);
+  }
+
+  async getCompany(id: number): Promise<Company | undefined> {
+    const [company] = await db.select().from(companies).where(eq(companies.id, id));
+    return company;
+  }
+
+  async createCompany(insertCompany: InsertCompany): Promise<Company> {
+    const [company] = await db.insert(companies).values(insertCompany).returning();
+    return company;
+  }
+
+  // Users
+  async getUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  // Data Sources
+  async getDataSources(companyId: number): Promise<DataSource[]> {
+    return await db.select().from(dataSources).where(eq(dataSources.companyId, companyId));
+  }
+
+  async getDataSource(id: number): Promise<DataSource | undefined> {
+    const [dataSource] = await db.select().from(dataSources).where(eq(dataSources.id, id));
+    return dataSource;
+  }
+
+  async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> {
+    const [dataSource] = await db.insert(dataSources).values(insertDataSource).returning();
+    return dataSource;
+  }
+
+  async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> {
+    const [dataSource] = await db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning();
+    return dataSource;
+  }
+
+  // SQL Models
+  async getSqlModels(companyId: number): Promise<SqlModel[]> {
+    return await db.select().from(sqlModels).where(eq(sqlModels.companyId, companyId));
+  }
+
+  async getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]> {
+    return await db.select().from(sqlModels).where(eq(sqlModels.companyId, companyId));
+  }
+
+  async getSqlModel(id: number): Promise<SqlModel | undefined> {
+    const [model] = await db.select().from(sqlModels).where(eq(sqlModels.id, id));
+    return model;
+  }
+
+  async getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined> {
+    const [model] = await db.select().from(sqlModels).where(eq(sqlModels.name, name));
+    return model;
+  }
+
+  async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> {
+    const [model] = await db.insert(sqlModels).values(insertModel).returning();
+    return model;
+  }
+
+  async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> {
+    const [model] = await db.update(sqlModels).set(updates).where(eq(sqlModels.id, id)).returning();
+    return model;
+  }
+
+  // KPI Metrics
+  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
+    return await db.select().from(kpiMetrics).where(eq(kpiMetrics.companyId, companyId));
+  }
+
+  async getKpiMetric(id: number): Promise<KpiMetric | undefined> {
+    const [metric] = await db.select().from(kpiMetrics).where(eq(kpiMetrics.id, id));
+    return metric;
+  }
+
+  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
+    const [metric] = await db.insert(kpiMetrics).values(insertMetric).returning();
+    return metric;
+  }
+
+  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> {
+    const [metric] = await db.update(kpiMetrics).set(updates).where(eq(kpiMetrics.id, id)).returning();
+    return metric;
+  }
+
+  async deleteKpiMetric(id: number): Promise<boolean> {
+    const result = await db.delete(kpiMetrics).where(eq(kpiMetrics.id, id));
+    return true;
+  }
+
+  // Chat Messages
+  async getChatMessages(companyId: number): Promise<ChatMessage[]> {
+    return await db.select().from(chatMessages).where(eq(chatMessages.companyId, companyId));
+  }
+
+  async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> {
+    const [message] = await db.insert(chatMessages).values(insertMessage).returning();
+    return message;
+  }
+
+  // Pipeline Activities
+  async getPipelineActivities(companyId: number, limit = 50): Promise<PipelineActivity[]> {
+    return await db.select().from(pipelineActivities).where(eq(pipelineActivities.companyId, companyId));
+  }
+
+  async createPipelineActivity(insertActivity: InsertPipelineActivity): Promise<PipelineActivity> {
+    const [activity] = await db.insert(pipelineActivities).values(insertActivity).returning();
+    return activity;
+  }
+
+  // Setup Status
+  async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> {
+    const [status] = await db.select().from(setupStatus).where(eq(setupStatus.companyId, companyId));
+    return status;
+  }
+
+  async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> {
+    const existing = await this.getSetupStatus(companyId);
+    if (existing) {
+      const [status] = await db.update(setupStatus).set(updates).where(eq(setupStatus.companyId, companyId)).returning();
+      return status;
+    } else {
+      const [status] = await db.insert(setupStatus).values({ ...updates, companyId }).returning();
+      return status;
+    }
+  }
+}
+
+export const storage = new DatabaseStorage();
