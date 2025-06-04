@@ -10,6 +10,7 @@ import { snowflakeCortexService } from "./services/snowflake-cortex";
 import { snowflakeMetricsService } from "./services/snowflake-metrics";
 import { snowflakeCalculatorService } from "./services/snowflake-calculator";
 import { snowflakePythonService } from "./services/snowflake-python";
+import { spawn } from 'child_process';
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -401,7 +402,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("Executing SQL query:", sql);
       
       // Use the dedicated Python service for reliable execution
-      const { spawn } = require('child_process');
       const result = await new Promise<any>((resolve) => {
         const pythonProcess = spawn('python', ['snowflake_query_service.py', sql], {
           cwd: process.cwd()
