@@ -34,17 +34,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     queryKey: ["/api/kpi-metrics"],
   });
 
-  // Fetch dashboard data for metrics with SQL queries
-  const metricQueries = metrics
-    .filter(metric => metric.sqlQuery)
-    .map(metric => ({
-      ...useQuery<DashboardMetricData>({
-        queryKey: [`/api/metrics/${metric.id}/dashboard-data`],
-        enabled: !!metric.sqlQuery,
-      }),
-      metricId: metric.id,
-      metricInfo: metric
-    }));
+  // Fetch dashboard data for all metrics at once
+  const { data: dashboardData = [], isLoading: dashboardLoading } = useQuery<DashboardMetricData[]>({
+    queryKey: ["/api/dashboard/metrics-data"],
+    enabled: metrics.length > 0,
+  });
 
   const formatValue = (value: number, format: string): string => {
     switch (format) {
