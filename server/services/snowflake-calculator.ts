@@ -39,11 +39,11 @@ interface DashboardMetricData {
 const getTimeFilteredSQL = (baseMetric: string, timePeriod: string) => {
   const templates = {
     'annual-revenue': {
-      base: `SELECT SUM(DAILY_REVENUE) as value FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE DAILY_REVENUE > 0`,
-      weekly: `AND DATE >= DATEADD('day', -7, CURRENT_DATE())`,
-      monthly: `AND DATE >= DATEADD('month', -1, CURRENT_DATE())`,
-      quarterly: `AND DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
-      ytd: `AND YEAR(DATE) = YEAR(CURRENT_DATE())`
+      base: `SELECT SUM(INVOICE_AMOUNT) as value FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_AMOUNT > 0`,
+      weekly: `AND INVOICE_DATE >= DATEADD('day', -7, CURRENT_DATE())`,
+      monthly: `AND INVOICE_DATE >= DATEADD('month', -1, CURRENT_DATE())`,
+      quarterly: `AND INVOICE_DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
+      ytd: `AND YEAR(INVOICE_DATE) = YEAR(CURRENT_DATE())`
     },
     'monthly-deal-value': {
       base: `SELECT SUM(AMOUNT) as value FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE AMOUNT > 0 AND STAGE = 'Closed Won'`,
