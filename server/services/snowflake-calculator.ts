@@ -366,7 +366,7 @@ export class SnowflakeCalculatorService {
       });
       console.log(`Cached dashboard data for metric ${metricId}, period ${timePeriod}`);
 
-      // If this is the first calculation, warm cache for other periods using same data
+      // If this is the first calculation, warm cache for other periods with actual calculations
       if (shouldWarmCache) {
         console.log(`Cache warming: Pre-calculating other time periods for metric ${metricId}`);
         const allPeriods = ['weekly', 'monthly', 'quarterly', 'ytd'];
@@ -375,17 +375,54 @@ export class SnowflakeCalculatorService {
           if (period !== timePeriod) {
             const periodCacheKey = `${metricId}-${period}`;
             if (!this.isCacheValid(periodCacheKey)) {
-              // Create dashboard data for this period using the same base data
-              const periodData: DashboardMetricData = {
-                ...dashboardData,
-                timeSeriesData: dashboardData.timeSeriesData // Same time series data for all periods
-              };
-              
-              this.dashboardCache.set(periodCacheKey, {
-                data: periodData,
-                timestamp: new Date()
-              });
-              console.log(`Pre-cached data for metric ${metricId}, period ${period}`);
+              try {
+                // Actually calculate the data for this specific period
+                console.log(`Cache warming: Calculating ${period} data for metric ${metricId}`);
+                
+                // Get period-specific SQL
+                const metricKey = metric.name.toLowerCase().replace(/\s+/g, '-');
+                const periodSql = this.getTimeFilteredSQL(metricKey, period);
+                
+                if (periodSql) {
+                  const periodResult = await this.executeQuery(periodSql);
+                  if (periodResult.success && periodResult.data && periodResult.data.length > 0) {
+                    let periodValue = 0;
+                    for (const row of periodResult.data) {
+                      const rawValue = row.VALUE || row.value || 0;
+                      const parsedValue = parseFloat(String(rawValue).replace(/[$,]/g, '')) || 0;
+                      periodValue += parsedValue;
+                    }
+                    
+                    const periodData: DashboardMetricData = {
+                      metricId,
+                      currentValue: periodValue,
+                      yearlyGoal,
+                      format: metric.format || 'currency',
+                      timeSeriesData: dashboardData.timeSeriesData
+                    };
+                    
+                    this.dashboardCache.set(periodCacheKey, {
+                      data: periodData,
+                      timestamp: new Date()
+                    });
+                    console.log(`Pre-cached ${period} data for metric ${metricId}: ${periodValue}`);
+                  }
+                } else {
+                  // Fallback to same data if no period-specific SQL
+                  const periodData: DashboardMetricData = {
+                    ...dashboardData,
+                    timeSeriesData: dashboardData.timeSeriesData
+                  };
+                  
+                  this.dashboardCache.set(periodCacheKey, {
+                    data: periodData,
+                    timestamp: new Date()
+                  });
+                  console.log(`Pre-cached fallback data for metric ${metricId}, period ${period}`);
+                }
+              } catch (error) {
+                console.error(`Error warming cache for ${period}:`, error);
+              }
             }
           }
         }
