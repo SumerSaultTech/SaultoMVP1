@@ -385,6 +385,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get metric display configurations
+  app.get("/api/metrics/display-config", async (req, res) => {
+    try {
+      const { metricsDisplayService } = await import("./services/metrics-display");
+      const metrics = metricsDisplayService.getMetricConfigurations();
+      
+      res.json({
+        success: true,
+        metrics: metrics,
+        northStarMetrics: metricsDisplayService.getNorthStarMetrics(),
+        categories: ['Financial', 'Sales', 'Activity', 'Marketing']
+      });
+    } catch (error) {
+      console.error("Metrics display config error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to get metrics configuration" 
+      });
+    }
+  });
+
   // Calculate real metric values from MIAS_DATA_DB
   app.post("/api/metrics/calculate-real", async (req, res) => {
     try {
@@ -397,7 +418,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`Calculating real metric value for: ${metricName}`);
+      console.log(`Attempting to calculate real metric value for: ${metricName}`);
+      
+      // Check if Snowflake connection is available
+      const hasSnowflakeAccess = process.env.SNOWFLAKE_ACCOUNT && 
+                                process.env.SNOWFLAKE_USERNAME && 
+                                process.env.SNOWFLAKE_PASSWORD;
+      
+      if (!hasSnowflakeAccess) {
+        return res.status(503).json({
+          success: false,
+          error: "Snowflake credentials not configured. Please provide SNOWFLAKE_ROLE and verify network access.",
+          requiresSetup: true
+        });
+      }
       
       const { realDataService } = await import("./services/real-data-service");
       const result = await realDataService.calculateMetric(metricName);
@@ -411,17 +445,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           calculatedAt: new Date().toISOString()
         });
       } else {
-        res.status(500).json({
+        res.status(503).json({
           success: false,
-          error: result.error
+          error: `MIAS_DATA_DB connection error: ${result.error}`,
+          requiresSetup: true
         });
       }
       
     } catch (error) {
       console.error("Real metric calculation error:", error);
-      res.status(500).json({ 
+      res.status(503).json({ 
         success: false, 
-        error: "Failed to calculate real metric value" 
+        error: "Snowflake connection unavailable. Check network policies and credentials.",
+        requiresSetup: true
       });
     }
   });

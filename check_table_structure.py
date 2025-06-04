@@ -5,13 +5,13 @@ import sys
 def check_table_structure():
     try:
         conn = snowflake.connector.connect(
-            account='LFQSQQP-VBC22871',
+            account=os.getenv('SNOWFLAKE_ACCOUNT'),
             user=os.getenv('SNOWFLAKE_USERNAME'),
             password=os.getenv('SNOWFLAKE_PASSWORD'),
-            warehouse='MIAS_DATA_DB',
-            database='MIAS_DATA_DB',
-            schema='PUBLIC',
-            role='ACCOUNTADMIN'
+            warehouse=os.getenv('SNOWFLAKE_WAREHOUSE'),
+            database=os.getenv('SNOWFLAKE_DATABASE'),
+            schema=os.getenv('SNOWFLAKE_SCHEMA'),
+            role=os.getenv('SNOWFLAKE_ROLE', 'PUBLIC')
         )
         
         cursor = conn.cursor()

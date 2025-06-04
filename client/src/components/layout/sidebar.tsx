@@ -13,6 +13,7 @@ export default function Sidebar() {
 
   const navItems = [
     { path: "/", icon: BarChart3, label: "Dashboard" },
+    { path: "/real-metrics", icon: Target, label: "MIAS_DATA Metrics" },
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
     { path: "/tables", icon: Table, label: "Table Browser" },
