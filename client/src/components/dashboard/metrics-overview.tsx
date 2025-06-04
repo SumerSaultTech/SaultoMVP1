@@ -36,7 +36,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   // Fetch dashboard data for all metrics at once
   const { data: dashboardData = [], isLoading: dashboardLoading } = useQuery<DashboardMetricData[]>({
-    queryKey: ["/api/dashboard/metrics-data"],
+    queryKey: ["/api/dashboard/metrics-data", selectedTimePeriod],
+    queryFn: () => fetch(`/api/dashboard/metrics-data?timePeriod=${selectedTimePeriod}`).then(res => res.json()),
     enabled: metrics.length > 0,
   });
 
