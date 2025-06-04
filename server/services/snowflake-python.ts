@@ -26,21 +26,39 @@ import sys
 import os
 
 try:
-    # Clean account identifier
+    # Connect to Snowflake with multiple connection attempts
     account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
-    if ".snowflakecomputing.com" in account_id:
-        account_id = account_id.replace(".snowflakecomputing.com", "")
     
-    # Connect to Snowflake
-    conn = snowflake.connector.connect(
-        account=account_id,
-        user=os.getenv("SNOWFLAKE_USERNAME"),
-        password=os.getenv("SNOWFLAKE_PASSWORD"),
-        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
-        database='MIAS_DATA_DB',
-        schema='PUBLIC',
-        role='SYSADMIN'
-    )
+    # Try different account identifier formats
+    account_formats = [
+        account_id,
+        account_id.replace(".snowflakecomputing.com", "") if ".snowflakecomputing.com" in account_id else account_id + ".snowflakecomputing.com",
+        account_id.split('.')[0] if '.' in account_id else account_id
+    ]
+    
+    conn = None
+    last_error = None
+    
+    for account_format in account_formats:
+        try:
+            conn = snowflake.connector.connect(
+                account=account_format,
+                user=os.getenv("SNOWFLAKE_USERNAME"),
+                password=os.getenv("SNOWFLAKE_PASSWORD"),
+                warehouse='MIAS_DATA_DB',
+                database='MIAS_DATA_DB',
+                schema='PUBLIC',
+                timeout=30,
+                login_timeout=30,
+                network_timeout=30
+            )
+            break
+        except Exception as e:
+            last_error = e
+            continue
+    
+    if not conn:
+        raise last_error or Exception("Failed to connect with any account format")
     
     cursor = conn.cursor()
     
