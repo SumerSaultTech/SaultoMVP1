@@ -39,7 +39,7 @@ interface DashboardMetricData {
 const getTimeFilteredSQL = (baseMetric: string, timePeriod: string) => {
   const templates = {
     'annual-revenue': {
-      base: `SELECT SUM(AMOUNT) as value FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE AMOUNT > 0`,
+      base: `SELECT SUM(DAILY_REVENUE) as value FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE DAILY_REVENUE > 0`,
       weekly: `AND DATE >= DATEADD('day', -7, CURRENT_DATE())`,
       monthly: `AND DATE >= DATEADD('month', -1, CURRENT_DATE())`,
       quarterly: `AND DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
