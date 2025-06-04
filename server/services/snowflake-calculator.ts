@@ -147,6 +147,10 @@ const SQL_TEMPLATES = {
 export class SnowflakeCalculatorService {
   private lastCalculated: Map<number, Date> = new Map();
   private readonly CACHE_DURATION_HOURS = 1;
+  
+  // Cache for dashboard data by metric ID and time period
+  private dashboardCache: Map<string, { data: DashboardMetricData; timestamp: Date }> = new Map();
+  private readonly DASHBOARD_CACHE_DURATION_HOURS = 1;
 
   // Execute SQL query against Snowflake using the same method as data browser
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
@@ -258,7 +262,31 @@ export class SnowflakeCalculatorService {
   }
 
   // Calculate dashboard data with time series for a metric
+  // Check if cached dashboard data is still valid
+  private isCacheValid(cacheKey: string): boolean {
+    const cached = this.dashboardCache.get(cacheKey);
+    if (!cached) return false;
+    
+    const now = new Date();
+    const cacheAge = now.getTime() - cached.timestamp.getTime();
+    const maxAge = this.DASHBOARD_CACHE_DURATION_HOURS * 60 * 60 * 1000;
+    
+    return cacheAge < maxAge;
+  }
+
   async calculateDashboardData(metricId: number, timePeriod: string = 'ytd'): Promise<DashboardMetricData | null> {
+    const cacheKey = `${metricId}-${timePeriod}`;
+    
+    // Check cache first
+    if (this.isCacheValid(cacheKey)) {
+      console.log(`Using cached dashboard data for metric ${metricId}, period ${timePeriod}`);
+      return this.dashboardCache.get(cacheKey)!.data;
+    }
+
+    // Check if we're calculating for the first time - warm cache for all periods
+    const shouldWarmCache = !['weekly', 'monthly', 'quarterly', 'ytd'].some(period => 
+      this.isCacheValid(`${metricId}-${period}`)
+    );
     try {
       console.log(`=== Calculating dashboard data for metric ID: ${metricId}, period: ${timePeriod} ===`);
       const metric = await storage.getKpiMetric(metricId);
@@ -318,7 +346,7 @@ export class SnowflakeCalculatorService {
 
       console.log(`Returning dashboard data with currentValue: ${currentValue}`);
 
-      return {
+      const dashboardData: DashboardMetricData = {
         metricId,
         currentValue,
         yearlyGoal,
@@ -330,6 +358,40 @@ export class SnowflakeCalculatorService {
           ytd: this.aggregateYTD(dailyData, yearlyGoal)
         }
       };
+
+      // Cache the result
+      this.dashboardCache.set(cacheKey, {
+        data: dashboardData,
+        timestamp: new Date()
+      });
+      console.log(`Cached dashboard data for metric ${metricId}, period ${timePeriod}`);
+
+      // If this is the first calculation, warm cache for other periods using same data
+      if (shouldWarmCache) {
+        console.log(`Cache warming: Pre-calculating other time periods for metric ${metricId}`);
+        const allPeriods = ['weekly', 'monthly', 'quarterly', 'ytd'];
+        
+        for (const period of allPeriods) {
+          if (period !== timePeriod) {
+            const periodCacheKey = `${metricId}-${period}`;
+            if (!this.isCacheValid(periodCacheKey)) {
+              // Create dashboard data for this period using the same base data
+              const periodData: DashboardMetricData = {
+                ...dashboardData,
+                timeSeriesData: dashboardData.timeSeriesData // Same time series data for all periods
+              };
+              
+              this.dashboardCache.set(periodCacheKey, {
+                data: periodData,
+                timestamp: new Date()
+              });
+              console.log(`Pre-cached data for metric ${metricId}, period ${period}`);
+            }
+          }
+        }
+      }
+
+      return dashboardData;
     } catch (error) {
       console.error("Error calculating dashboard data:", error);
       return null;
