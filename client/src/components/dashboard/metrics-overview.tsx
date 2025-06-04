@@ -40,7 +40,15 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     enabled: metrics.length > 0,
   });
 
-  const formatValue = (value: number, format: string): string => {
+  const formatValue = (value: number | string, format: string): string => {
+    // Convert string to number if needed
+    const numValue = typeof value === 'string' ? parseFloat(value.replace(/[$,%]/g, '')) : value;
+    
+    // Handle NaN values
+    if (isNaN(numValue) || numValue === null || numValue === undefined) {
+      return format === 'currency' ? '$0' : '0';
+    }
+    
     switch (format) {
       case 'currency':
         return new Intl.NumberFormat('en-US', {
@@ -48,19 +56,22 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
           currency: 'USD',
           minimumFractionDigits: 0,
           maximumFractionDigits: 0
-        }).format(value);
+        }).format(numValue);
       case 'percentage':
-        return `${value.toFixed(1)}%`;
+        return `${numValue.toFixed(1)}%`;
       case 'number':
-        return value.toLocaleString();
+        return numValue.toLocaleString();
       default:
-        return value.toString();
+        return numValue.toString();
     }
   };
 
-  const calculateProgress = (current: number, goal: number): number => {
-    if (goal === 0) return 0;
-    return Math.round((current / goal) * 100);
+  const calculateProgress = (current: number | string, goal: number | string): number => {
+    const currentNum = typeof current === 'string' ? parseFloat(current.replace(/[$,%]/g, '')) : current;
+    const goalNum = typeof goal === 'string' ? parseFloat(goal.replace(/[$,%]/g, '')) : goal;
+    
+    if (isNaN(currentNum) || isNaN(goalNum) || goalNum === 0) return 0;
+    return Math.round((currentNum / goalNum) * 100);
   };
 
   const getProgressColor = (progress: number): string => {
