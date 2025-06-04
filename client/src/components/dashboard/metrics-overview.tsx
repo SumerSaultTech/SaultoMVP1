@@ -252,7 +252,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
       )}
 
       {/* Show message if no metrics with SQL queries */}
-      {metrics.length > 0 && metricQueries.length === 0 && (
+      {metrics.length > 0 && metricsWithData.length === 0 && (
         <Card className="border-dashed border-gray-300">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <div className="rounded-full bg-gray-100 p-3 mb-4">
