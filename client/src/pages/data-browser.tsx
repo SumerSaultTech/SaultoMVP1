@@ -29,6 +29,22 @@ export default function DataBrowser() {
   // Fetch data for selected table
   const { data: tableData, isLoading: dataLoading, refetch: refetchData } = useQuery({
     queryKey: ["/api/snowflake/table-data", selectedTable, filterColumn, filterValue],
+    queryFn: async () => {
+      if (!selectedTable) return null;
+      
+      const params = new URLSearchParams();
+      if (filterColumn) params.append('filterColumn', filterColumn);
+      if (filterValue) params.append('filterValue', filterValue);
+      
+      const url = `/api/snowflake/table-data/${selectedTable}${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch table data: ${response.statusText}`);
+      }
+      
+      return response.json();
+    },
     enabled: !!selectedTable,
   });
 
@@ -43,7 +59,7 @@ export default function DataBrowser() {
   };
 
   const handleExportData = () => {
-    if (!tableData?.sampleData) return;
+    if (!tableData?.sampleData || !tableData?.columns) return;
     
     const csv = [
       tableData.columns.join(","),

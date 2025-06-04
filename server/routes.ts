@@ -476,6 +476,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get list of tables from MIAS_DATA_DB
+  app.get("/api/snowflake/tables", async (req, res) => {
+    try {
+      const tablesQuery = `
+        SELECT 
+          TABLE_NAME,
+          TABLE_SCHEMA,
+          ROW_COUNT
+        FROM MIAS_DATA_DB.INFORMATION_SCHEMA.TABLES 
+        WHERE TABLE_SCHEMA IN ('CORE', 'STG', 'INT')
+        ORDER BY TABLE_SCHEMA, TABLE_NAME
+      `;
+      
+      const result = await snowflakePythonService.executeQuery(tablesQuery);
+      
+      if (result.success) {
+        res.json(result.data || []);
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to fetch tables"
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching tables:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch tables from MIAS_DATA_DB"
+      });
+    }
+  });
+
+  // Get data for a specific table
+  app.get("/api/snowflake/table-data/:tableName", async (req, res) => {
+    try {
+      const { tableName } = req.params;
+      const { filterColumn, filterValue } = req.query;
+      
+      // Get table info and sample data
+      let dataQuery = `SELECT * FROM MIAS_DATA_DB.CORE.${tableName} LIMIT 100`;
+      
+      // Add filter if specified
+      if (filterColumn && filterValue) {
+        dataQuery = `
+          SELECT * FROM MIAS_DATA_DB.CORE.${tableName} 
+          WHERE ${filterColumn} ILIKE '%${filterValue}%' 
+          LIMIT 100
+        `;
+      }
+      
+      // Get row count
+      const countQuery = `SELECT COUNT(*) as ROW_COUNT FROM MIAS_DATA_DB.CORE.${tableName}`;
+      
+      // Execute both queries
+      const [dataResult, countResult] = await Promise.all([
+        snowflakePythonService.executeQuery(dataQuery),
+        snowflakePythonService.executeQuery(countQuery)
+      ]);
+      
+      if (dataResult.success && countResult.success) {
+        const sampleData = dataResult.data || [];
+        const rowCount = countResult.data?.[0]?.ROW_COUNT || 0;
+        
+        // Get column names from the first row
+        const columns = sampleData.length > 0 ? Object.keys(sampleData[0]) : [];
+        
+        res.json({
+          tableName,
+          rowCount,
+          columns,
+          sampleData
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: dataResult.error || countResult.error || "Failed to fetch table data"
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching table data:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch table data from MIAS_DATA_DB"
+      });
+    }
+  });
+
   // Execute SQL query against MIAS_DATA_DB
   app.post("/api/snowflake/query", async (req, res) => {
     try {
