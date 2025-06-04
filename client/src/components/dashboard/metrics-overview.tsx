@@ -70,15 +70,22 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return "text-red-600";
   };
 
-  const northStarMetrics = metricQueries.filter(query => 
-    query.metricInfo.isNorthStar && query.data
-  );
+  const isLoading = metricsLoading || dashboardLoading;
 
-  const regularMetrics = metricQueries.filter(query => 
-    !query.metricInfo.isNorthStar && query.data
-  );
+  // Combine metrics with their dashboard data
+  const metricsWithData = metrics.map(metric => {
+    const dashboardMetric = dashboardData.find(d => d.metricId === metric.id);
+    return {
+      metricInfo: metric,
+      data: dashboardMetric
+    };
+  });
 
-  if (metricsLoading) {
+  // Split into North Star and regular metrics
+  const northStarMetrics = metricsWithData.filter(m => m.metricInfo.isNorthStar);
+  const regularMetrics = metricsWithData.filter(m => !m.metricInfo.isNorthStar);
+
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="animate-pulse">
