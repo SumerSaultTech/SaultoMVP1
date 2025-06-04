@@ -120,7 +120,46 @@ export class SnowflakeCalculatorService {
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
       console.log("Executing Snowflake query via Python:", sql);
-      return await snowflakePythonService.executeQuery(sql);
+      
+      // Use the direct Python service that's working correctly
+      const { spawn } = await import('child_process');
+      const result = await new Promise<any>((resolve) => {
+        const pythonProcess = spawn('python', ['snowflake_query_service.py', sql], {
+          cwd: process.cwd()
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        
+        pythonProcess.stdout.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+        
+        pythonProcess.stderr.on('data', (data: Buffer) => {
+          errorOutput += data.toString();
+        });
+        
+        pythonProcess.on('close', (code: number) => {
+          if (code === 0 && output.trim()) {
+            try {
+              const result = JSON.parse(output.trim());
+              resolve(result);
+            } catch (parseError) {
+              resolve({
+                success: false,
+                error: `Failed to parse result: ${parseError.message}`
+              });
+            }
+          } else {
+            resolve({
+              success: false,
+              error: errorOutput || `Python process exited with code ${code}`
+            });
+          }
+        });
+      });
+      
+      return result;
     } catch (error) {
       console.error("Snowflake query error:", error);
       return {

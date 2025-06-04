@@ -41,13 +41,6 @@ try:
         schema='CORE',
         timeout=30
     )
-            break
-        except Exception as e:
-            last_error = e
-            continue
-    
-    if not conn:
-        raise last_error or Exception("Failed to connect with any account format")
     
     cursor = conn.cursor()
     
