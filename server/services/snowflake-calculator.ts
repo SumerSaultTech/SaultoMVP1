@@ -35,7 +35,39 @@ interface DashboardMetricData {
   };
 }
 
-// SQL query templates for MIAS_DATA_DB structure
+// SQL query templates for MIAS_DATA_DB structure with time period filtering
+const getTimeFilteredSQL = (baseMetric: string, timePeriod: string) => {
+  const templates = {
+    'annual-revenue': {
+      base: `SELECT SUM(AMOUNT) as value FROM QUICKBOOKS_ITEMS WHERE TYPE = 'Income'`,
+      weekly: `AND TXNDATE >= DATEADD('day', -7, CURRENT_DATE())`,
+      monthly: `AND TXNDATE >= DATEADD('month', -1, CURRENT_DATE())`,
+      quarterly: `AND TXNDATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
+      ytd: `AND YEAR(TXNDATE) = YEAR(CURRENT_DATE())`
+    },
+    'monthly-deal-value': {
+      base: `SELECT SUM(AMOUNT) as value FROM HUBSPOT_DEALS WHERE DEALSTAGE = 'closedwon'`,
+      weekly: `AND CLOSEDATE >= DATEADD('day', -7, CURRENT_DATE())`,
+      monthly: `AND CLOSEDATE >= DATEADD('month', -1, CURRENT_DATE())`,
+      quarterly: `AND CLOSEDATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
+      ytd: `AND YEAR(CLOSEDATE) = YEAR(CURRENT_DATE())`
+    },
+    'monthly-expenses': {
+      base: `SELECT SUM(DAILY_REVENUE) as value FROM MIAS_DATA_DB.MIAS_DEV_SCHEMA.QUICKBOOKS_REVENUE`,
+      weekly: `AND DATE >= DATEADD('day', -7, CURRENT_DATE())`,
+      monthly: `AND DATE >= DATEADD('month', -1, CURRENT_DATE())`,
+      quarterly: `AND DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
+      ytd: `AND YEAR(DATE) = YEAR(CURRENT_DATE())`
+    }
+  };
+
+  const template = templates[baseMetric as keyof typeof templates];
+  if (!template) return null;
+
+  const timeFilter = template[timePeriod as keyof typeof template] || template.ytd;
+  return `${template.base} ${timeFilter}`;
+};
+
 const SQL_TEMPLATES = {
   // Revenue metrics - using actual table names from MIAS_DATA_DB
   'annual-revenue': `
@@ -226,9 +258,9 @@ export class SnowflakeCalculatorService {
   }
 
   // Calculate dashboard data with time series for a metric
-  async calculateDashboardData(metricId: number): Promise<DashboardMetricData | null> {
+  async calculateDashboardData(metricId: number, timePeriod: string = 'ytd'): Promise<DashboardMetricData | null> {
     try {
-      console.log(`=== Calculating dashboard data for metric ID: ${metricId} ===`);
+      console.log(`=== Calculating dashboard data for metric ID: ${metricId}, period: ${timePeriod} ===`);
       const metric = await storage.getKpiMetric(metricId);
       console.log("Found metric:", metric ? `${metric.name} with SQL: ${!!metric.sqlQuery}` : "null");
       
@@ -237,9 +269,13 @@ export class SnowflakeCalculatorService {
         return null;
       }
 
-      // Execute the daily revenue query
-      console.log("Executing SQL query:", metric.sqlQuery);
-      const result = await this.executeQuery(metric.sqlQuery);
+      // Check if we can use time-filtered query
+      const metricKey = metric.name.toLowerCase().replace(/\s+/g, '-');
+      const timeFilteredSQL = getTimeFilteredSQL(metricKey, timePeriod);
+      
+      const queryToExecute = timeFilteredSQL || metric.sqlQuery;
+      console.log("Executing SQL query:", queryToExecute);
+      const result = await this.executeQuery(queryToExecute);
       console.log("Raw query result:", JSON.stringify(result, null, 2));
       
       if (!result.success || !result.data || !Array.isArray(result.data)) {

@@ -69,7 +69,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     const goalNum = typeof goal === 'string' ? parseFloat(goal.replace(/[$,%]/g, '')) : goal;
     
     if (isNaN(currentNum) || isNaN(goalNum) || goalNum === 0) return 0;
-    return Math.round((currentNum / goalNum) * 100);
+    const progress = Math.round((currentNum / goalNum) * 100);
+    console.log(`Progress calculation: ${currentNum} / ${goalNum} = ${progress}%`);
+    return progress;
   };
 
   const getProgressColor = (progress: number): string => {
