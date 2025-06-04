@@ -276,13 +276,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const metric of metrics) {
         if (metric.sqlQuery) {
           try {
-            // Calculate current value using Snowflake
-            const result = await snowflakeCalculatorService.calculateMetric(metric.id);
+            // Use calculateDashboardData which properly sums the daily values
+            const dashboardResult = await snowflakeCalculatorService.calculateDashboardData(metric.id);
             
             // Get the actual calculated value from Snowflake
-            const actualValue = result.success ? result.value : 0;
+            const actualValue = dashboardResult ? dashboardResult.currentValue : 0;
             
-            console.log(`Dashboard data for metric ${metric.name}:`, actualValue);
+            console.log(`Dashboard data for metric ${metric.name}:`, actualValue, "from dashboard calculation");
             const yearlyGoalNum = parseFloat(metric.yearlyGoal || "0");
             
             const timeSeriesData = {
