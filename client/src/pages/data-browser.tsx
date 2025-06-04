@@ -20,48 +20,74 @@ interface ColumnPreviewProps {
 }
 
 function ColumnPreview({ tableName }: ColumnPreviewProps) {
-  const { data: columns, isLoading } = useQuery({
-    queryKey: ["/api/snowflake/columns", tableName],
+  const { data: previewData, isLoading } = useQuery({
+    queryKey: ["/api/snowflake/table-data", tableName, "preview"],
     queryFn: async () => {
-      const response = await fetch(`/api/snowflake/columns/${tableName}`);
-      if (!response.ok) throw new Error('Failed to fetch columns');
+      const response = await fetch(`/api/snowflake/table-data/${tableName}?limit=3`);
+      if (!response.ok) throw new Error('Failed to fetch preview data');
       return response.json();
     },
   });
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-8 bg-gray-200 rounded animate-pulse" />
-        ))}
+      <div className="space-y-4">
+        <div className="h-6 bg-gray-200 rounded animate-pulse w-1/4" />
+        <div className="space-y-2">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-16 bg-gray-200 rounded animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
 
-  if (!columns || columns.length === 0) {
+  if (!previewData?.sampleData || previewData.sampleData.length === 0) {
     return (
       <div className="text-gray-500 text-sm">
-        No column information available for this table.
+        No preview data available for this table.
       </div>
     );
   }
 
+  const columns = previewData.columns || [];
+  const sampleData = previewData.sampleData.slice(0, 3);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-      {columns.map((column: any, index: number) => (
-        <div key={index} className="bg-white border rounded-lg p-3 shadow-sm">
-          <div className="font-mono text-sm font-medium text-gray-900 truncate">
-            {column.COLUMN_NAME}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            {column.DATA_TYPE}
-          </div>
-          {column.IS_NULLABLE === 'YES' && (
-            <div className="text-xs text-gray-400 mt-1">nullable</div>
-          )}
-        </div>
-      ))}
+    <div className="space-y-4">
+      <div className="text-sm text-gray-600">
+        Showing first 3 rows • {previewData.rowCount} total rows • {columns.length} columns
+      </div>
+      
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {columns.map((column: string) => (
+                <TableHead key={column} className="font-semibold text-xs">
+                  {column}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sampleData.map((row: any, index: number) => (
+              <TableRow key={index}>
+                {columns.map((column: string) => (
+                  <TableCell key={column} className="max-w-xs text-xs">
+                    <div className="truncate" title={String(row[column] || "")}>
+                      {row[column] !== null && row[column] !== undefined
+                        ? String(row[column])
+                        : <span className="text-gray-400 italic">null</span>
+                      }
+                    </div>
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
