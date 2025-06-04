@@ -31,23 +31,32 @@ interface MetricValue {
   requiresSetup?: boolean;
 }
 
+interface MetricsConfigResponse {
+  success: boolean;
+  metrics: MetricConfig[];
+  northStarMetrics: MetricConfig[];
+  categories: string[];
+}
+
 export default function RealMetricsDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState("yearly");
   const [realValues, setRealValues] = useState<Record<string, number>>({});
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'setup-required'>('disconnected');
 
   // Load metric configurations
-  const { data: metricsConfig, isLoading: configLoading } = useQuery({
+  const { data: metricsConfig, isLoading: configLoading } = useQuery<MetricsConfigResponse>({
     queryKey: ["/api/metrics/display-config"],
   });
 
   // Calculate real metric value
   const calculateRealMetric = useMutation({
     mutationFn: async (metricName: string): Promise<MetricValue> => {
-      return apiRequest(`/api/metrics/calculate-real`, {
+      const response = await fetch(`/api/metrics/calculate-real`, {
         method: "POST",
-        body: { metricName }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metricName })
       });
+      return response.json();
     },
     onSuccess: (data, metricName) => {
       if (data.success) {
