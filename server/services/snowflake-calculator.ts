@@ -116,12 +116,12 @@ export class SnowflakeCalculatorService {
   private lastCalculated: Map<number, Date> = new Map();
   private readonly CACHE_DURATION_HOURS = 1;
 
-  // Execute SQL query against Snowflake using Python service
+  // Execute SQL query against Snowflake using the same method as data browser
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
-      console.log("Executing Snowflake query via Python:", sql);
+      console.log("Executing Snowflake query via working connection:", sql);
       
-      // Use the direct Python service that's working correctly
+      // Use the same spawn method that works in the data browser routes
       const { spawn } = await import('child_process');
       const result = await new Promise<any>((resolve) => {
         const pythonProcess = spawn('python', ['snowflake_query_service.py', sql], {
@@ -140,10 +140,37 @@ export class SnowflakeCalculatorService {
         });
         
         pythonProcess.on('close', (code: number) => {
+          console.log(`Python process exited with code: ${code}`);
+          console.log("Output:", output);
+          console.log("Error output:", errorOutput);
+          
           if (code === 0 && output.trim()) {
             try {
-              const result = JSON.parse(output.trim());
-              resolve(result);
+              // Find the JSON result in the output
+              const lines = output.trim().split('\n');
+              let jsonResult = null;
+              
+              for (const line of lines) {
+                try {
+                  const parsed = JSON.parse(line);
+                  if (parsed.success !== undefined) {
+                    jsonResult = parsed;
+                    break;
+                  }
+                } catch (e) {
+                  // Skip non-JSON lines
+                  continue;
+                }
+              }
+              
+              if (jsonResult) {
+                resolve(jsonResult);
+              } else {
+                resolve({
+                  success: false,
+                  error: "No valid JSON result found in output"
+                });
+              }
             } catch (parseError) {
               resolve({
                 success: false,
