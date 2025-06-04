@@ -24,12 +24,12 @@ import snowflake.connector
 import json
 import sys
 import os
+from decimal import Decimal
+from datetime import date, datetime
 
 try:
-    # Connect to Snowflake with multiple connection attempts
+    # Connect to Snowflake
     account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
-    
-    # Use the correct account format (without .snowflakecomputing.com)
     account_format = account_id.replace(".snowflakecomputing.com", "") if ".snowflakecomputing.com" in account_id else account_id
     
     conn = snowflake.connector.connect(
@@ -39,10 +39,8 @@ try:
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
         database='MIAS_DATA_DB',
         schema='CORE',
-                timeout=30,
-                login_timeout=30,
-                network_timeout=30
-            )
+        timeout=30
+    )
             break
         except Exception as e:
             last_error = e
