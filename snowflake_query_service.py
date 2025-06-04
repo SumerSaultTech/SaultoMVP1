@@ -8,9 +8,13 @@ from datetime import datetime, date
 
 def execute_snowflake_query(sql_query):
     try:
-        # Connect to Snowflake using environment variables
+        # Connect to Snowflake using environment variables with correct account format
+        account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
+        # Use the account format that works: remove .snowflakecomputing.com if present
+        account_format = account_id.replace(".snowflakecomputing.com", "") if ".snowflakecomputing.com" in account_id else account_id
+        
         conn = snowflake.connector.connect(
-            account=os.getenv("SNOWFLAKE_ACCOUNT"),
+            account=account_format,
             user=os.getenv("SNOWFLAKE_USERNAME"),
             password=os.getenv("SNOWFLAKE_PASSWORD"),
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
