@@ -277,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (metric.sqlQuery) {
           try {
             // Calculate current value using Snowflake
-            const result = await snowflakeCalculatorService.calculateMetricByQuery(metric.sqlQuery);
+            const result = await snowflakeCalculatorService.calculateMetric(metric.id);
             
             const timeSeriesData = {
               weekly: [
