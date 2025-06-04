@@ -45,10 +45,10 @@ function getAdaptiveActual(yearlyValue: string, timePeriod: string, metricId: nu
 }
 
 // Generate progress data based on metric and time period
-function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "ytd") {
-  const currentValueStr = metric.value || "0";
-  const yearlyGoalStr = metric.yearlyGoal || "0";
-  const metricId = (metric as any).id || 1;
+function generateProgressData(metric: any, timePeriod: string = "ytd") {
+  const currentValueStr = metric?.value || metric?.currentValue || "0";
+  const yearlyGoalStr = metric?.yearlyGoal || "0";
+  const metricId = metric?.id || metric?.metricId || 1;
   
   const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
   const currentValue = getAdaptiveActual(currentValueStr, timePeriod, metricId);
