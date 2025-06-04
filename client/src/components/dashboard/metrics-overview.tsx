@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Calendar, RefreshCw, Target } from "lucide-react";
+import { Calendar, RefreshCw, Target, DollarSign, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { KpiMetric } from "@shared/schema";
 import MetricProgressChart from "./metric-progress-chart";
@@ -149,88 +149,82 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         </div>
       </div>
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {metricsWithData.map((metric) => {
-          const hasCalculatedValue = metric.dashboardData;
-          const currentValue = hasCalculatedValue ? metric.dashboardData.currentValue : 0;
-          const yearlyGoal = hasCalculatedValue ? metric.dashboardData.yearlyGoal : parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0');
-          const progress = hasCalculatedValue ? calculateProgress(currentValue, yearlyGoal) : 0;
-          const progressStatus = getProgressStatus(progress);
-
-          console.log(`Progress calculation: ${currentValue} / ${yearlyGoal} = ${progress}%`);
-
-          return (
-            <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-white to-purple-50 dark:from-gray-800 dark:to-purple-900/20">
-              {/* Progress indicator bar */}
-              <div className={`absolute top-0 left-0 w-full h-2 ${
-                hasCalculatedValue ? progressStatus.barColor : 'bg-gray-300 dark:bg-gray-600'
-              }`}></div>
+      {/* KPI Cards */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6">
+          <CardTitle>Core Business KPIs - {getTimePeriodLabel(selectedTimePeriod)}</CardTitle>
+          <Button variant="ghost" size="sm" onClick={onRefresh}>
+            <RefreshCw className="mr-1 h-4 w-4" />
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {metricsWithData.map((metric) => {
+              const hasCalculatedValue = metric.dashboardData;
+              const currentValue = hasCalculatedValue ? metric.dashboardData.currentValue : 0;
+              const yearlyGoal = hasCalculatedValue ? metric.dashboardData.yearlyGoal : parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0');
+              const progress = hasCalculatedValue ? calculateProgress(currentValue, yearlyGoal) : 0;
               
-              <CardHeader className="pb-3 pt-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg font-bold text-gray-900 dark:text-white mb-1">
-                      {metric.name}
-                    </CardTitle>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {metric.description || 'Key performance metric'}
+              // Determine icon based on metric name
+              const getMetricIcon = (name: string) => {
+                if (name.toLowerCase().includes('revenue') || name.toLowerCase().includes('deal')) {
+                  return DollarSign;
+                } else if (name.toLowerCase().includes('expense')) {
+                  return Target;
+                } else {
+                  return TrendingUp;
+                }
+              };
+              
+              const Icon = getMetricIcon(metric.name);
+              const isPositive = progress >= 100 || (metric.name.toLowerCase().includes('expense') && progress < 50);
+
+              console.log(`Progress calculation: ${currentValue} / ${yearlyGoal} = ${progress}%`);
+
+              return (
+                <div key={metric.id} className="bg-white rounded-lg p-6 border border-purple-100 hover:border-purple-200 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-700 text-sm">{metric.name}</h4>
+                    <Icon className="h-5 w-5 text-purple-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-3xl font-bold text-gray-900">
+                      {hasCalculatedValue ? formatValue(currentValue, metric.format || 'currency') : 'N/A'}
                     </p>
-                  </div>
-                  <div className={`ml-3 px-3 py-1 rounded-full text-xs font-semibold ${
-                    hasCalculatedValue ? progressStatus.color + ' ' + progressStatus.bgColor : 'text-gray-500 bg-gray-100'
-                  }`}>
-                    {hasCalculatedValue ? `${progress}%` : 'No data'}
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="space-y-4 pt-0">
-                {/* Current Value */}
-                <div className="text-center">
-                  {hasCalculatedValue ? (
-                    <>
-                      <div className="text-4xl font-bold text-purple-700 dark:text-purple-300 mb-1">
-                        {formatValue(currentValue, metric.format || 'currency')}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        of {formatValue(yearlyGoal, metric.format || 'currency')} {getTimePeriodLabel(selectedTimePeriod).toLowerCase()} goal
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-4xl font-bold text-gray-400 dark:text-gray-500 mb-1">
-                        Not calculated
-                      </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-500">
-                        Calculate metric to see progress toward {formatValue(yearlyGoal, metric.format || 'currency')} goal
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Progress Chart */}
-                <div className="h-24 -mx-2">
-                  {hasCalculatedValue && metric.dashboardData ? (
-                    <MetricProgressChart 
-                      metric={metric.dashboardData} 
-                      timePeriod={selectedTimePeriod}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <div className="text-center">
-                        <div className="text-gray-400 dark:text-gray-500 text-sm">
-                          Calculate metric to view progress chart
+                    {hasCalculatedValue && (
+                      <>
+                        <div className="flex items-center space-x-2">
+                          <span className={`text-sm px-2 py-1 rounded-full font-medium ${
+                            isPositive 
+                              ? "bg-green-100 text-green-800" 
+                              : "bg-red-100 text-red-800"
+                          }`}>
+                            {progress}% of goal
+                          </span>
+                          <span className="text-sm text-gray-500">vs {getTimePeriodLabel(selectedTimePeriod).toLowerCase()}</span>
                         </div>
+                        {/* Mini Progress Chart */}
+                        <div className="h-16 -mx-2 mt-3">
+                          <MetricProgressChart 
+                            metric={metric.dashboardData} 
+                            timePeriod={selectedTimePeriod}
+                          />
+                        </div>
+                      </>
+                    )}
+                    {!hasCalculatedValue && (
+                      <div className="text-sm text-gray-500">
+                        Calculate to see {getTimePeriodLabel(selectedTimePeriod).toLowerCase()} progress
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
