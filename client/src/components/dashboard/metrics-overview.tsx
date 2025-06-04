@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar, RefreshCw, Target } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { KpiMetric } from "@shared/schema";
+import MetricProgressChart from "./metric-progress-chart";
 
 interface MetricsOverviewProps {
   onRefresh: () => void;
