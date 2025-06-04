@@ -53,7 +53,7 @@ const getTimeFilteredSQL = (baseMetric: string, timePeriod: string) => {
       ytd: `AND YEAR(CLOSEDATE) = YEAR(CURRENT_DATE())`
     },
     'monthly-expenses': {
-      base: `SELECT SUM(DAILY_REVENUE) as value FROM MIAS_DATA_DB.MIAS_DEV_SCHEMA.QUICKBOOKS_REVENUE`,
+      base: `SELECT SUM(DAILY_REVENUE) as value FROM MIAS_DATA_DB.MIAS_DEV_SCHEMA.QUICKBOOKS_REVENUE WHERE 1=1`,
       weekly: `AND DATE >= DATEADD('day', -7, CURRENT_DATE())`,
       monthly: `AND DATE >= DATEADD('month', -1, CURRENT_DATE())`,
       quarterly: `AND DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
