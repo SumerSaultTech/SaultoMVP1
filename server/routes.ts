@@ -260,7 +260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // KPI Metrics
   app.get("/api/kpi-metrics", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const metrics = await storage.getKpiMetrics(2);
       res.json(metrics);
     } catch (error) {
       res.status(500).json({ message: "Failed to get KPI metrics" });
@@ -270,7 +270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get dashboard metrics data with calculated values
   app.get("/api/dashboard/metrics-data", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const metrics = await storage.getKpiMetrics(2);
       const dashboardData = [];
 
       for (const metric of metrics) {
@@ -595,7 +595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const metrics = await storage.getKpiMetrics(2);
       const results = [];
 
       for (const metric of metrics) {
