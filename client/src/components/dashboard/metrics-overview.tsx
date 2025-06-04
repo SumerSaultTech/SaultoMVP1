@@ -1,13 +1,10 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Calendar } from "lucide-react";
-import MetricProgressChart from "./metric-progress-chart";
-import NorthStarMetrics from "./north-star-metrics";
-import type { KpiMetric } from "@/../../shared/schema";
+import { Button } from "@/components/ui/button";
+import { Calendar, RefreshCw, Target } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { KpiMetric } from "@shared/schema";
 
 interface MetricsOverviewProps {
   onRefresh: () => void;
@@ -26,6 +23,44 @@ interface DashboardMetricData {
   };
 }
 
+function formatValue(value: number | string, format: string): string {
+  if (!value && value !== 0) return '0';
+  
+  const numValue = typeof value === 'string' ? parseFloat(value.replace(/[$,]/g, '')) : value;
+  
+  if (isNaN(numValue) || numValue === null || numValue === undefined) {
+    return format === 'currency' ? '$0' : '0';
+  }
+
+  if (format === 'currency') {
+    if (numValue >= 1000000) {
+      return `$${(numValue / 1000000).toFixed(1)}M`;
+    } else if (numValue >= 1000) {
+      return `$${(numValue / 1000).toFixed(0)}K`;
+    } else {
+      return `$${numValue.toLocaleString()}`;
+    }
+  } else if (format === 'percentage') {
+    return `${numValue.toFixed(1)}%`;
+  } else {
+    return numValue.toLocaleString();
+  }
+}
+
+function calculateProgress(currentValue: number, goalValue: number): number {
+  if (!currentValue && currentValue !== 0) return 0;
+  if (!goalValue && goalValue !== 0) return 0;
+  
+  return goalValue > 0 ? Math.round((currentValue / goalValue) * 100) : 0;
+}
+
+function getProgressStatus(progress: number) {
+  if (progress >= 90) return { color: 'text-green-600', bgColor: 'bg-green-100', barColor: 'bg-green-500' };
+  if (progress >= 75) return { color: 'text-blue-600', bgColor: 'bg-blue-100', barColor: 'bg-blue-500' };
+  if (progress >= 50) return { color: 'text-yellow-600', bgColor: 'bg-yellow-100', barColor: 'bg-yellow-500' };
+  return { color: 'text-red-600', bgColor: 'bg-red-100', barColor: 'bg-red-500' };
+}
+
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const [selectedTimePeriod, setSelectedTimePeriod] = useState("monthly");
 
@@ -41,76 +76,44 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     enabled: metrics.length > 0,
   });
 
-  const formatValue = (value: number | string, format: string): string => {
-    // Convert string to number if needed
-    const numValue = typeof value === 'string' ? parseFloat(value.replace(/[$,%]/g, '')) : value;
-    
-    // Handle NaN values
-    if (isNaN(numValue) || numValue === null || numValue === undefined) {
-      return format === 'currency' ? '$0' : '0';
-    }
-
-    // Format based on type
-    if (format === 'currency') {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(numValue);
-    } else if (format === 'percentage') {
-      return `${numValue.toFixed(1)}%`;
-    } else {
-      return new Intl.NumberFormat('en-US').format(numValue);
-    }
-  };
-
-  const calculateProgress = (current: number | string, goal: number | string): number => {
-    const currentNum = typeof current === 'string' ? parseFloat(current.replace(/[$,%]/g, '')) : current;
-    const goalNum = typeof goal === 'string' ? parseFloat(goal.replace(/[$,%]/g, '')) : goal;
-    
-    if (isNaN(currentNum) || isNaN(goalNum) || goalNum === 0) return 0;
-    const progress = Math.round((currentNum / goalNum) * 100);
-    console.log(`Progress calculation: ${currentNum} / ${goalNum} = ${progress}%`);
-    return progress;
-  };
-
-  const getProgressColor = (progress: number): string => {
-    if (progress >= 100) return "text-green-600";
-    if (progress >= 75) return "text-blue-600";
-    if (progress >= 50) return "text-yellow-600";
-    return "text-red-600";
-  };
-
   const isLoading = metricsLoading || dashboardLoading;
 
-  // Combine metrics with their dashboard data
-  const metricsWithData = metrics.map(metric => {
-    const dashboardMetric = dashboardData.find(d => d.metricId === metric.id);
-    return {
-      metricInfo: metric,
-      data: dashboardMetric
-    };
-  });
-
-  // Split into North Star and regular metrics
-  const northStarMetrics = metricsWithData.filter(m => m.metricInfo.isNorthStar);
-  const regularMetrics = metricsWithData.filter(m => !m.metricInfo.isNorthStar);
+  const getTimePeriodLabel = (period: string) => {
+    switch (period) {
+      case "weekly": return "Weekly View";
+      case "monthly": return "Monthly View";
+      case "quarterly": return "Quarterly View";
+      case "ytd": return "Year to Date";
+      default: return "Monthly View";
+    }
+  };
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-48 bg-gray-200 rounded"></div>
-            ))}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Metrics Overview</h2>
+            <p className="text-gray-600">Track your key performance indicators</p>
           </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-64 bg-gray-100 animate-pulse rounded-lg"></div>
+          ))}
         </div>
       </div>
     );
   }
+
+  // Combine metrics with dashboard data
+  const metricsWithData = metrics.map(metric => {
+    const dashboardItem = dashboardData.find(d => d.metricId === metric.id);
+    return {
+      ...metric,
+      dashboardData: dashboardItem
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -145,160 +148,94 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         </div>
       </div>
 
-      {/* North Star Metrics */}
-      {northStarMetrics.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">North Star Metrics</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {northStarMetrics.map(({ data: dashboardData, metricInfo }) => {
-              if (!dashboardData) return null;
-              
-              const progress = calculateProgress(dashboardData.currentValue, dashboardData.yearlyGoal);
-              
-              return (
-                <Card key={metricInfo.id} className="border-2 border-blue-200 bg-blue-50/30">
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg font-semibold text-gray-900">
-                          {metricInfo.name}
-                        </CardTitle>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {metricInfo.description}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-gray-900">
-                          {formatValue(dashboardData.currentValue, dashboardData.format)}
-                        </div>
-                        <div className={`text-sm font-medium ${getProgressColor(progress)}`}>
-                          {progress}% of goal
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Annual Goal</span>
-                        <span className="font-medium">
-                          {formatValue(dashboardData.yearlyGoal, dashboardData.format)}
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
-                        <div 
-                          className="bg-blue-600 h-3 rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(progress, 100)}%` }}
-                        ></div>
-                      </div>
-                      {dashboardData.timeSeriesData && (
-                        <MetricProgressChart
-                          metric={dashboardData}
-                          timePeriod={selectedTimePeriod}
-                        />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {metricsWithData.map((metric) => {
+          const hasCalculatedValue = metric.dashboardData;
+          const currentValue = hasCalculatedValue ? metric.dashboardData.currentValue : 0;
+          const yearlyGoal = hasCalculatedValue ? metric.dashboardData.yearlyGoal : parseFloat(metric.yearlyGoal?.replace(/[$,]/g, '') || '0');
+          const progress = hasCalculatedValue ? calculateProgress(currentValue, yearlyGoal) : 0;
+          const progressStatus = getProgressStatus(progress);
 
-      {/* Regular KPI Metrics */}
-      {regularMetrics.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">KPI Metrics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {regularMetrics.map(({ data: dashboardData, metricInfo }) => {
-              if (!dashboardData) return null;
+          console.log(`Progress calculation: ${currentValue} / ${yearlyGoal} = ${progress}%`);
+
+          return (
+            <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-white to-purple-50 dark:from-gray-800 dark:to-purple-900/20">
+              {/* Progress indicator bar */}
+              <div className={`absolute top-0 left-0 w-full h-2 ${
+                hasCalculatedValue ? progressStatus.barColor : 'bg-gray-300 dark:bg-gray-600'
+              }`}></div>
               
-              const progress = calculateProgress(dashboardData.currentValue, dashboardData.yearlyGoal);
-              
-              return (
-                <Card key={metricInfo.id} className="hover:shadow-lg transition-shadow">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold text-gray-900">
-                      {metricInfo.name}
+              <CardHeader className="pb-3 pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg font-bold text-gray-900 dark:text-white mb-1">
+                      {metric.name}
                     </CardTitle>
-                    <div className="flex justify-between items-baseline">
-                      <div className="text-xl font-bold text-gray-900">
-                        {formatValue(dashboardData.currentValue, dashboardData.format)}
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {metric.description || 'Key performance metric'}
+                    </p>
+                  </div>
+                  <div className={`ml-3 px-3 py-1 rounded-full text-xs font-semibold ${
+                    hasCalculatedValue ? progressStatus.color + ' ' + progressStatus.bgColor : 'text-gray-500 bg-gray-100'
+                  }`}>
+                    {hasCalculatedValue ? `${progress}%` : 'No data'}
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="space-y-4 pt-0">
+                {/* Current Value */}
+                <div className="text-center">
+                  {hasCalculatedValue ? (
+                    <>
+                      <div className="text-4xl font-bold text-purple-700 dark:text-purple-300 mb-1">
+                        {formatValue(currentValue, metric.format || 'currency')}
                       </div>
-                      <div className={`text-sm font-medium ${getProgressColor(progress)}`}>
-                        {progress}%
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        of {formatValue(yearlyGoal, metric.format || 'currency')} {getTimePeriodLabel(selectedTimePeriod).toLowerCase()} goal
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-xs text-gray-600">
-                        <span>Goal: {formatValue(dashboardData.yearlyGoal, dashboardData.format)}</span>
-                        <span>{metricInfo.category}</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-4xl font-bold text-gray-400 dark:text-gray-500 mb-1">
+                        Not calculated
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(progress, 100)}%` }}
-                        ></div>
+                      <div className="text-sm text-gray-500 dark:text-gray-500">
+                        Calculate metric to see progress toward {formatValue(yearlyGoal, metric.format || 'currency')} goal
                       </div>
-                      {dashboardData.timeSeriesData && (
-                        <div className="pt-2">
-                          <MetricProgressChart
-                            metric={dashboardData}
-                            timePeriod={selectedTimePeriod}
-                          />
+                    </>
+                  )}
+                </div>
+
+                {/* Chart placeholder or message */}
+                <div className="h-24 -mx-2">
+                  {hasCalculatedValue ? (
+                    <div className="flex items-center justify-center h-full bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                      <div className="text-center">
+                        <div className="text-purple-600 dark:text-purple-400 text-sm font-medium">
+                          Progress Chart
                         </div>
-                      )}
+                        <div className="text-xs text-purple-500 dark:text-purple-400 mt-1">
+                          Chart available when historical data exists
+                        </div>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Show message if no metrics with SQL queries */}
-      {metrics.length > 0 && metricsWithData.length === 0 && (
-        <Card className="border-dashed border-gray-300">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="rounded-full bg-gray-100 p-3 mb-4">
-              <Calendar className="w-6 h-6 text-gray-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No Calculated Metrics
-            </h3>
-            <p className="text-gray-600 mb-4 max-w-md">
-              Add SQL queries to your metrics to see real-time calculations and visualizations.
-            </p>
-            <Button variant="outline" size="sm">
-              Configure Metrics
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Show message if no metrics at all */}
-      {metrics.length === 0 && (
-        <Card className="border-dashed border-gray-300">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="rounded-full bg-gray-100 p-3 mb-4">
-              <Calendar className="w-6 h-6 text-gray-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No Metrics Found
-            </h3>
-            <p className="text-gray-600 mb-4 max-w-md">
-              Create your first metric to start tracking your business performance.
-            </p>
-            <Button variant="outline" size="sm">
-              Create Metric
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+                  ) : (
+                    <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className="text-center">
+                        <div className="text-gray-400 dark:text-gray-500 text-sm">
+                          Calculate metric to view progress chart
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
