@@ -1,17 +1,16 @@
-import snowflake.connector
-import json
-import sys
+#!/usr/bin/env python3
 import os
+import sys
+import json
+import snowflake.connector
 from decimal import Decimal
-from datetime import date, datetime
+from datetime import datetime, date
 
 def execute_snowflake_query(sql_query):
     try:
-        # Connect to Snowflake
-        account = os.getenv("SNOWFLAKE_ACCOUNT", "").replace(".snowflakecomputing.com", "")
-        
+        # Connect to Snowflake using environment variables
         conn = snowflake.connector.connect(
-            account=account,
+            account=os.getenv("SNOWFLAKE_ACCOUNT"),
             user=os.getenv("SNOWFLAKE_USERNAME"),
             password=os.getenv("SNOWFLAKE_PASSWORD"),
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
@@ -33,9 +32,7 @@ def execute_snowflake_query(sql_query):
             for i, col in enumerate(columns):
                 value = row[i]
                 # Handle different data types
-                if value is None:
-                    value = None
-                elif hasattr(value, 'isoformat'):  # datetime/date objects
+                if isinstance(value, (datetime, date)):
                     value = value.isoformat()
                 elif isinstance(value, Decimal):
                     value = str(value)
