@@ -34,13 +34,13 @@ export default function DataBrowser() {
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [isRunningQuery, setIsRunningQuery] = useState(false);
 
-  // Mock table data for MIAS_DATA_DB structure
-  const mockTables: TableInfo[] = [
+  // Actual table data from MIAS_DATA_DB.CORE schema
+  const actualTables: TableInfo[] = [
     {
-      name: "HUBSPOT_DEALS",
-      schema: "PUBLIC",
+      name: "CORE_HUBSPOT_DEALS",
+      schema: "CORE",
       type: "TABLE",
-      rowCount: 1247,
+      rowCount: 3105,
       columns: [
         { name: "DEAL_ID", type: "VARCHAR", nullable: false },
         { name: "DEAL_NAME", type: "VARCHAR", nullable: true },
