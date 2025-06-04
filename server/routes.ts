@@ -270,17 +270,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get dashboard metrics data with calculated values
   app.get("/api/dashboard/metrics-data", async (req, res) => {
     try {
+      console.log("=== Dashboard metrics data request ===");
+      const timePeriod = req.query.timePeriod as string || 'ytd';
+      console.log(`Time period filter: ${timePeriod}`);
+      
       const metrics = await storage.getKpiMetrics(2);
+      console.log(`Found ${metrics.length} metrics for dashboard`);
+      
       const dashboardData = [];
 
       for (const metric of metrics) {
+        console.log(`Processing metric: ${metric.name} (ID: ${metric.id}) for period: ${timePeriod}`);
         if (metric.sqlQuery) {
           try {
-            // Use calculateDashboardData which properly aggregates time periods from real data
-            const dashboardResult = await snowflakeCalculatorService.calculateDashboardData(metric.id);
+            // Use calculateDashboardData with the time period parameter
+            const dashboardResult = await snowflakeCalculatorService.calculateDashboardData(metric.id, timePeriod);
             
             if (dashboardResult) {
-              console.log(`Dashboard data for metric ${metric.name}:`, dashboardResult.currentValue, "from dashboard calculation");
+              console.log(`Dashboard data for metric ${metric.name}: ${dashboardResult.currentValue} from dashboard calculation (${timePeriod})`);
               dashboardData.push(dashboardResult);
             } else {
               console.log(`No dashboard data available for metric ${metric.name}`);
