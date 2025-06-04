@@ -14,6 +14,7 @@ export default function Sidebar() {
   const navItems = [
     { path: "/", icon: BarChart3, label: "Dashboard" },
     { path: "/metrics", icon: Target, label: "Metrics Management" },
+    { path: "/data-browser", icon: Database, label: "Data Browser" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
     { path: "/tables", icon: Table, label: "Table Browser" },
     { path: "/users", icon: Users, label: "User Management" },
