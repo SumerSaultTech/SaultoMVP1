@@ -508,6 +508,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get column information for a specific table
+  app.get("/api/snowflake/columns/:tableName", async (req, res) => {
+    try {
+      const { tableName } = req.params;
+      
+      const columnsQuery = `
+        SELECT 
+          COLUMN_NAME,
+          DATA_TYPE,
+          IS_NULLABLE
+        FROM MIAS_DATA_DB.INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = 'CORE' 
+        AND TABLE_NAME = '${tableName}'
+        ORDER BY ORDINAL_POSITION
+      `;
+      
+      const result = await snowflakePythonService.executeQuery(columnsQuery);
+      
+      if (result.success) {
+        res.json(result.data || []);
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to fetch columns"
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching columns:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch columns from MIAS_DATA_DB"
+      });
+    }
+  });
+
   // Get data for a specific table
   app.get("/api/snowflake/table-data/:tableName", async (req, res) => {
     try {
