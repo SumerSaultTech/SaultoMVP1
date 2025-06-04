@@ -280,7 +280,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const result = await snowflakeCalculatorService.calculateMetric(metric.id);
             
             // Get the actual calculated value from Snowflake
-            const actualValue = result.success ? (result.value || 0) : 0;
+            const actualValue = result.success ? result.value : 0;
+            
+            console.log(`Dashboard data for metric ${metric.name}:`, actualValue);
             const yearlyGoalNum = parseFloat(metric.yearlyGoal || "0");
             
             const timeSeriesData = {

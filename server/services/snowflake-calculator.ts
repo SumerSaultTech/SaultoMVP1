@@ -9,7 +9,7 @@ interface SnowflakeQueryResult {
 
 interface MetricCalculationResult {
   metricId: number;
-  value: string;
+  value: number;
   calculatedAt: Date;
   period: string;
   success: boolean;
