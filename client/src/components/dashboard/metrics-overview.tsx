@@ -208,19 +208,13 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   )}
                 </div>
 
-                {/* Chart placeholder or message */}
+                {/* Progress Chart */}
                 <div className="h-24 -mx-2">
-                  {hasCalculatedValue ? (
-                    <div className="flex items-center justify-center h-full bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                      <div className="text-center">
-                        <div className="text-purple-600 dark:text-purple-400 text-sm font-medium">
-                          Progress Chart
-                        </div>
-                        <div className="text-xs text-purple-500 dark:text-purple-400 mt-1">
-                          Chart available when historical data exists
-                        </div>
-                      </div>
-                    </div>
+                  {hasCalculatedValue && metric.dashboardData ? (
+                    <MetricProgressChart 
+                      metric={metric.dashboardData} 
+                      timePeriod={selectedTimePeriod}
+                    />
                   ) : (
                     <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-700 rounded-lg">
                       <div className="text-center">
