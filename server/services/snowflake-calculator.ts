@@ -162,15 +162,22 @@ export class SnowflakeCalculatorService {
   // Calculate dashboard data with time series for a metric
   async calculateDashboardData(metricId: number): Promise<DashboardMetricData | null> {
     try {
+      console.log(`Calculating dashboard data for metric ID: ${metricId}`);
       const metric = await storage.getKpiMetric(metricId);
+      console.log("Found metric:", metric ? `${metric.name} with SQL: ${!!metric.sqlQuery}` : "null");
+      
       if (!metric || !metric.sqlQuery) {
+        console.log("No metric or SQL query found, returning null");
         return null;
       }
 
       // Execute the daily revenue query
+      console.log("Executing SQL query:", metric.sqlQuery);
       const result = await this.executeQuery(metric.sqlQuery);
+      console.log("Query result:", { success: result.success, dataLength: result.data?.length, error: result.error });
       
       if (!result.success || !result.data) {
+        console.log("Query failed or no data, returning null");
         return null;
       }
 

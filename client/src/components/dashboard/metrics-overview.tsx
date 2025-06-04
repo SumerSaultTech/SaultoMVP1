@@ -39,7 +39,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     .filter(metric => metric.sqlQuery)
     .map(metric => ({
       ...useQuery<DashboardMetricData>({
-        queryKey: ["/api/metrics", metric.id, "dashboard-data"],
+        queryKey: [`/api/metrics/${metric.id}/dashboard-data`],
         enabled: !!metric.sqlQuery,
       }),
       metricId: metric.id,

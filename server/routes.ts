@@ -462,12 +462,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/metrics/:id/dashboard-data", async (req, res) => {
     try {
       const metricId = parseInt(req.params.id);
+      console.log(`Dashboard data request for metric ID: ${metricId}`);
+      
+      // First verify the metric exists
+      const metric = await storage.getKpiMetric(metricId);
+      console.log("Found metric:", metric ? `${metric.name} (ID: ${metric.id})` : "null");
+      
+      if (!metric) {
+        return res.status(404).json({ message: "Metric not found" });
+      }
+
+      if (!metric.sqlQuery) {
+        return res.status(400).json({ message: "Metric has no SQL query defined" });
+      }
+
       const { snowflakeCalculatorService } = await import("./services/snowflake-calculator");
       
       const dashboardData = await snowflakeCalculatorService.calculateDashboardData(metricId);
       
       if (!dashboardData) {
-        return res.status(404).json({ message: "Metric not found or no data available" });
+        return res.status(404).json({ message: "No data available for metric calculation" });
       }
       
       res.json(dashboardData);
