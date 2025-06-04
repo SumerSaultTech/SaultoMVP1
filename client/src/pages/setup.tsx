@@ -1,331 +1,563 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Header from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, Clock, AlertCircle, Play, Database, Zap, BarChart3 } from "lucide-react";
-import { apiRequest } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CheckCircle, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target } from "lucide-react";
+
+// Step definitions
+type SetupStep = "initial" | "appCount" | "toolSelection" | "confirmLogin" | "syncProgress" | "complete";
+
+// Tool definitions with available data
+const availableTools = [
+  {
+    id: "harvest",
+    name: "Harvest",
+    icon: Clock,
+    description: "Available data: Time logs, Projects, Invoices",
+    color: "bg-orange-100 text-orange-700",
+  },
+  {
+    id: "salesforce",
+    name: "Salesforce",
+    icon: Users,
+    description: "Available data: Leads, Accounts, Opportunities, Contacts",
+    color: "bg-blue-100 text-blue-700",
+  },
+  {
+    id: "quickbooks",
+    name: "QuickBooks",
+    icon: DollarSign,
+    description: "Available data: Invoices, Expenses, Customers, Vendors",
+    color: "bg-green-100 text-green-700",
+  },
+  {
+    id: "netsuite",
+    name: "NetSuite (Oracle)",
+    icon: Database,
+    description: "Available data: Financial records, Inventory, CRM",
+    color: "bg-purple-100 text-purple-700",
+  },
+  {
+    id: "asana",
+    name: "Asana",
+    icon: Target,
+    description: "Available data: Tasks, Projects, Teams, Workspaces",
+    color: "bg-pink-100 text-pink-700",
+  },
+  {
+    id: "jira",
+    name: "Jira",
+    icon: Briefcase,
+    description: "Available data: Issues, Projects, Workflows, Reports",
+    color: "bg-indigo-100 text-indigo-700",
+  },
+];
+
+const industries = [
+  "Technology",
+  "Healthcare",
+  "Finance",
+  "Retail",
+  "Manufacturing",
+  "Education",
+  "Real Estate",
+  "Consulting",
+  "Media & Entertainment",
+  "Other",
+];
 
 export default function Setup() {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [isProvisioning, setIsProvisioning] = useState(false);
+  // State management
+  const [currentStep, setCurrentStep] = useState<SetupStep>("initial");
+  const [companyName, setCompanyName] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [appCount, setAppCount] = useState<number | null>(null);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [completedLogins, setCompletedLogins] = useState<string[]>([]);
 
-  const { data: setupStatus, isLoading } = useQuery({
-    queryKey: ["/api/setup-status"],
-  });
-
-  const { data: dataSources } = useQuery({
-    queryKey: ["/api/data-sources"],
-  });
-
-  const { data: sqlModels } = useQuery({
-    queryKey: ["/api/sql-models"],
-  });
-
-  const provisionMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/setup/provision"),
-    onSuccess: () => {
-      toast({
-        title: "Setup Complete",
-        description: "Your data warehouse has been successfully provisioned!",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/setup-status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
-      setIsProvisioning(false);
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Setup Failed",
-        description: error.message || "Failed to provision data warehouse.",
-        variant: "destructive",
-      });
-      setIsProvisioning(false);
-    },
-  });
-
-  const deployModelsMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/sql-models/deploy"),
-    onSuccess: () => {
-      toast({
-        title: "Models Deployed",
-        description: "SQL models have been successfully deployed to Snowflake.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/sql-models"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/setup-status"] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Deployment Failed",
-        description: error.message || "Failed to deploy SQL models.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleOneClickSetup = () => {
-    setIsProvisioning(true);
-    provisionMutation.mutate();
+  // Handle tool selection
+  const handleToolToggle = (toolId: string) => {
+    setSelectedTools(prev => 
+      prev.includes(toolId) 
+        ? prev.filter(id => id !== toolId)
+        : [...prev, toolId]
+    );
   };
 
-  const getProgressPercentage = () => {
-    if (!setupStatus) return 0;
-    let progress = 0;
-    if (setupStatus.snowflakeConnected) progress += 33;
-    if (setupStatus.fivetranConfigured) progress += 33;
-    if (setupStatus.modelsDeployed === setupStatus.totalModels && setupStatus.totalModels > 0) progress += 34;
-    return progress;
+  // Simulate SSO login process
+  const simulateLogin = async (toolId: string) => {
+    setIsLoggingIn(true);
+    // Simulate login delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setCompletedLogins(prev => [...prev, toolId]);
+    setIsLoggingIn(false);
   };
 
-  const getStepStatus = (completed: boolean, loading = false) => {
-    if (loading) return { icon: Clock, color: "text-blue-500", bgColor: "bg-blue-100" };
-    if (completed) return { icon: CheckCircle, color: "text-green-500", bgColor: "bg-green-100" };
-    return { icon: AlertCircle, color: "text-gray-400", bgColor: "bg-gray-100" };
+  // Simulate data sync process
+  const simulateDataSync = async () => {
+    setIsSyncing(true);
+    setSyncProgress(0);
+    
+    const totalSteps = selectedTools.length * 20; // 20 progress points per tool
+    let currentProgress = 0;
+    
+    for (const tool of selectedTools) {
+      // Simulate sync for each tool
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        currentProgress++;
+        setSyncProgress((currentProgress / totalSteps) * 100);
+      }
+    }
+    
+    setIsSyncing(false);
+    setCurrentStep("complete");
   };
 
-  if (isLoading) {
-    return (
-      <>
-        <Header title="Setup & Configuration" subtitle="Configure your data warehouse platform" />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-4xl mx-auto">
-            <Card>
-              <CardContent className="p-8">
-                <div className="animate-pulse space-y-4">
-                  <div className="h-8 bg-gray-200 rounded w-1/3" />
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
-                  <div className="h-32 bg-gray-200 rounded" />
+  // Start fresh setup
+  const startFreshSetup = () => {
+    setCurrentStep("initial");
+    setCompanyName("");
+    setIndustry("");
+    setAppCount(null);
+    setSelectedTools([]);
+    setSyncProgress(0);
+    setCompletedLogins([]);
+  };
+
+  // Render functions for each step
+  const renderInitialStep = () => (
+    <div className="max-w-2xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+          <Settings className="w-8 h-8 text-blue-600" />
+        </div>
+        <h1 className="text-3xl font-bold text-gray-900">Company Setup & Configuration</h1>
+        <p className="text-lg text-gray-600">
+          Let's get your data integration platform set up and connected to your business tools.
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-8 space-y-6">
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="companyName" className="text-base font-medium">Company Name</Label>
+              <Input
+                id="companyName"
+                placeholder="Enter your company name"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="industry" className="text-base font-medium">Industry</Label>
+              <Select value={industry} onValueChange={setIndustry}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Select your industry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {industries.map((ind) => (
+                    <SelectItem key={ind} value={ind.toLowerCase()}>
+                      {ind}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button 
+            onClick={() => setCurrentStep("appCount")}
+            disabled={!companyName || !industry}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg"
+          >
+            Initiate Setup
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderAppCountStep = () => (
+    <div className="max-w-2xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <h2 className="text-2xl font-bold text-gray-900">App Connections</h2>
+        <p className="text-gray-600">
+          How many apps do you want to connect to {companyName}?
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-8 space-y-6">
+          <div>
+            <Label htmlFor="appCount" className="text-base font-medium">Number of Apps</Label>
+            <Select value={appCount?.toString() || ""} onValueChange={(value) => setAppCount(parseInt(value))}>
+              <SelectTrigger className="mt-2">
+                <SelectValue placeholder="Select number of apps" />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4, 5, 6].map((num) => (
+                  <SelectItem key={num} value={num.toString()}>
+                    {num} {num === 1 ? 'App' : 'Apps'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex gap-4">
+            <Button 
+              variant="outline"
+              onClick={() => setCurrentStep("initial")}
+              className="flex-1"
+            >
+              Back
+            </Button>
+            <Button 
+              onClick={() => setCurrentStep("toolSelection")}
+              disabled={!appCount}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Continue
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderToolSelectionStep = () => (
+    <div className="max-w-4xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <h2 className="text-2xl font-bold text-gray-900">Select Your Tools</h2>
+        <p className="text-gray-600">
+          Choose {appCount} tools to connect to your data platform
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {availableTools.map((tool) => {
+          const Icon = tool.icon;
+          const isSelected = selectedTools.includes(tool.id);
+          
+          return (
+            <Card 
+              key={tool.id}
+              className={`cursor-pointer transition-all ${
+                isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:shadow-lg'
+              } ${selectedTools.length >= appCount! && !isSelected ? 'opacity-50' : ''}`}
+              onClick={() => {
+                if (selectedTools.length < appCount! || isSelected) {
+                  handleToolToggle(tool.id);
+                }
+              }}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-start space-x-4">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${tool.color}`}>
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-lg">{tool.name}</h3>
+                      <Checkbox checked={isSelected} readOnly />
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">
+                      {tool.description}
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
+          );
+        })}
+      </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Selected: {selectedTools.length}/{appCount}</p>
+              <p className="text-sm text-gray-600">
+                {selectedTools.length === appCount 
+                  ? "Perfect! You've selected all your tools." 
+                  : `Select ${appCount! - selectedTools.length} more tool${appCount! - selectedTools.length !== 1 ? 's' : ''}.`
+                }
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <Button 
+                variant="outline"
+                onClick={() => setCurrentStep("appCount")}
+              >
+                Back
+              </Button>
+              <Button 
+                onClick={() => setCurrentStep("confirmLogin")}
+                disabled={selectedTools.length !== appCount}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                OK
+              </Button>
+            </div>
           </div>
-        </main>
-      </>
-    );
-  }
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderConfirmLoginStep = () => (
+    <div className="max-w-3xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <h2 className="text-2xl font-bold text-gray-900">Connect Your Apps</h2>
+        <p className="text-gray-600">
+          We'll now connect to your selected tools using secure authentication
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {selectedTools.map((toolId) => {
+          const tool = availableTools.find(t => t.id === toolId)!;
+          const Icon = tool.icon;
+          const isCompleted = completedLogins.includes(toolId);
+          
+          return (
+            <Card key={toolId}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${tool.color}`}>
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">{tool.name}</h3>
+                      <p className="text-sm text-gray-600">
+                        {isCompleted ? 'Successfully connected' : 'Ready to connect'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    {isCompleted ? (
+                      <Badge className="bg-green-100 text-green-700">
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Connected
+                      </Badge>
+                    ) : (
+                      <Button
+                        onClick={() => simulateLogin(toolId)}
+                        disabled={isLoggingIn}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {isLoggingIn ? (
+                          <>
+                            <Clock className="w-4 h-4 mr-2 animate-spin" />
+                            Connecting...
+                          </>
+                        ) : (
+                          'Connect'
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">
+                Connected: {completedLogins.length}/{selectedTools.length}
+              </p>
+              <p className="text-sm text-gray-600">
+                {completedLogins.length === selectedTools.length 
+                  ? "All apps connected! Ready to sync data." 
+                  : "Connect all apps to proceed to data sync."
+                }
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <Button 
+                variant="outline"
+                onClick={() => setCurrentStep("toolSelection")}
+                disabled={isLoggingIn}
+              >
+                Back
+              </Button>
+              <Button 
+                onClick={() => {
+                  setCurrentStep("syncProgress");
+                  simulateDataSync();
+                }}
+                disabled={completedLogins.length !== selectedTools.length}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Start Data Sync
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderSyncProgressStep = () => (
+    <div className="max-w-2xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+          <Database className="w-8 h-8 text-blue-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Data Sync in Progress</h2>
+        <p className="text-gray-600">
+          We're now syncing your data from all connected apps
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-8 space-y-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Syncing with Airbyte...</span>
+              <span className="text-sm text-gray-500">{Math.round(syncProgress)}%</span>
+            </div>
+            <Progress value={syncProgress} className="h-3" />
+          </div>
+
+          <div className="space-y-3">
+            {selectedTools.map((toolId, index) => {
+              const tool = availableTools.find(t => t.id === toolId)!;
+              const Icon = tool.icon;
+              const toolProgress = Math.max(0, Math.min(100, (syncProgress - (index * (100 / selectedTools.length))) * (selectedTools.length)));
+              const isCompleted = toolProgress >= 100;
+              
+              return (
+                <div key={toolId} className="flex items-center space-x-4 p-3 rounded-lg bg-gray-50">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tool.color}`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{tool.name}</span>
+                      {isCompleted ? (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <Clock className="w-4 h-4 text-blue-500 animate-spin" />
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {isCompleted ? 'Sync complete' : 'Syncing data...'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderCompleteStep = () => (
+    <div className="max-w-2xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+          <CheckCircle className="w-8 h-8 text-green-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Setup Complete!</h2>
+        <p className="text-gray-600">
+          {companyName} is now connected and ready to analyze data from {selectedTools.length} apps
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-8 space-y-6">
+          <div className="text-center space-y-4">
+            <h3 className="text-lg font-semibold">What's Next?</h3>
+            <div className="grid grid-cols-1 gap-4 text-left">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 text-blue-600" />
+                </div>
+                <span className="text-sm">Your data is being processed and will be available shortly</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 text-blue-600" />
+                </div>
+                <span className="text-sm">Analytics dashboards will auto-populate with your data</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 text-blue-600" />
+                </div>
+                <span className="text-sm">You'll receive email updates on sync progress</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <Button 
+              variant="outline"
+              onClick={startFreshSetup}
+              className="flex-1"
+            >
+              Start New Setup
+            </Button>
+            <Button 
+              onClick={() => window.location.href = "/"}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Go to Dashboard
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   return (
-    <>
-      <Header 
-        title="Setup & Configuration" 
-        subtitle="Configure your data warehouse platform"
-        actions={
-          <Button 
-            onClick={handleOneClickSetup} 
-            disabled={isProvisioning || provisionMutation.isPending || setupStatus?.warehouseConnected}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Play className="mr-2 h-4 w-4" />
-            {isProvisioning ? "Setting Up..." : setupStatus?.warehouseConnected ? "Setup Complete" : "One-Click Setup"}
-          </Button>
-        }
-      />
-      
-      <main className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto space-y-8">
-          {/* Progress Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Setup Progress
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Overall Progress</span>
-                  <span className="text-sm text-gray-500">{getProgressPercentage()}%</span>
-                </div>
-                <Progress value={getProgressPercentage()} className="h-2" />
-                <p className="text-sm text-gray-600">
-                  Complete the setup steps below to start analyzing your data.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Setup Steps */}
-          <div className="grid gap-6">
-            {/* Step 1: Snowflake */}
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-start space-x-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    getStepStatus(setupStatus?.snowflakeConnected, isProvisioning).bgColor
-                  }`}>
-                    {isProvisioning ? (
-                      <Clock className="h-6 w-6 text-blue-500 animate-spin" />
-                    ) : (
-                      <Database className={`h-6 w-6 ${getStepStatus(setupStatus?.snowflakeConnected).color}`} />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">Snowflake Connection</h3>
-                      <Badge variant={setupStatus?.snowflakeConnected ? "default" : "secondary"}>
-                        {setupStatus?.snowflakeConnected ? "Connected" : "Not Connected"}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Connect to your Snowflake data warehouse to store and query your data.
-                    </p>
-                    {setupStatus?.snowflakeConnected && (
-                      <div className="mt-3 text-sm text-green-600">
-                        ✓ Successfully connected to Snowflake warehouse
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Step 2: Data Sources */}
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-start space-x-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    getStepStatus(setupStatus?.dataSourcesConfigured, isProvisioning).bgColor
-                  }`}>
-                    {isProvisioning ? (
-                      <Clock className="h-6 w-6 text-blue-500 animate-spin" />
-                    ) : (
-                      <Zap className={`h-6 w-6 ${getStepStatus(setupStatus?.dataSourcesConfigured).color}`} />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">Data Source Integration</h3>
-                      <Badge variant={setupStatus?.dataSourcesConfigured ? "default" : "secondary"}>
-                        {setupStatus?.dataSourcesConfigured ? "Connected" : "Pending"}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Automatically connect your Salesforce, HubSpot, and QuickBooks data.
-                    </p>
-                    {setupStatus?.dataSourcesConfigured && (
-                      <div className="mt-3 space-y-1">
-                        {dataSources?.map((source: any) => (
-                          <div key={source.id} className="text-sm text-green-600">
-                            ✓ {source.name} connector configured ({source.tableCount} tables)
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Step 3: SQL Models */}
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-start space-x-4">
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    getStepStatus(
-                      setupStatus?.modelsDeployed === setupStatus?.totalModels && setupStatus?.totalModels > 0,
-                      deployModelsMutation.isPending
-                    ).bgColor
-                  }`}>
-                    {deployModelsMutation.isPending ? (
-                      <Clock className="h-6 w-6 text-blue-500 animate-spin" />
-                    ) : (
-                      <BarChart3 className={`h-6 w-6 ${
-                        getStepStatus(setupStatus?.modelsDeployed === setupStatus?.totalModels && setupStatus?.totalModels > 0).color
-                      }`} />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">SQL Model Deployment</h3>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={setupStatus?.modelsDeployed === setupStatus?.totalModels && setupStatus?.totalModels > 0 ? "default" : "secondary"}>
-                          {setupStatus?.modelsDeployed || 0}/{setupStatus?.totalModels || 0} Deployed
-                        </Badge>
-                        <Button 
-                          size="sm" 
-                          onClick={() => deployModelsMutation.mutate()}
-                          disabled={deployModelsMutation.isPending || !setupStatus?.snowflakeConnected}
-                        >
-                          Deploy Models
-                        </Button>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Deploy layered SQL models (staging → intermediate → core) to transform your data.
-                    </p>
-                    {sqlModels && sqlModels.length > 0 && (
-                      <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <span className="font-medium">Staging:</span> {sqlModels.filter((m: any) => m.layer === 'stg').length} models
-                        </div>
-                        <div>
-                          <span className="font-medium">Intermediate:</span> {sqlModels.filter((m: any) => m.layer === 'int').length} models
-                        </div>
-                        <div>
-                          <span className="font-medium">Core:</span> {sqlModels.filter((m: any) => m.layer === 'core').length} models
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-gray-900">Setup & Configuration</h1>
+          <div className="flex items-center space-x-2">
+            {currentStep !== "initial" && (
+              <Badge variant="outline">
+                Step {
+                  currentStep === "appCount" ? "1" :
+                  currentStep === "toolSelection" ? "2" :
+                  currentStep === "confirmLogin" ? "3" :
+                  currentStep === "syncProgress" ? "4" : "5"
+                } of 5
+              </Badge>
+            )}
           </div>
-
-          {/* Environment Variables Guide */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Required Environment Variables</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600">
-                  Make sure these environment variables are configured in your Replit secrets:
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-2">
-                    <h4 className="font-medium">Snowflake</h4>
-                    <ul className="space-y-1 text-gray-600">
-                      <li>• SNOWFLAKE_ACCOUNT</li>
-                      <li>• SNOWFLAKE_USERNAME</li>
-                      <li>• SNOWFLAKE_PASSWORD</li>
-                      <li>• SNOWFLAKE_WAREHOUSE</li>
-                      <li>• SNOWFLAKE_DATABASE</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="font-medium">Fivetran</h4>
-                    <ul className="space-y-1 text-gray-600">
-                      <li>• FIVETRAN_API_KEY</li>
-                      <li>• FIVETRAN_API_SECRET</li>
-                      <li>• FIVETRAN_GROUP_ID</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="font-medium">Data Sources</h4>
-                    <ul className="space-y-1 text-gray-600">
-                      <li>• SALESFORCE_DOMAIN</li>
-                      <li>• SALESFORCE_CLIENT_ID</li>
-                      <li>• HUBSPOT_API_KEY</li>
-                      <li>• QUICKBOOKS_CONSUMER_KEY</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="font-medium">AI Assistant</h4>
-                    <ul className="space-y-1 text-gray-600">
-                      <li>• OPENAI_API_KEY</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
+      </div>
+
+      <main className="flex-1 overflow-y-auto p-6">
+        {currentStep === "initial" && renderInitialStep()}
+        {currentStep === "appCount" && renderAppCountStep()}
+        {currentStep === "toolSelection" && renderToolSelectionStep()}
+        {currentStep === "confirmLogin" && renderConfirmLoginStep()}
+        {currentStep === "syncProgress" && renderSyncProgressStep()}
+        {currentStep === "complete" && renderCompleteStep()}
       </main>
-    </>
+    </div>
   );
 }
