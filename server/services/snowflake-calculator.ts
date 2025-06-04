@@ -228,7 +228,7 @@ export class SnowflakeCalculatorService {
   // Calculate dashboard data with time series for a metric
   async calculateDashboardData(metricId: number): Promise<DashboardMetricData | null> {
     try {
-      console.log(`Calculating dashboard data for metric ID: ${metricId}`);
+      console.log(`=== Calculating dashboard data for metric ID: ${metricId} ===`);
       const metric = await storage.getKpiMetric(metricId);
       console.log("Found metric:", metric ? `${metric.name} with SQL: ${!!metric.sqlQuery}` : "null");
       
@@ -240,26 +240,42 @@ export class SnowflakeCalculatorService {
       // Execute the daily revenue query
       console.log("Executing SQL query:", metric.sqlQuery);
       const result = await this.executeQuery(metric.sqlQuery);
-      console.log("Query result:", { success: result.success, dataLength: result.data?.length, error: result.error });
+      console.log("Raw query result:", JSON.stringify(result, null, 2));
       
-      if (!result.success || !result.data) {
-        console.log("Query failed or no data, returning null");
+      if (!result.success || !result.data || !Array.isArray(result.data)) {
+        console.log("Query failed, no data, or data not array. Returning null.");
         return null;
       }
 
+      // Log first few rows to understand the data structure
+      console.log("First 3 rows of data:", result.data.slice(0, 3));
+
       // Transform daily data into time series
-      const dailyData = result.data.map(row => {
-        console.log("Processing row:", row);
+      let totalSum = 0;
+      const dailyData = result.data.map((row, index) => {
+        console.log(`Processing row ${index}:`, row);
+        
+        // Try multiple column name possibilities
+        const rawValue = row.DAILY_REVENUE || row.daily_revenue || row.VALUE || row.value || Object.values(row)[1] || "0";
+        console.log(`Raw value from row ${index}:`, rawValue, typeof rawValue);
+        
+        const revenue = parseFloat(String(rawValue).replace(/[$,]/g, ''));
+        console.log(`Parsed revenue from row ${index}:`, revenue);
+        
+        if (!isNaN(revenue)) {
+          totalSum += revenue;
+        }
+        
         return {
-          date: new Date(row.date || row.DATE),
-          revenue: parseFloat(row.daily_revenue || row.DAILY_REVENUE || row.VALUE || Object.values(row)[1] || 0)
+          date: new Date(row.DATE || row.date || new Date()),
+          revenue: isNaN(revenue) ? 0 : revenue
         };
       });
 
-      const yearlyGoal = parseFloat(metric.yearlyGoal || '0');
-      const currentValue = dailyData.reduce((sum, day) => sum + day.revenue, 0);
+      console.log(`Total sum calculated: ${totalSum} from ${dailyData.length} records`);
       
-      console.log(`Calculated current value: ${currentValue} from ${dailyData.length} records`);
+      const yearlyGoal = parseFloat(metric.yearlyGoal || '0');
+      const currentValue = totalSum;
 
       return {
         metricId,
