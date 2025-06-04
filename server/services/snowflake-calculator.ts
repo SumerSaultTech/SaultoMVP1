@@ -16,6 +16,25 @@ interface MetricCalculationResult {
   error?: string;
 }
 
+interface TimeSeriesData {
+  period: string;
+  actual: number;
+  goal: number;
+}
+
+interface DashboardMetricData {
+  metricId: number;
+  currentValue: number;
+  yearlyGoal: number;
+  format: string;
+  timeSeriesData: {
+    weekly: TimeSeriesData[];
+    monthly: TimeSeriesData[];
+    quarterly: TimeSeriesData[];
+    ytd: TimeSeriesData[];
+  };
+}
+
 // SQL query templates for MIAS_DATA_DB structure
 const SQL_TEMPLATES = {
   // Revenue metrics - using actual table names from MIAS_DATA_DB
@@ -138,6 +157,158 @@ export class SnowflakeCalculatorService {
 
     const hoursSinceCalc = (Date.now() - lastCalc.getTime()) / (1000 * 60 * 60);
     return hoursSinceCalc >= this.CACHE_DURATION_HOURS;
+  }
+
+  // Calculate dashboard data with time series for a metric
+  async calculateDashboardData(metricId: number): Promise<DashboardMetricData | null> {
+    try {
+      const metric = await storage.getKpiMetric(metricId);
+      if (!metric || !metric.sqlQuery) {
+        return null;
+      }
+
+      // Execute the daily revenue query
+      const result = await this.executeQuery(metric.sqlQuery);
+      
+      if (!result.success || !result.data) {
+        return null;
+      }
+
+      // Transform daily data into time series
+      const dailyData = result.data.map(row => ({
+        date: new Date(row.date || row.DATE),
+        revenue: parseFloat(row.daily_revenue || row.DAILY_REVENUE || 0)
+      }));
+
+      const yearlyGoal = parseFloat(metric.yearlyGoal || '0');
+      const currentValue = dailyData.reduce((sum, day) => sum + day.revenue, 0);
+
+      return {
+        metricId,
+        currentValue,
+        yearlyGoal,
+        format: metric.format || 'currency',
+        timeSeriesData: {
+          weekly: this.aggregateWeekly(dailyData, yearlyGoal),
+          monthly: this.aggregateMonthly(dailyData, yearlyGoal),
+          quarterly: this.aggregateQuarterly(dailyData, yearlyGoal),
+          ytd: this.aggregateYTD(dailyData, yearlyGoal)
+        }
+      };
+    } catch (error) {
+      console.error("Error calculating dashboard data:", error);
+      return null;
+    }
+  }
+
+  // Aggregate daily data into weekly totals
+  private aggregateWeekly(dailyData: {date: Date, revenue: number}[], yearlyGoal: number): TimeSeriesData[] {
+    const weeklyGoal = yearlyGoal / 52.18; // Average weeks per year
+    const weeks = new Map<string, number>();
+
+    dailyData.forEach(day => {
+      const weekStart = this.getWeekStart(day.date);
+      const weekKey = weekStart.toISOString().split('T')[0];
+      weeks.set(weekKey, (weeks.get(weekKey) || 0) + day.revenue);
+    });
+
+    return Array.from(weeks.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12) // Last 12 weeks
+      .map(([week, actual]) => ({
+        period: this.formatWeekPeriod(new Date(week)),
+        actual,
+        goal: weeklyGoal
+      }));
+  }
+
+  // Aggregate daily data into monthly totals
+  private aggregateMonthly(dailyData: {date: Date, revenue: number}[], yearlyGoal: number): TimeSeriesData[] {
+    const monthlyGoal = yearlyGoal / 12;
+    const months = new Map<string, number>();
+
+    dailyData.forEach(day => {
+      const monthKey = `${day.date.getFullYear()}-${String(day.date.getMonth() + 1).padStart(2, '0')}`;
+      months.set(monthKey, (months.get(monthKey) || 0) + day.revenue);
+    });
+
+    return Array.from(months.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12) // Last 12 months
+      .map(([month, actual]) => ({
+        period: this.formatMonthPeriod(month),
+        actual,
+        goal: monthlyGoal
+      }));
+  }
+
+  // Aggregate daily data into quarterly totals
+  private aggregateQuarterly(dailyData: {date: Date, revenue: number}[], yearlyGoal: number): TimeSeriesData[] {
+    const quarterlyGoal = yearlyGoal / 4;
+    const quarters = new Map<string, number>();
+
+    dailyData.forEach(day => {
+      const quarter = Math.floor(day.date.getMonth() / 3) + 1;
+      const quarterKey = `${day.date.getFullYear()}-Q${quarter}`;
+      quarters.set(quarterKey, (quarters.get(quarterKey) || 0) + day.revenue);
+    });
+
+    return Array.from(quarters.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-8) // Last 8 quarters
+      .map(([quarter, actual]) => ({
+        period: quarter,
+        actual,
+        goal: quarterlyGoal
+      }));
+  }
+
+  // Calculate year-to-date progress
+  private aggregateYTD(dailyData: {date: Date, revenue: number}[], yearlyGoal: number): TimeSeriesData[] {
+    const currentYear = new Date().getFullYear();
+    const ytdData = dailyData.filter(day => day.date.getFullYear() === currentYear);
+    
+    let runningTotal = 0;
+    const dayOfYear = this.getDayOfYear(new Date());
+    const dailyGoalTarget = yearlyGoal / 365;
+
+    return ytdData
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map((day, index) => {
+        runningTotal += day.revenue;
+        const dayNum = this.getDayOfYear(day.date);
+        return {
+          period: day.date.toISOString().split('T')[0],
+          actual: runningTotal,
+          goal: dailyGoalTarget * dayNum
+        };
+      })
+      .filter((_, index, arr) => index === arr.length - 1 || index % 7 === 0); // Weekly snapshots
+  }
+
+  // Helper methods for date formatting and calculations
+  private getWeekStart(date: Date): Date {
+    const day = date.getDay();
+    const diff = date.getDate() - day;
+    return new Date(date.setDate(diff));
+  }
+
+  private formatWeekPeriod(weekStart: Date): string {
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    return `${weekStart.getMonth() + 1}/${weekStart.getDate()}-${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
+  }
+
+  private formatMonthPeriod(monthKey: string): string {
+    const [year, month] = monthKey.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  }
+
+  private getDayOfYear(date: Date): number {
+    const start = new Date(date.getFullYear(), 0, 0);
+    const diff = date.getTime() - start.getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
   }
 
   // Calculate actual value for a single metric

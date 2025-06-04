@@ -458,6 +458,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get dashboard data for a specific metric with time series
+  app.get("/api/metrics/:id/dashboard-data", async (req, res) => {
+    try {
+      const metricId = parseInt(req.params.id);
+      const { snowflakeCalculatorService } = await import("./services/snowflake-calculator");
+      
+      const dashboardData = await snowflakeCalculatorService.calculateDashboardData(metricId);
+      
+      if (!dashboardData) {
+        return res.status(404).json({ message: "Metric not found or no data available" });
+      }
+      
+      res.json(dashboardData);
+    } catch (error) {
+      console.error("Error calculating dashboard data:", error);
+      res.status(500).json({ message: "Failed to calculate dashboard data" });
+    }
+  });
+
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
       const metrics = await storage.getKpiMetrics(1748544793859);
