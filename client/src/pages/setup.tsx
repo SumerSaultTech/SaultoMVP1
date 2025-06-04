@@ -72,10 +72,10 @@ const industries = [
 ];
 
 export default function Setup() {
-  // State management
-  const [currentStep, setCurrentStep] = useState<SetupStep>("initial");
-  const [companyName, setCompanyName] = useState("");
-  const [industry, setIndustry] = useState("");
+  // State management - pre-populate known company info
+  const [currentStep, setCurrentStep] = useState<SetupStep>("appCount");
+  const [companyName] = useState("MIAS_DATA");
+  const [industry] = useState("Technology");
   const [appCount, setAppCount] = useState<number | null>(null);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [syncProgress, setSyncProgress] = useState(0);
@@ -124,9 +124,7 @@ export default function Setup() {
 
   // Start fresh setup
   const startFreshSetup = () => {
-    setCurrentStep("initial");
-    setCompanyName("");
-    setIndustry("");
+    setCurrentStep("appCount");
     setAppCount(null);
     setSelectedTools([]);
     setSyncProgress(0);
@@ -192,16 +190,19 @@ export default function Setup() {
   const renderAppCountStep = () => (
     <div className="max-w-2xl mx-auto space-y-8">
       <div className="text-center space-y-4">
-        <h2 className="text-2xl font-bold text-gray-900">App Connections</h2>
-        <p className="text-gray-600">
-          How many apps do you want to connect to {companyName}?
+        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+          <Settings className="w-8 h-8 text-blue-600" />
+        </div>
+        <h1 className="text-3xl font-bold text-gray-900">Data Integration Setup</h1>
+        <p className="text-lg text-gray-600">
+          Configure data connections for {companyName} ({industry} company)
         </p>
       </div>
 
       <Card>
         <CardContent className="p-8 space-y-6">
           <div>
-            <Label htmlFor="appCount" className="text-base font-medium">Number of Apps</Label>
+            <Label htmlFor="appCount" className="text-base font-medium">How many apps do you want to connect?</Label>
             <Select value={appCount?.toString() || ""} onValueChange={(value) => setAppCount(parseInt(value))}>
               <SelectTrigger className="mt-2">
                 <SelectValue placeholder="Select number of apps" />
@@ -216,22 +217,13 @@ export default function Setup() {
             </Select>
           </div>
 
-          <div className="flex gap-4">
-            <Button 
-              variant="outline"
-              onClick={() => setCurrentStep("initial")}
-              className="flex-1"
-            >
-              Back
-            </Button>
-            <Button 
-              onClick={() => setCurrentStep("toolSelection")}
-              disabled={!appCount}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              Continue
-            </Button>
-          </div>
+          <Button 
+            onClick={() => setCurrentStep("toolSelection")}
+            disabled={!appCount}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 text-lg"
+          >
+            Continue to Tool Selection
+          </Button>
         </CardContent>
       </Card>
     </div>
@@ -536,16 +528,14 @@ export default function Setup() {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Setup & Configuration</h1>
           <div className="flex items-center space-x-2">
-            {currentStep !== "initial" && (
-              <Badge variant="outline">
-                Step {
-                  currentStep === "appCount" ? "1" :
-                  currentStep === "toolSelection" ? "2" :
-                  currentStep === "confirmLogin" ? "3" :
-                  currentStep === "syncProgress" ? "4" : "5"
-                } of 5
-              </Badge>
-            )}
+            <Badge variant="outline">
+              Step {
+                currentStep === "appCount" ? "1" :
+                currentStep === "toolSelection" ? "2" :
+                currentStep === "confirmLogin" ? "3" :
+                currentStep === "syncProgress" ? "4" : "4"
+              } of 4
+            </Badge>
           </div>
         </div>
       </div>
