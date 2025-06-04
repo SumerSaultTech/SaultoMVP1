@@ -51,12 +51,20 @@ try:
     results = cursor.fetchall()
     columns = [desc[0] for desc in cursor.description]
     
-    # Convert to list of dictionaries
+    # Convert to list of dictionaries with proper JSON serialization
     data = []
     for row in results:
         row_dict = {}
         for i, value in enumerate(row):
-            row_dict[columns[i]] = value
+            # Handle different data types for JSON serialization
+            if isinstance(value, Decimal):
+                row_dict[columns[i]] = float(value)
+            elif isinstance(value, (date, datetime)):
+                row_dict[columns[i]] = value.isoformat()
+            elif value is None:
+                row_dict[columns[i]] = None
+            else:
+                row_dict[columns[i]] = str(value)
         data.append(row_dict)
     
     # Return success result
