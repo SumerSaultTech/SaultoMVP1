@@ -547,35 +547,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/snowflake/table-data/:tableName", async (req, res) => {
     try {
       const { tableName } = req.params;
-      const { filterColumn, filterValue } = req.query;
+      const { limit } = req.query;
+      const limitValue = limit ? parseInt(limit as string) : 100;
       
-      // Get table info and sample data
-      let dataQuery = `SELECT * FROM MIAS_DATA_DB.CORE.${tableName} LIMIT 100`;
+      // Simplified query - just get the data
+      const dataQuery = `SELECT * FROM MIAS_DATA_DB.CORE.${tableName} LIMIT ${limitValue}`;
       
-      // Add filter if specified
-      if (filterColumn && filterValue) {
-        dataQuery = `
-          SELECT * FROM MIAS_DATA_DB.CORE.${tableName} 
-          WHERE ${filterColumn} ILIKE '%${filterValue}%' 
-          LIMIT 100
-        `;
-      }
+      console.log('Executing query:', dataQuery);
+      const result = await snowflakePythonService.executeQuery(dataQuery);
       
-      // Get row count
-      const countQuery = `SELECT COUNT(*) as ROW_COUNT FROM MIAS_DATA_DB.CORE.${tableName}`;
-      
-      // Execute both queries
-      const [dataResult, countResult] = await Promise.all([
-        snowflakePythonService.executeQuery(dataQuery),
-        snowflakePythonService.executeQuery(countQuery)
-      ]);
-      
-      if (dataResult.success && countResult.success) {
-        const sampleData = dataResult.data || [];
-        const rowCount = countResult.data?.[0]?.ROW_COUNT || 0;
-        
-        // Get column names from the first row
+      if (result.success && result.data) {
+        const sampleData = result.data;
         const columns = sampleData.length > 0 ? Object.keys(sampleData[0]) : [];
+        
+        console.log('Success! Got', sampleData.length, 'rows with columns:', columns);
+        
+        // Get row count in separate call if needed
+        const rowCount = sampleData.length;
         
         res.json({
           tableName,
@@ -584,9 +572,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sampleData
         });
       } else {
+        console.error('Query failed:', result.error);
         res.status(500).json({
           success: false,
-          error: dataResult.error || countResult.error || "Failed to fetch table data"
+          error: result.error || "Failed to fetch table data"
         });
       }
     } catch (error) {
