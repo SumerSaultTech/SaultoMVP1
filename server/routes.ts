@@ -279,42 +279,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Calculate current value using Snowflake
             const result = await snowflakeCalculatorService.calculateMetric(metric.id);
             
+            // Get the actual calculated value from Snowflake
+            const actualValue = result.success ? (result.value || 0) : 0;
+            const yearlyGoalNum = parseFloat(metric.yearlyGoal || "0");
+            
             const timeSeriesData = {
               weekly: [
-                { period: "Week 1", actual: result.currentValue * 0.2, goal: parseFloat(metric.yearlyGoal || "0") / 52 },
-                { period: "Week 2", actual: result.currentValue * 0.25, goal: parseFloat(metric.yearlyGoal || "0") / 52 },
-                { period: "Week 3", actual: result.currentValue * 0.3, goal: parseFloat(metric.yearlyGoal || "0") / 52 },
-                { period: "Week 4", actual: result.currentValue * 0.25, goal: parseFloat(metric.yearlyGoal || "0") / 52 }
+                { period: "Week 1", actual: actualValue * 0.2, goal: yearlyGoalNum / 52 },
+                { period: "Week 2", actual: actualValue * 0.25, goal: yearlyGoalNum / 52 },
+                { period: "Week 3", actual: actualValue * 0.3, goal: yearlyGoalNum / 52 },
+                { period: "Week 4", actual: actualValue * 0.25, goal: yearlyGoalNum / 52 }
               ],
               monthly: [
-                { period: "Jan", actual: result.currentValue * 0.08, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Feb", actual: result.currentValue * 0.09, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Mar", actual: result.currentValue * 0.11, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Apr", actual: result.currentValue * 0.1, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "May", actual: result.currentValue * 0.12, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Jun", actual: result.currentValue * 0.13, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Jul", actual: result.currentValue * 0.09, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Aug", actual: result.currentValue * 0.08, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Sep", actual: result.currentValue * 0.07, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Oct", actual: result.currentValue * 0.06, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Nov", actual: result.currentValue * 0.04, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                { period: "Dec", actual: result.currentValue * 0.03, goal: parseFloat(metric.yearlyGoal || "0") / 12 }
+                { period: "Jan", actual: actualValue * 0.08, goal: yearlyGoalNum / 12 },
+                { period: "Feb", actual: actualValue * 0.09, goal: yearlyGoalNum / 12 },
+                { period: "Mar", actual: actualValue * 0.11, goal: yearlyGoalNum / 12 },
+                { period: "Apr", actual: actualValue * 0.1, goal: yearlyGoalNum / 12 },
+                { period: "May", actual: actualValue * 0.12, goal: yearlyGoalNum / 12 },
+                { period: "Jun", actual: actualValue * 0.13, goal: yearlyGoalNum / 12 },
+                { period: "Jul", actual: actualValue * 0.09, goal: yearlyGoalNum / 12 },
+                { period: "Aug", actual: actualValue * 0.08, goal: yearlyGoalNum / 12 },
+                { period: "Sep", actual: actualValue * 0.07, goal: yearlyGoalNum / 12 },
+                { period: "Oct", actual: actualValue * 0.06, goal: yearlyGoalNum / 12 },
+                { period: "Nov", actual: actualValue * 0.04, goal: yearlyGoalNum / 12 },
+                { period: "Dec", actual: actualValue * 0.03, goal: yearlyGoalNum / 12 }
               ],
               quarterly: [
-                { period: "Q1", actual: result.currentValue * 0.28, goal: parseFloat(metric.yearlyGoal || "0") / 4 },
-                { period: "Q2", actual: result.currentValue * 0.35, goal: parseFloat(metric.yearlyGoal || "0") / 4 },
-                { period: "Q3", actual: result.currentValue * 0.24, goal: parseFloat(metric.yearlyGoal || "0") / 4 },
-                { period: "Q4", actual: result.currentValue * 0.13, goal: parseFloat(metric.yearlyGoal || "0") / 4 }
+                { period: "Q1", actual: actualValue * 0.28, goal: yearlyGoalNum / 4 },
+                { period: "Q2", actual: actualValue * 0.35, goal: yearlyGoalNum / 4 },
+                { period: "Q3", actual: actualValue * 0.24, goal: yearlyGoalNum / 4 },
+                { period: "Q4", actual: actualValue * 0.13, goal: yearlyGoalNum / 4 }
               ],
               ytd: [
-                { period: "YTD", actual: result.currentValue, goal: parseFloat(metric.yearlyGoal || "0") }
+                { period: "YTD", actual: actualValue, goal: yearlyGoalNum }
               ]
             };
 
             dashboardData.push({
               metricId: metric.id,
-              currentValue: result.currentValue,
-              yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
+              currentValue: actualValue,
+              yearlyGoal: yearlyGoalNum,
               format: metric.format || "number",
               timeSeriesData
             });
