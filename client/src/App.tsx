@@ -6,10 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Setup from "@/pages/setup";
-import TableBrowser from "@/pages/table-browser";
 import CompanySelection from "@/pages/company-selection";
 import Login from "@/pages/login";
-import DataBrowser from "@/pages/data-browser";
 
 import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
@@ -40,8 +38,6 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/setup" component={Setup} />
-      <Route path="/tables" component={TableBrowser} />
-      <Route path="/data-browser" component={DataBrowser} />
       <Route path="/metrics" component={MetricsManagement} />
       <Route path="/users" component={UserManagement} />
       <Route path="/admin" component={AdminPage} />
