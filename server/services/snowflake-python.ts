@@ -29,25 +29,16 @@ try:
     # Connect to Snowflake with multiple connection attempts
     account_id = os.getenv("SNOWFLAKE_ACCOUNT", "")
     
-    # Try different account identifier formats
-    account_formats = [
-        account_id,
-        account_id.replace(".snowflakecomputing.com", "") if ".snowflakecomputing.com" in account_id else account_id + ".snowflakecomputing.com",
-        account_id.split('.')[0] if '.' in account_id else account_id
-    ]
+    # Use the correct account format (without .snowflakecomputing.com)
+    account_format = account_id.replace(".snowflakecomputing.com", "") if ".snowflakecomputing.com" in account_id else account_id
     
-    conn = None
-    last_error = None
-    
-    for account_format in account_formats:
-        try:
-            conn = snowflake.connector.connect(
-                account=account_format,
-                user=os.getenv("SNOWFLAKE_USERNAME"),
-                password=os.getenv("SNOWFLAKE_PASSWORD"),
-                warehouse='MIAS_DATA_DB',
-                database='MIAS_DATA_DB',
-                schema='PUBLIC',
+    conn = snowflake.connector.connect(
+        account=account_format,
+        user=os.getenv("SNOWFLAKE_USERNAME"),
+        password=os.getenv("SNOWFLAKE_PASSWORD"),
+        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
+        database='MIAS_DATA_DB',
+        schema='CORE',
                 timeout=30,
                 login_timeout=30,
                 network_timeout=30
