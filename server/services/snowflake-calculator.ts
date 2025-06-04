@@ -39,25 +39,25 @@ interface DashboardMetricData {
 const getTimeFilteredSQL = (baseMetric: string, timePeriod: string) => {
   const templates = {
     'annual-revenue': {
-      base: `SELECT SUM(AMOUNT) as value FROM QUICKBOOKS_ITEMS WHERE TYPE = 'Income'`,
-      weekly: `AND TXNDATE >= DATEADD('day', -7, CURRENT_DATE())`,
-      monthly: `AND TXNDATE >= DATEADD('month', -1, CURRENT_DATE())`,
-      quarterly: `AND TXNDATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
-      ytd: `AND YEAR(TXNDATE) = YEAR(CURRENT_DATE())`
-    },
-    'monthly-deal-value': {
-      base: `SELECT SUM(AMOUNT) as value FROM HUBSPOT_DEALS WHERE DEALSTAGE = 'closedwon'`,
-      weekly: `AND CLOSEDATE >= DATEADD('day', -7, CURRENT_DATE())`,
-      monthly: `AND CLOSEDATE >= DATEADD('month', -1, CURRENT_DATE())`,
-      quarterly: `AND CLOSEDATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
-      ytd: `AND YEAR(CLOSEDATE) = YEAR(CURRENT_DATE())`
-    },
-    'monthly-expenses': {
-      base: `SELECT SUM(DAILY_REVENUE) as value FROM MIAS_DATA_DB.MIAS_DEV_SCHEMA.QUICKBOOKS_REVENUE WHERE 1=1`,
+      base: `SELECT SUM(AMOUNT) as value FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE AMOUNT > 0`,
       weekly: `AND DATE >= DATEADD('day', -7, CURRENT_DATE())`,
       monthly: `AND DATE >= DATEADD('month', -1, CURRENT_DATE())`,
       quarterly: `AND DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
       ytd: `AND YEAR(DATE) = YEAR(CURRENT_DATE())`
+    },
+    'monthly-deal-value': {
+      base: `SELECT SUM(AMOUNT) as value FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE AMOUNT > 0 AND STAGE = 'Closed Won'`,
+      weekly: `AND CLOSE_DATE >= DATEADD('day', -7, CURRENT_DATE())`,
+      monthly: `AND CLOSE_DATE >= DATEADD('month', -1, CURRENT_DATE())`,
+      quarterly: `AND CLOSE_DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
+      ytd: `AND YEAR(CLOSE_DATE) = YEAR(CURRENT_DATE())`
+    },
+    'monthly-expenses': {
+      base: `SELECT SUM(AMOUNT) as value FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE AMOUNT > 0`,
+      weekly: `AND EXPENSE_DATE >= DATEADD('day', -7, CURRENT_DATE())`,
+      monthly: `AND EXPENSE_DATE >= DATEADD('month', -1, CURRENT_DATE())`,
+      quarterly: `AND EXPENSE_DATE >= DATEADD('quarter', -1, CURRENT_DATE())`,
+      ytd: `AND YEAR(EXPENSE_DATE) = YEAR(CURRENT_DATE())`
     }
   };
 
@@ -273,6 +273,7 @@ export class SnowflakeCalculatorService {
       const metricKey = metric.name.toLowerCase().replace(/\s+/g, '-');
       const timeFilteredSQL = getTimeFilteredSQL(metricKey, timePeriod);
       
+      // For time filtering, use aggregated query; otherwise use original detailed query
       const queryToExecute = timeFilteredSQL || metric.sqlQuery;
       console.log("Executing SQL query:", queryToExecute);
       const result = await this.executeQuery(queryToExecute);
