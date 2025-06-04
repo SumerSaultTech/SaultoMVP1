@@ -47,31 +47,15 @@ export default function DataBrowser() {
         { name: "AMOUNT", type: "NUMBER", nullable: true },
         { name: "STAGE", type: "VARCHAR", nullable: true },
         { name: "CLOSE_DATE", type: "DATE", nullable: true },
-        { name: "OWNER_ID", type: "VARCHAR", nullable: true },
-        { name: "CREATED_DATE", type: "TIMESTAMP", nullable: false },
-        { name: "MODIFIED_DATE", type: "TIMESTAMP", nullable: true },
-      ]
-    },
-    {
-      name: "HUBSPOT_CONTACTS",
-      schema: "PUBLIC", 
-      type: "TABLE",
-      rowCount: 3891,
-      columns: [
-        { name: "CONTACT_ID", type: "VARCHAR", nullable: false },
-        { name: "EMAIL", type: "VARCHAR", nullable: true },
-        { name: "FIRST_NAME", type: "VARCHAR", nullable: true },
-        { name: "LAST_NAME", type: "VARCHAR", nullable: true },
+        { name: "ASSOCIATED_CONTACT", type: "VARCHAR", nullable: true },
         { name: "COMPANY", type: "VARCHAR", nullable: true },
-        { name: "LIFECYCLE_STAGE", type: "VARCHAR", nullable: true },
-        { name: "CREATED_DATE", type: "TIMESTAMP", nullable: false },
       ]
     },
     {
-      name: "HUBSPOT_CALLS",
-      schema: "PUBLIC",
+      name: "CORE_HUBSPOT_CALLS",
+      schema: "CORE",
       type: "TABLE", 
-      rowCount: 892,
+      rowCount: 6036,
       columns: [
         { name: "CALL_ID", type: "VARCHAR", nullable: false },
         { name: "CONTACT_ID", type: "VARCHAR", nullable: true },
@@ -82,10 +66,10 @@ export default function DataBrowser() {
       ]
     },
     {
-      name: "QUICKBOOKS_REVENUE",
-      schema: "PUBLIC",
+      name: "CORE_QUICKBOOKS_REVENUE",
+      schema: "CORE",
       type: "TABLE",
-      rowCount: 567,
+      rowCount: 7796,
       columns: [
         { name: "TRANSACTION_ID", type: "VARCHAR", nullable: false },
         { name: "AMOUNT", type: "NUMBER", nullable: false },
@@ -96,10 +80,10 @@ export default function DataBrowser() {
       ]
     },
     {
-      name: "QUICKBOOKS_EXPENSES",
-      schema: "PUBLIC",
+      name: "CORE_QUICKBOOKS_EXPENSES",
+      schema: "CORE",
       type: "TABLE",
-      rowCount: 234,
+      rowCount: 88,
       columns: [
         { name: "EXPENSE_ID", type: "VARCHAR", nullable: false },
         { name: "AMOUNT", type: "NUMBER", nullable: false },
@@ -157,7 +141,7 @@ export default function DataBrowser() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {mockTables.map((table) => (
+              {actualTables.map((table) => (
                 <div
                   key={table.name}
                   className={`p-3 rounded-lg border cursor-pointer transition-colors ${
