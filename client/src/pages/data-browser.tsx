@@ -317,65 +317,7 @@ export default function DataBrowser() {
               </div>
             )}
 
-            {/* Data Table */}
-            <div className="flex-1 overflow-auto p-6">
-              {dataLoading ? (
-                <Card>
-                  <CardContent className="p-8">
-                    <div className="animate-pulse space-y-4">
-                      <div className="h-8 bg-gray-200 rounded w-full" />
-                      <div className="h-4 bg-gray-200 rounded w-3/4" />
-                      <div className="h-4 bg-gray-200 rounded w-1/2" />
-                      <div className="h-32 bg-gray-200 rounded" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : tableData?.sampleData ? (
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            {tableData.columns.map((column: string) => (
-                              <TableHead key={column} className="font-semibold">
-                                {column}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {tableData.sampleData.map((row: any, index: number) => (
-                            <TableRow key={index}>
-                              {tableData.columns.map((column: string) => (
-                                <TableCell key={column} className="max-w-xs">
-                                  <div className="truncate" title={String(row[column] || "")}>
-                                    {row[column] !== null && row[column] !== undefined
-                                      ? String(row[column])
-                                      : <span className="text-gray-400 italic">null</span>
-                                    }
-                                  </div>
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Data Available</h3>
-                    <p className="text-gray-500">
-                      Unable to load data for this table. Try refreshing or check your connection.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+
           </>
         ) : (
           // Empty State
