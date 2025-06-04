@@ -248,13 +248,18 @@ export class SnowflakeCalculatorService {
       }
 
       // Transform daily data into time series
-      const dailyData = result.data.map(row => ({
-        date: new Date(row.date || row.DATE),
-        revenue: parseFloat(row.daily_revenue || row.DAILY_REVENUE || 0)
-      }));
+      const dailyData = result.data.map(row => {
+        console.log("Processing row:", row);
+        return {
+          date: new Date(row.date || row.DATE),
+          revenue: parseFloat(row.daily_revenue || row.DAILY_REVENUE || row.VALUE || Object.values(row)[1] || 0)
+        };
+      });
 
       const yearlyGoal = parseFloat(metric.yearlyGoal || '0');
       const currentValue = dailyData.reduce((sum, day) => sum + day.revenue, 0);
+      
+      console.log(`Calculated current value: ${currentValue} from ${dailyData.length} records`);
 
       return {
         metricId,
