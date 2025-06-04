@@ -181,9 +181,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </div>
                       {dashboardData.timeSeriesData && (
                         <MetricProgressChart
-                          data={dashboardData.timeSeriesData[selectedTimePeriod as keyof typeof dashboardData.timeSeriesData] || []}
+                          metric={dashboardData}
                           timePeriod={selectedTimePeriod}
-                          format={dashboardData.format}
                         />
                       )}
                     </div>
@@ -235,10 +234,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       {dashboardData.timeSeriesData && (
                         <div className="pt-2">
                           <MetricProgressChart
-                            data={dashboardData.timeSeriesData[selectedTimePeriod as keyof typeof dashboardData.timeSeriesData] || []}
+                            metric={dashboardData}
                             timePeriod={selectedTimePeriod}
-                            format={dashboardData.format}
-                            compact={true}
                           />
                         </div>
                       )}
