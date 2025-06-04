@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Database, Search, Play, Eye, BarChart3, Zap, Users, DollarSign } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface TableInfo {
   name: string;
@@ -35,7 +34,6 @@ export default function DataBrowser() {
   const [customQuery, setCustomQuery] = useState("");
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [isRunningQuery, setIsRunningQuery] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
 
   // Actual table data from MIAS_DATA_DB.CORE schema
   const actualTables: TableInfo[] = [
@@ -121,7 +119,6 @@ export default function DataBrowser() {
       
       const result = await response.json();
       setQueryResult(result);
-      setActiveTab("results");
     } catch (error) {
       setQueryResult({
         success: false,
@@ -353,77 +350,66 @@ export default function DataBrowser() {
         {queryResult && (
           <Card>
             <CardHeader>
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList>
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="results">Query Results</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <CardTitle>
+                {queryResult.success ? "Query Results" : "Query Error"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <TabsContent value="overview">
-                <div className="text-center py-8">
-                  <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">Execute a query to see results here</p>
-                </div>
-              </TabsContent>
-              <TabsContent value="results">
-                {queryResult.success ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline" className="bg-green-50 text-green-700">
-                        Query executed successfully
-                      </Badge>
-                      <span className="text-sm text-gray-500">
-                        {queryResult.data?.length || 0} rows returned
-                      </span>
-                    </div>
-                    
-                    {queryResult.data && queryResult.data.length > 0 && (
-                      <div className="border rounded-lg overflow-hidden">
-                        <div className="overflow-x-auto max-h-96">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="bg-gray-50">
-                                {queryResult.columns?.map((column, index) => (
-                                  <TableHead key={index} className="font-semibold text-gray-700">
-                                    {column}
-                                  </TableHead>
+              {queryResult.success ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className="bg-green-50 text-green-700">
+                      Query executed successfully
+                    </Badge>
+                    <span className="text-sm text-gray-500">
+                      {queryResult.data?.length || 0} rows returned
+                    </span>
+                  </div>
+                  
+                  {queryResult.data && queryResult.data.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="overflow-x-auto max-h-96">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-gray-50">
+                              {queryResult.columns?.map((column, index) => (
+                                <TableHead key={index} className="font-semibold text-gray-700">
+                                  {column}
+                                </TableHead>
+                              ))}
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {queryResult.data.map((row, rowIndex) => (
+                              <TableRow 
+                                key={rowIndex}
+                                className="hover:bg-gray-50 transition-colors"
+                              >
+                                {queryResult.columns?.map((column, colIndex) => (
+                                  <TableCell 
+                                    key={colIndex}
+                                    className="py-3 px-4 text-sm"
+                                  >
+                                    <div className="max-w-xs truncate">
+                                      {formatValue(row[column])}
+                                    </div>
+                                  </TableCell>
                                 ))}
                               </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {queryResult.data.map((row, rowIndex) => (
-                                <TableRow 
-                                  key={rowIndex}
-                                  className="hover:bg-gray-50 transition-colors"
-                                >
-                                  {queryResult.columns?.map((column, colIndex) => (
-                                    <TableCell 
-                                      key={colIndex}
-                                      className="py-3 px-4 text-sm"
-                                    >
-                                      <div className="max-w-xs truncate">
-                                        {formatValue(row[column])}
-                                      </div>
-                                    </TableCell>
-                                  ))}
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
+                            ))}
+                          </TableBody>
+                        </Table>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <Alert className="border-red-200 bg-red-50">
-                    <AlertDescription className="text-red-700">
-                      <strong>Query Error:</strong> {queryResult.error}
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </TabsContent>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertDescription className="text-red-700">
+                    <strong>Query Error:</strong> {queryResult.error}
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         )}
