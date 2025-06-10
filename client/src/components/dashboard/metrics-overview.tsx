@@ -174,20 +174,35 @@ const defaultMetrics = [
 ];
 
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
-  const [timePeriod, setTimePeriod] = useState("ytd");
+  const [timePeriod, setTimePeriod] = useState("Monthly View");
   
-  const { data: kpiMetrics, isLoading } = useQuery({
+  // Fetch real Snowflake dashboard metrics
+  const { data: dashboardMetrics, isLoading: isDashboardLoading } = useQuery({
+    queryKey: ["/api/dashboard-metrics", timePeriod],
+    queryFn: async () => {
+      const response = await fetch(`/api/dashboard-metrics?timeView=${encodeURIComponent(timePeriod)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard metrics');
+      }
+      return response.json();
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Also fetch configured KPI metrics for additional display
+  const { data: kpiMetrics, isLoading: isKpiLoading } = useQuery({
     queryKey: ["/api/kpi-metrics"],
   });
 
+  const isLoading = isDashboardLoading || isKpiLoading;
   const metrics = (kpiMetrics && Array.isArray(kpiMetrics) && kpiMetrics.length > 0) ? kpiMetrics : defaultMetrics;
 
-  // Time period options
+  // Time period options matching Snowflake service
   const timePeriodOptions = [
-    { value: "weekly", label: "Weekly View" },
-    { value: "monthly", label: "Monthly View" }, 
-    { value: "quarterly", label: "Quarterly View" },
-    { value: "ytd", label: "Year to Date" }
+    { value: "Daily View", label: "Daily View" },
+    { value: "Weekly View", label: "Weekly View" },
+    { value: "Monthly View", label: "Monthly View" }, 
+    { value: "Yearly View", label: "Yearly View" }
   ];
 
   // Helper function to get time period label

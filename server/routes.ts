@@ -438,6 +438,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Dashboard metrics endpoint - connects to real Snowflake data
+  app.get("/api/dashboard-metrics", async (req, res) => {
+    try {
+      const timeView = req.query.timeView as string || 'Monthly View';
+      
+      // Fetch real metrics from Snowflake Python service
+      const response = await fetch(`http://localhost:5001/metrics?timeView=${encodeURIComponent(timeView)}`, {
+        method: 'GET',
+        timeout: 45000
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Snowflake service returned ${response.status}`);
+      }
+      
+      const data = await response.json();
+      res.json(data);
+      
+    } catch (error: any) {
+      console.error('Dashboard metrics error:', error);
+      
+      // Return fallback structure if Snowflake service is unavailable
+      res.status(500).json({ 
+        error: "Snowflake service unavailable",
+        timeView: req.query.timeView || 'Monthly View'
+      });
+    }
+  });
+
+  // Chart data endpoint for dashboard visualization
+  app.get("/api/chart-data", async (req, res) => {
+    try {
+      const timeView = req.query.timeView as string || 'Monthly View';
+      
+      const response = await fetch(`http://localhost:5001/chart-data?timeView=${encodeURIComponent(timeView)}`, {
+        method: 'GET',
+        timeout: 30000
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Chart service returned ${response.status}`);
+      }
+      
+      const data = await response.json();
+      res.json(data);
+      
+    } catch (error: any) {
+      console.error('Chart data error:', error);
+      res.status(500).json({ error: "Chart service unavailable" });
+    }
+  });
+
   // Admin impersonation endpoint
   app.post('/api/admin/impersonate', async (req, res) => {
     try {

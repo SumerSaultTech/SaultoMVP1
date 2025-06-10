@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, TrendingDown, DollarSign, Target, Calendar } from "lucide-react";
@@ -14,26 +15,16 @@ interface NorthStarMetric {
   format: string;
 }
 
-const northStarMetrics: NorthStarMetric[] = [
-  {
-    id: "annual-revenue",
-    name: "Annual Revenue",
-    value: "$2,400,000",
-    yearlyGoal: "$3,000,000",
-    changePercent: "+12.5",
-    description: "Total revenue for the current fiscal year",
-    format: "currency"
-  },
-  {
-    id: "annual-profit",
-    name: "Annual Profit",
-    value: "$480,000",
-    yearlyGoal: "$750,000",
-    changePercent: "+8.2",
-    description: "Net profit after all expenses for the current fiscal year",
-    format: "currency"
+// Format large numbers as millions for display
+const formatLargeNumber = (value: number): string => {
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`;
+  } else if (value >= 1000) {
+    return `$${(value / 1000).toFixed(0)}K`;
+  } else {
+    return `$${Math.round(value).toLocaleString()}`;
   }
-];
+};
 
 // Generate progress data for North Star metrics based on time period
 function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
