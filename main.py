@@ -13,8 +13,9 @@ import atexit
 
 app = Flask(__name__)
 
-# Global variable to track Node.js process
+# Global variables to track processes
 nodejs_process = None
+snowflake_process = None
 
 def start_nodejs():
     """Start the Node.js application on port 3001"""
@@ -45,22 +46,47 @@ def start_nodejs():
     except Exception as e:
         print(f"Error starting Node.js app: {e}")
 
-def cleanup_nodejs():
-    """Clean up Node.js process on exit"""
-    global nodejs_process
+def start_snowflake_service():
+    """Start the Snowflake metrics service on port 5001"""
+    global snowflake_process
+    
+    try:
+        snowflake_process = subprocess.Popen(
+            ['python3', 'snowflake_service.py'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=dict(os.environ, PORT='5001')
+        )
+        print(f"Started Snowflake service with PID: {snowflake_process.pid}")
+        return snowflake_process
+    except Exception as e:
+        print(f"Error starting Snowflake service: {e}")
+        return None
+
+def cleanup_processes():
+    """Clean up all processes on exit"""
+    global nodejs_process, snowflake_process
     if nodejs_process:
         nodejs_process.terminate()
         nodejs_process.wait()
+    if snowflake_process:
+        snowflake_process.terminate()
+        snowflake_process.wait()
 
 # Register cleanup function
-atexit.register(cleanup_nodejs)
+atexit.register(cleanup_processes)
 
 # Start Node.js in background thread
 nodejs_thread = threading.Thread(target=start_nodejs, daemon=True)
 nodejs_thread.start()
 
-# Give Node.js time to start
-time.sleep(2)
+# Start Snowflake service in background thread
+snowflake_thread = threading.Thread(target=start_snowflake_service, daemon=True)
+snowflake_thread.start()
+
+# Give services time to start
+time.sleep(3)
 
 @app.route('/health')
 def health():

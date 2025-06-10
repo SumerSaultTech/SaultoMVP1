@@ -39,10 +39,10 @@ def get_real_metrics_data(time_view='Monthly View'):
         revenue_query = f"""
         SELECT 
             'revenue' as metric_type,
-            COALESCE(SUM(AMOUNT), 0) as actual_value,
+            COALESCE(SUM(INVOICE_AMOUNT), 0) as actual_value,
             80000 as goal_value
         FROM CORE_QUICKBOOKS_REVENUE
-        WHERE {date_filter}
+        WHERE INVOICE_DATE >= CURRENT_DATE - INTERVAL '12 MONTHS'
         """
         
         # Query real expenses from QuickBooks  
@@ -52,7 +52,7 @@ def get_real_metrics_data(time_view='Monthly View'):
             COALESCE(SUM(ABS(AMOUNT)), 0) as actual_value,
             50000 as goal_value
         FROM CORE_QUICKBOOKS_EXPENSES
-        WHERE {date_filter}
+        WHERE EXPENSE_DATE >= CURRENT_DATE - INTERVAL '12 MONTHS'
         """
         
         # Query deals from HubSpot for ARR calculation
@@ -62,8 +62,8 @@ def get_real_metrics_data(time_view='Monthly View'):
             COALESCE(SUM(AMOUNT), 0) * 12 as actual_value,
             2400000 as goal_value
         FROM CORE_HUBSPOT_DEALS
-        WHERE DEALSTAGE = 'closedwon' 
-        AND {deal_date_filter}
+        WHERE STAGE IN ('closedwon', 'Closed Won')
+        AND CLOSE_DATE >= CURRENT_DATE - INTERVAL '12 MONTHS'
         """
         
         # Query MRR from HubSpot deals
@@ -73,8 +73,8 @@ def get_real_metrics_data(time_view='Monthly View'):
             COALESCE(SUM(AMOUNT), 0) as actual_value,
             200000 as goal_value
         FROM CORE_HUBSPOT_DEALS
-        WHERE DEALSTAGE = 'closedwon' 
-        AND {deal_date_filter}
+        WHERE STAGE IN ('closedwon', 'Closed Won')
+        AND CLOSE_DATE >= CURRENT_DATE - INTERVAL '12 MONTHS'
         """
         
         all_metrics = []
