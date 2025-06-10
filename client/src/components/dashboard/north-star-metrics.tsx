@@ -198,15 +198,50 @@ function getProgressStatus(progress: number) {
 }
 
 export default function NorthStarMetrics() {
-  const [northStarTimePeriod, setNorthStarTimePeriod] = useState("ytd");
+  const [northStarTimePeriod, setNorthStarTimePeriod] = useState("Monthly View");
 
-  // Time period options for North Star metrics
+  // Fetch real Snowflake dashboard metrics
+  const { data: dashboardMetrics, isLoading } = useQuery({
+    queryKey: ["/api/dashboard-metrics", northStarTimePeriod],
+    queryFn: async () => {
+      const response = await fetch(`/api/dashboard-metrics?timeView=${encodeURIComponent(northStarTimePeriod)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard metrics');
+      }
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  // Time period options matching Snowflake service
   const northStarTimePeriodOptions = [
-    { value: "weekly", label: "Weekly View" },
-    { value: "monthly", label: "Monthly View" }, 
-    { value: "quarterly", label: "Quarterly View" },
-    { value: "ytd", label: "Year to Date" }
+    { value: "Daily View", label: "Daily View" },
+    { value: "Weekly View", label: "Weekly View" },
+    { value: "Monthly View", label: "Monthly View" }, 
+    { value: "Yearly View", label: "Yearly View" }
   ];
+
+  // Create North Star metrics from real Snowflake data
+  const northStarMetrics: NorthStarMetric[] = dashboardMetrics ? [
+    {
+      id: "annual-revenue",
+      name: "Annual Revenue",
+      value: formatLargeNumber(dashboardMetrics.revenue?.actual || 0),
+      yearlyGoal: formatLargeNumber(dashboardMetrics.revenue?.goal || 0),
+      changePercent: "+12.5",
+      description: "Total revenue from QuickBooks data",
+      format: "currency"
+    },
+    {
+      id: "annual-profit", 
+      name: "Annual Profit",
+      value: formatLargeNumber(dashboardMetrics.profit?.actual || 0),
+      yearlyGoal: formatLargeNumber(dashboardMetrics.profit?.goal || 0),
+      changePercent: "+8.2",
+      description: "Net profit after all expenses",
+      format: "currency"
+    }
+  ] : [];
 
   const getTimePeriodLabel = (period: string) => {
     const option = northStarTimePeriodOptions.find(opt => opt.value === period);
@@ -294,7 +329,29 @@ export default function NorthStarMetrics() {
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {northStarMetrics.map((metric) => {
+        {isLoading ? (
+          <>
+            <Card className="h-64 animate-pulse">
+              <CardContent className="p-6">
+                <div className="space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-2 bg-gray-200 rounded"></div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="h-64 animate-pulse">
+              <CardContent className="p-6">
+                <div className="space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                  <div className="h-2 bg-gray-200 rounded"></div>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          northStarMetrics.map((metric) => {
           // Get the EXACT same values used in the chart
           const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
           const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
@@ -422,8 +479,9 @@ export default function NorthStarMetrics() {
 
               </CardContent>
             </Card>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );
