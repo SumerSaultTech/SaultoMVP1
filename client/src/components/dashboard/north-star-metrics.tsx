@@ -219,20 +219,22 @@ export default function NorthStarMetrics() {
   const getDataSourceInfo = (metricName: string) => {
     const sources = {
       'revenue': {
+        source: 'QuickBooks',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_QUICKBOOKS_REVENUE',
         column: 'INVOICE_AMOUNT',
-        description: 'Total revenue from QuickBooks invoices over the selected time period',
-        query: 'SUM(INVOICE_AMOUNT) FROM CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= CURRENT_DATE - INTERVAL \'12 MONTHS\''
+        description: 'Total revenue from QuickBooks invoices stored in Snowflake data warehouse'
       },
       'profit': {
+        source: 'QuickBooks (Calculated)',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_QUICKBOOKS_REVENUE - CORE_QUICKBOOKS_EXPENSES',
         column: 'INVOICE_AMOUNT - AMOUNT',
-        description: 'Net profit calculated as total revenue minus total expenses',
-        query: '(Revenue - Expenses) calculation from QuickBooks financial data'
+        description: 'Net profit calculated as total revenue minus total expenses from QuickBooks'
       }
     };
 
@@ -244,12 +246,13 @@ export default function NorthStarMetrics() {
     }
 
     return {
+      source: 'QuickBooks Integration',
+      warehouse: 'Snowflake',
       database: 'MIAS_DATA_DB',
       schema: 'CORE',
-      table: 'QuickBooks Integration',
+      table: 'Financial Data',
       column: 'Calculated Field',
-      description: 'Real-time business metric from your Snowflake data warehouse',
-      query: 'Live calculation from authenticated Snowflake connection'
+      description: 'Real-time business metric from your Snowflake data warehouse'
     };
   };
 
@@ -430,9 +433,15 @@ export default function NorthStarMetrics() {
                           
                           <div className="space-y-2 text-xs">
                             <div className="flex items-center gap-2">
+                              <div className="h-3 w-3 bg-orange-500 rounded-full" />
+                              <span className="font-medium">Original Source:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).source}</span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
                               <Database className="h-3 w-3 text-blue-500" />
-                              <span className="font-medium">Database:</span>
-                              <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).database}</span>
+                              <span className="font-medium">Data Warehouse:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).warehouse}</span>
                             </div>
                             
                             <div className="flex items-center gap-2">

@@ -202,44 +202,49 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const getDataSourceInfo = (metricName: string) => {
     const sources = {
       'revenue': {
+        source: 'QuickBooks',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_QUICKBOOKS_REVENUE',
         column: 'INVOICE_AMOUNT',
-        description: 'Revenue data from QuickBooks invoices',
-        query: 'SUM(INVOICE_AMOUNT) FROM CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= CURRENT_DATE - INTERVAL \'12 MONTHS\''
+        description: 'Revenue data from QuickBooks invoices stored in Snowflake data warehouse'
       },
       'profit': {
+        source: 'QuickBooks (Calculated)',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_QUICKBOOKS_REVENUE - CORE_QUICKBOOKS_EXPENSES',
         column: 'INVOICE_AMOUNT - AMOUNT',
-        description: 'Calculated as Revenue minus Expenses',
-        query: 'Revenue - Expenses calculation from QuickBooks data'
+        description: 'Calculated as Revenue minus Expenses from QuickBooks financial data'
       },
       'arr': {
+        source: 'HubSpot',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_HUBSPOT_DEALS',
         column: 'AMOUNT * 12',
-        description: 'Annual Recurring Revenue from closed HubSpot deals',
-        query: 'SUM(AMOUNT) * 12 FROM CORE_HUBSPOT_DEALS WHERE STAGE = \'closedwon\''
+        description: 'Annual Recurring Revenue from closed HubSpot deals stored in Snowflake'
       },
       'mrr': {
+        source: 'HubSpot',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_HUBSPOT_DEALS',
         column: 'AMOUNT',
-        description: 'Monthly Recurring Revenue from closed HubSpot deals',
-        query: 'SUM(AMOUNT) FROM CORE_HUBSPOT_DEALS WHERE STAGE = \'closedwon\''
+        description: 'Monthly Recurring Revenue from closed HubSpot deals stored in Snowflake'
       },
       'expenses': {
+        source: 'QuickBooks',
+        warehouse: 'Snowflake',
         database: 'MIAS_DATA_DB',
         schema: 'CORE',
         table: 'CORE_QUICKBOOKS_EXPENSES',
         column: 'AMOUNT',
-        description: 'Business expenses from QuickBooks',
-        query: 'SUM(ABS(AMOUNT)) FROM CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= CURRENT_DATE - INTERVAL \'12 MONTHS\''
+        description: 'Business expenses from QuickBooks stored in Snowflake data warehouse'
       }
     };
 
@@ -258,12 +263,13 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
     // Fallback for configured metrics
     return {
+      source: 'Manual Configuration',
+      warehouse: 'Application Database',
       database: 'Custom Configuration',
       schema: 'User Defined',
       table: 'KPI Metrics Table',
       column: 'Configured Value',
-      description: 'This is a manually configured business metric',
-      query: 'User-defined calculation or manual input'
+      description: 'This is a manually configured business metric'
     };
   };
 
@@ -534,9 +540,15 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                               
                               <div className="space-y-2 text-xs">
                                 <div className="flex items-center gap-2">
+                                  <div className="h-3 w-3 bg-orange-500 rounded-full" />
+                                  <span className="font-medium">Original Source:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).source}</span>
+                                </div>
+                                
+                                <div className="flex items-center gap-2">
                                   <Database className="h-3 w-3 text-blue-500" />
-                                  <span className="font-medium">Database:</span>
-                                  <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).database}</span>
+                                  <span className="font-medium">Data Warehouse:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).warehouse}</span>
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
