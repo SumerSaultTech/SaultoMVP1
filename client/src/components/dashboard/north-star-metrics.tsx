@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUp, TrendingDown, DollarSign, Target, Calendar } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info, Database, Table, Columns } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface NorthStarMetric {
@@ -213,6 +215,44 @@ export default function NorthStarMetrics() {
     refetchInterval: 30000,
   });
 
+  // Data source mapping for Snowflake metrics
+  const getDataSourceInfo = (metricName: string) => {
+    const sources = {
+      'revenue': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_QUICKBOOKS_REVENUE',
+        column: 'INVOICE_AMOUNT',
+        description: 'Total revenue from QuickBooks invoices over the selected time period',
+        query: 'SUM(INVOICE_AMOUNT) FROM CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= CURRENT_DATE - INTERVAL \'12 MONTHS\''
+      },
+      'profit': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_QUICKBOOKS_REVENUE - CORE_QUICKBOOKS_EXPENSES',
+        column: 'INVOICE_AMOUNT - AMOUNT',
+        description: 'Net profit calculated as total revenue minus total expenses',
+        query: '(Revenue - Expenses) calculation from QuickBooks financial data'
+      }
+    };
+
+    const metricKey = metricName.toLowerCase().includes('revenue') ? 'revenue' :
+                     metricName.toLowerCase().includes('profit') ? 'profit' : null;
+    
+    if (metricKey && sources[metricKey]) {
+      return sources[metricKey];
+    }
+
+    return {
+      database: 'MIAS_DATA_DB',
+      schema: 'CORE',
+      table: 'QuickBooks Integration',
+      column: 'Calculated Field',
+      description: 'Real-time business metric from your Snowflake data warehouse',
+      query: 'Live calculation from authenticated Snowflake connection'
+    };
+  };
+
   // Time period options matching Snowflake service
   const northStarTimePeriodOptions = [
     { value: "Daily View", label: "Daily View" },
@@ -371,10 +411,64 @@ export default function NorthStarMetrics() {
               
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 flex-1">
                     <DollarSign className="h-4 w-4 text-purple-600" />
-                    <span>{metric.name}</span>
-                  </CardTitle>
+                    <CardTitle className="text-base font-semibold text-gray-900 dark:text-white">
+                      {metric.name}
+                    </CardTitle>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-purple-100 dark:hover:bg-purple-900/30">
+                          <Info className="h-3 w-3 text-purple-500" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-80">
+                        <div className="p-3 space-y-3">
+                          <div className="font-semibold text-sm text-gray-900 dark:text-white">
+                            Data Source Information
+                          </div>
+                          
+                          <div className="space-y-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <Database className="h-3 w-3 text-blue-500" />
+                              <span className="font-medium">Database:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).database}</span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <Table className="h-3 w-3 text-green-500" />
+                              <span className="font-medium">Table:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).table}</span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <Columns className="h-3 w-3 text-purple-500" />
+                              <span className="font-medium">Column:</span>
+                              <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).column}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
+                              Description:
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400">
+                              {getDataSourceInfo(metric.name).description}
+                            </div>
+                          </div>
+                          
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
+                              Query Logic:
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400 font-mono bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                              {getDataSourceInfo(metric.name).query}
+                            </div>
+                          </div>
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                   <div className={`flex items-center space-x-1 text-sm font-medium ${onPaceProgressStatus.color}`}>
                     {ytdProgress.progress >= 100 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                     <span>{ytdProgress.progress}% on pace</span>

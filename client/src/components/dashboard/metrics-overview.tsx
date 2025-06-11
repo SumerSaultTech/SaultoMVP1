@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Calendar } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { RefreshCw, Calendar, Info, Database, Table, Columns } from "lucide-react";
 import MetricProgressChart from "./metric-progress-chart";
 import NorthStarMetrics from "./north-star-metrics";
 import type { KpiMetric } from "@/../../shared/schema";
@@ -196,6 +197,75 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   const isLoading = isDashboardLoading || isKpiLoading;
   const metrics = (kpiMetrics && Array.isArray(kpiMetrics) && kpiMetrics.length > 0) ? kpiMetrics : defaultMetrics;
+
+  // Data source mapping for real Snowflake metrics
+  const getDataSourceInfo = (metricName: string) => {
+    const sources = {
+      'revenue': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_QUICKBOOKS_REVENUE',
+        column: 'INVOICE_AMOUNT',
+        description: 'Revenue data from QuickBooks invoices',
+        query: 'SUM(INVOICE_AMOUNT) FROM CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= CURRENT_DATE - INTERVAL \'12 MONTHS\''
+      },
+      'profit': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_QUICKBOOKS_REVENUE - CORE_QUICKBOOKS_EXPENSES',
+        column: 'INVOICE_AMOUNT - AMOUNT',
+        description: 'Calculated as Revenue minus Expenses',
+        query: 'Revenue - Expenses calculation from QuickBooks data'
+      },
+      'arr': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_HUBSPOT_DEALS',
+        column: 'AMOUNT * 12',
+        description: 'Annual Recurring Revenue from closed HubSpot deals',
+        query: 'SUM(AMOUNT) * 12 FROM CORE_HUBSPOT_DEALS WHERE STAGE = \'closedwon\''
+      },
+      'mrr': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_HUBSPOT_DEALS',
+        column: 'AMOUNT',
+        description: 'Monthly Recurring Revenue from closed HubSpot deals',
+        query: 'SUM(AMOUNT) FROM CORE_HUBSPOT_DEALS WHERE STAGE = \'closedwon\''
+      },
+      'expenses': {
+        database: 'MIAS_DATA_DB',
+        schema: 'CORE',
+        table: 'CORE_QUICKBOOKS_EXPENSES',
+        column: 'AMOUNT',
+        description: 'Business expenses from QuickBooks',
+        query: 'SUM(ABS(AMOUNT)) FROM CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= CURRENT_DATE - INTERVAL \'12 MONTHS\''
+      }
+    };
+
+    // Check if this is a real Snowflake metric or a configured KPI metric
+    if (dashboardMetrics) {
+      const metricKey = metricName.toLowerCase().includes('revenue') ? 'revenue' :
+                       metricName.toLowerCase().includes('profit') ? 'profit' :
+                       metricName.toLowerCase().includes('arr') ? 'arr' :
+                       metricName.toLowerCase().includes('mrr') ? 'mrr' :
+                       metricName.toLowerCase().includes('expense') ? 'expenses' : null;
+      
+      if (metricKey && sources[metricKey]) {
+        return sources[metricKey];
+      }
+    }
+
+    // Fallback for configured metrics
+    return {
+      database: 'Custom Configuration',
+      schema: 'User Defined',
+      table: 'KPI Metrics Table',
+      column: 'Configured Value',
+      description: 'This is a manually configured business metric',
+      query: 'User-defined calculation or manual input'
+    };
+  };
 
   // Time period options matching Snowflake service
   const timePeriodOptions = [
@@ -446,9 +516,63 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
-                        {metric.name}
-                      </CardTitle>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
+                          {metric.name}
+                        </CardTitle>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700">
+                              <Info className="h-3 w-3 text-gray-500" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-80">
+                            <div className="p-3 space-y-3">
+                              <div className="font-semibold text-sm text-gray-900 dark:text-white">
+                                Data Source Information
+                              </div>
+                              
+                              <div className="space-y-2 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <Database className="h-3 w-3 text-blue-500" />
+                                  <span className="font-medium">Database:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).database}</span>
+                                </div>
+                                
+                                <div className="flex items-center gap-2">
+                                  <Table className="h-3 w-3 text-green-500" />
+                                  <span className="font-medium">Table:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).table}</span>
+                                </div>
+                                
+                                <div className="flex items-center gap-2">
+                                  <Columns className="h-3 w-3 text-purple-500" />
+                                  <span className="font-medium">Column:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).column}</span>
+                                </div>
+                              </div>
+                              
+                              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
+                                  Description:
+                                </div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">
+                                  {getDataSourceInfo(metric.name).description}
+                                </div>
+                              </div>
+                              
+                              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
+                                  Query Logic:
+                                </div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400 font-mono bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                                  {getDataSourceInfo(metric.name).query}
+                                </div>
+                              </div>
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
                         {metric.description}
                       </p>
