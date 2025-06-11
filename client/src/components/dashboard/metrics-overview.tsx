@@ -560,15 +560,6 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                                   {getDataSourceInfo(metric.name).description}
                                 </div>
                               </div>
-                              
-                              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                                <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
-                                  Query Logic:
-                                </div>
-                                <div className="text-xs text-gray-600 dark:text-gray-400 font-mono bg-gray-50 dark:bg-gray-800 p-2 rounded">
-                                  {getDataSourceInfo(metric.name).query}
-                                </div>
-                              </div>
                             </div>
                           </DropdownMenuContent>
                         </DropdownMenu>
