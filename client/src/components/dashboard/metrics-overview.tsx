@@ -627,9 +627,60 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
-                          {metric.name}
-                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
+                            {metric.name}
+                          </CardTitle>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <Info className="h-3 w-3 text-gray-500" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-80">
+                              <div className="p-3 space-y-3">
+                                <div className="font-semibold text-sm text-gray-900 dark:text-white">
+                                  Data Source Information
+                                </div>
+                                
+                                <div className="space-y-2 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-3 w-3 bg-orange-500 rounded-full" />
+                                    <span className="font-medium">Original Source:</span>
+                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).source}</span>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    <Database className="h-3 w-3 text-blue-500" />
+                                    <span className="font-medium">Data Warehouse:</span>
+                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).warehouse}</span>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    <Table className="h-3 w-3 text-green-500" />
+                                    <span className="font-medium">Table:</span>
+                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).table}</span>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    <Columns className="h-3 w-3 text-purple-500" />
+                                    <span className="font-medium">Column:</span>
+                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).column}</span>
+                                  </div>
+                                </div>
+                                
+                                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                  <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
+                                    Description:
+                                  </div>
+                                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                                    {getDataSourceInfo(metric.name).description}
+                                  </div>
+                                </div>
+                              </div>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
                           {metric.description}
                         </p>
