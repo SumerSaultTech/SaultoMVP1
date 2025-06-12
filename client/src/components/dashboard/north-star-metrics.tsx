@@ -270,13 +270,9 @@ export default function NorthStarMetrics() {
       return [];
     }
 
-    // Find revenue and expenses metrics
-    const revenueMetric = dashboardMetrics.find(m => 
-      m.metricName?.toLowerCase().includes('revenue') || m.metricId === 1
-    );
-    const expensesMetric = dashboardMetrics.find(m => 
-      m.metricName?.toLowerCase().includes('expense') || m.metricId === 3
-    );
+    // Find revenue and expenses metrics by metricId (based on storage initialization order)
+    const revenueMetric = dashboardMetrics.find(m => m.metricId === 1); // Annual Revenue 
+    const expensesMetric = dashboardMetrics.find(m => m.metricId === 3); // Monthly Expenses
 
     // Calculate profit as revenue - expenses
     const revenueValue = revenueMetric?.currentValue || 0;
