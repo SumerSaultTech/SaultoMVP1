@@ -204,9 +204,9 @@ export default function NorthStarMetrics() {
 
   // Fetch real Snowflake dashboard metrics
   const { data: dashboardMetrics, isLoading } = useQuery({
-    queryKey: ["/api/dashboard-metrics", northStarTimePeriod],
+    queryKey: ["/api/dashboard/metrics-data", northStarTimePeriod],
     queryFn: async () => {
-      const response = await fetch(`/api/dashboard-metrics?timeView=${encodeURIComponent(northStarTimePeriod)}`);
+      const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(northStarTimePeriod)}`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
