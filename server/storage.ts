@@ -355,10 +355,7 @@ export class DatabaseStorage implements IStorage {
 
   // KPI Metrics
   async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
-    console.log(`DatabaseStorage: Querying KPI metrics for company ID ${companyId}`);
-    const results = await db.select().from(kpiMetrics).where(eq(kpiMetrics.companyId, companyId));
-    console.log(`DatabaseStorage: Found ${results.length} metrics for company ${companyId}`);
-    return results;
+    return await db.select().from(kpiMetrics).where(eq(kpiMetrics.companyId, companyId));
   }
 
   async getKpiMetric(id: number): Promise<KpiMetric | undefined> {
