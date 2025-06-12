@@ -205,13 +205,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
     // If we have dashboard metrics from Snowflake, merge them with KPI structure
     if (dashboardMetrics && Array.isArray(dashboardMetrics)) {
-      console.log('Dashboard metrics available:', dashboardMetrics);
-      console.log('KPI metrics:', kpiMetrics);
-      
       return kpiMetrics.map((kpi: any) => {
         // Find corresponding dashboard metric by metricId
         const dashboardMetric = dashboardMetrics.find((dm: any) => dm.metricId === kpi.id);
-        console.log(`Looking for KPI ID ${kpi.id} (${kpi.name}), found dashboard metric:`, dashboardMetric);
         
         if (dashboardMetric) {
           // Use real Snowflake value instead of static value
@@ -219,7 +215,17 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
             ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
             : `${dashboardMetric.currentValue.toLocaleString()}`;
             
-          console.log(`Updating ${kpi.name} from ${kpi.value} to ${formattedValue}`);
+          // Debug for Annual Profit specifically
+          if (kpi.name.includes('Profit')) {
+            console.log(`Annual Profit Debug:`, {
+              kpiId: kpi.id,
+              kpiName: kpi.name,
+              kpiOriginalValue: kpi.value,
+              dashboardMetricId: dashboardMetric.metricId,
+              dashboardCurrentValue: dashboardMetric.currentValue,
+              formattedValue: formattedValue
+            });
+          }
             
           return {
             ...kpi,
@@ -234,7 +240,6 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
           };
         }
         
-        console.log(`No dashboard metric found for KPI ID ${kpi.id} (${kpi.name}), keeping original value:`, kpi.value);
         return kpi;
       });
     }
