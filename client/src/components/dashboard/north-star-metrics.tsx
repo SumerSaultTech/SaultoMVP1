@@ -265,26 +265,46 @@ export default function NorthStarMetrics() {
   ];
 
   // Create North Star metrics from real Snowflake data
-  const northStarMetrics: NorthStarMetric[] = dashboardMetrics ? [
-    {
-      id: "annual-revenue",
-      name: "Annual Revenue",
-      value: formatLargeNumber(dashboardMetrics.revenue?.actual || 0),
-      yearlyGoal: formatLargeNumber(dashboardMetrics.revenue?.goal || 0),
-      changePercent: "+12.5",
-      description: "Total revenue from QuickBooks data",
-      format: "currency"
-    },
-    {
-      id: "annual-profit", 
-      name: "Annual Profit",
-      value: formatLargeNumber(dashboardMetrics.profit?.actual || 0),
-      yearlyGoal: formatLargeNumber(dashboardMetrics.profit?.goal || 0),
-      changePercent: "+8.2",
-      description: "Net profit after all expenses",
-      format: "currency"
+  const northStarMetrics: NorthStarMetric[] = (() => {
+    if (!dashboardMetrics || !Array.isArray(dashboardMetrics)) {
+      return [];
     }
-  ] : [];
+
+    // Find revenue and expenses metrics
+    const revenueMetric = dashboardMetrics.find(m => 
+      m.metricName?.toLowerCase().includes('revenue') || m.metricId === 1
+    );
+    const expensesMetric = dashboardMetrics.find(m => 
+      m.metricName?.toLowerCase().includes('expense') || m.metricId === 3
+    );
+
+    // Calculate profit as revenue - expenses
+    const revenueValue = revenueMetric?.currentValue || 0;
+    const expensesValue = expensesMetric?.currentValue || 0;
+    const profitValue = revenueValue - expensesValue;
+    const profitGoal = (revenueMetric?.yearlyGoal || 0) - (expensesMetric?.yearlyGoal || 0);
+
+    return [
+      {
+        id: "annual-revenue",
+        name: "Annual Revenue",
+        value: formatLargeNumber(revenueValue),
+        yearlyGoal: formatLargeNumber(revenueMetric?.yearlyGoal || 0),
+        changePercent: "+12.5",
+        description: "Total revenue from QuickBooks data",
+        format: "currency"
+      },
+      {
+        id: "annual-profit", 
+        name: "Annual Profit",
+        value: formatLargeNumber(profitValue),
+        yearlyGoal: formatLargeNumber(profitGoal),
+        changePercent: "+8.2",
+        description: "Net profit after all expenses",
+        format: "currency"
+      }
+    ];
+  })();
 
   const getTimePeriodLabel = (period: string) => {
     const option = northStarTimePeriodOptions.find(opt => opt.value === period);
