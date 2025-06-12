@@ -196,7 +196,44 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   });
 
   const isLoading = isDashboardLoading || isKpiLoading;
-  const metrics = (kpiMetrics && Array.isArray(kpiMetrics) && kpiMetrics.length > 0) ? kpiMetrics : defaultMetrics;
+  
+  // Merge real Snowflake dashboard data with KPI metrics structure
+  const metrics = (() => {
+    if (!kpiMetrics || !Array.isArray(kpiMetrics) || kpiMetrics.length === 0) {
+      return defaultMetrics;
+    }
+
+    // If we have dashboard metrics from Snowflake, merge them with KPI structure
+    if (dashboardMetrics && Array.isArray(dashboardMetrics)) {
+      return kpiMetrics.map((kpi: any) => {
+        // Find corresponding dashboard metric by metricId
+        const dashboardMetric = dashboardMetrics.find((dm: any) => dm.metricId === kpi.id);
+        
+        if (dashboardMetric) {
+          // Use real Snowflake value instead of static value
+          const formattedValue = dashboardMetric.format === 'currency' 
+            ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
+            : `${dashboardMetric.currentValue.toLocaleString()}`;
+            
+          return {
+            ...kpi,
+            value: formattedValue,
+            yearlyGoal: dashboardMetric.format === 'currency' 
+              ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
+              : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
+            // Calculate progress based on real values
+            goalProgress: dashboardMetric.yearlyGoal > 0 
+              ? Math.round((dashboardMetric.currentValue / dashboardMetric.yearlyGoal) * 100).toString()
+              : "0"
+          };
+        }
+        
+        return kpi;
+      });
+    }
+    
+    return kpiMetrics;
+  })();
 
   // Data source mapping for real Snowflake metrics
   const getDataSourceInfo = (metricName: string) => {
