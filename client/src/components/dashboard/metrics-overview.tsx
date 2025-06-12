@@ -179,9 +179,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   
   // Fetch real Snowflake dashboard metrics
   const { data: dashboardMetrics, isLoading: isDashboardLoading } = useQuery({
-    queryKey: ["/api/dashboard-metrics", timePeriod],
+    queryKey: ["/api/dashboard/metrics-data", timePeriod],
     queryFn: async () => {
-      const response = await fetch(`/api/dashboard-metrics?timeView=${encodeURIComponent(timePeriod)}`);
+      const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(timePeriod)}`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
