@@ -751,6 +751,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Assistant Chat (SaultoChat)
+  app.post("/api/ai-assistant/chat", async (req, res) => {
+    try {
+      const { message } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      console.log("📤 SaultoChat message received:", message.substring(0, 100));
+
+      // Try to get conversation history from storage
+      let conversationHistory: any[] = [];
+      try {
+        const companyId = 1748544793859; // MIAS_DATA company ID
+        const recentMessages = await storage.getChatMessages(companyId);
+        
+        // Convert to format expected by AI service
+        conversationHistory = recentMessages.slice(-10).map((msg: any) => ({
+          role: msg.role || (msg.message ? "user" : "assistant"),
+          content: msg.message || msg.response || msg.content
+        }));
+      } catch (storageError) {
+        console.warn("Could not fetch conversation history:", storageError);
+      }
+
+      // Get AI response using OpenAI service
+      const aiResponse = await openaiService.getChatResponse(message);
+      
+      // Try to save chat message to storage
+      try {
+        const companyId = 1748544793859; // MIAS_DATA company ID
+        await storage.createChatMessage({
+          companyId,
+          userId: 1, // Default user ID
+          message,
+          response: aiResponse.content,
+          timestamp: new Date()
+        });
+      } catch (storageError) {
+        console.warn("Could not save chat message to storage:", storageError);
+      }
+
+      console.log("✅ SaultoChat response generated");
+      
+      res.json({
+        response: aiResponse.content,
+        timestamp: new Date().toISOString(),
+        source: aiResponse.metadata?.source || "openai"
+      });
+
+    } catch (error: any) {
+      console.error("❌ SaultoChat error:", error);
+      res.status(500).json({ 
+        error: `Failed to get chatbot response: ${error.message}`,
+        details: error.stack
+      });
+    }
+  });
+
   // KPI Assistant
   app.post("/api/assistant/suggest-kpis", async (req, res) => {
     try {
