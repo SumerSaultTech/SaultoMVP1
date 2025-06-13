@@ -720,10 +720,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chat Messages
   app.get("/api/chat-messages", async (req, res) => {
     try {
-      // Use default company ID (1) if the storage interface requires it
-      const messages = await (storage as any).getChatMessages?.() || await (storage as any).getChatMessages?.(1) || [];
-      res.json(messages);
+      const companyId = 1748544793859; // MIAS_DATA company ID
+      const allMessages = await storage.getChatMessages(companyId);
+      
+      // Filter and group messages for this company
+      const companyMessages = allMessages.filter(msg => {
+        const metadata = msg.metadata as any;
+        return metadata?.companyId === companyId;
+      });
+      
+      // Group consecutive user-assistant pairs
+      const transformedMessages = [];
+      for (let i = 0; i < companyMessages.length; i++) {
+        const msg = companyMessages[i];
+        
+        if (msg.role === 'user') {
+          // Look for the next assistant message
+          const assistantMsg = companyMessages[i + 1];
+          
+          if (assistantMsg && assistantMsg.role === 'assistant') {
+            transformedMessages.push({
+              id: transformedMessages.length + 1,
+              companyId: companyId,
+              userId: (msg.metadata as any)?.userId || 1,
+              message: msg.content,
+              response: assistantMsg.content,
+              timestamp: msg.timestamp
+            });
+            i++; // Skip the assistant message since we've processed it
+          } else {
+            transformedMessages.push({
+              id: transformedMessages.length + 1,
+              companyId: companyId,
+              userId: (msg.metadata as any)?.userId || 1,
+              message: msg.content,
+              response: null,
+              timestamp: msg.timestamp
+            });
+          }
+        }
+      }
+      
+      // Sort by timestamp (newest first)
+      transformedMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      res.json(transformedMessages);
     } catch (error) {
+      console.error("Error fetching chat messages:", error);
       res.status(500).json({ message: "Failed to get chat messages" });
     }
   });
@@ -782,13 +825,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Try to save chat message to storage
       try {
-        const companyId = 1748544793859; // MIAS_DATA company ID
+        // Save user message
         await storage.createChatMessage({
-          companyId,
-          userId: 1, // Default user ID
-          message,
-          response: aiResponse.content,
-          timestamp: new Date()
+          role: "user",
+          content: message,
+          metadata: { companyId: 1748544793859, userId: 1 }
+        });
+        
+        // Save AI response
+        await storage.createChatMessage({
+          role: "assistant", 
+          content: aiResponse.content,
+          metadata: { companyId: 1748544793859, userId: 1, source: aiResponse.metadata?.source || "openai" }
         });
       } catch (storageError) {
         console.warn("Could not save chat message to storage:", storageError);
