@@ -215,17 +215,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
             ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
             : `${dashboardMetric.currentValue.toLocaleString()}`;
             
-          // Debug for Annual Profit specifically
-          if (kpi.name.includes('Profit')) {
-            console.log(`Annual Profit Debug:`, {
-              kpiId: kpi.id,
-              kpiName: kpi.name,
-              kpiOriginalValue: kpi.value,
-              dashboardMetricId: dashboardMetric.metricId,
-              dashboardCurrentValue: dashboardMetric.currentValue,
-              formattedValue: formattedValue
-            });
-          }
+
             
           return {
             ...kpi,
