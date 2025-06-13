@@ -75,14 +75,21 @@ export class AzureOpenAIService {
 
       console.log("🚀 Sending request to Azure OpenAI...");
       console.log(`📝 Message: ${message.substring(0, 100)}...`);
-
-      // Call Azure OpenAI
-      const response = await this.client.chat.completions.create({
-        model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4",
+      
+      const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4";
+      console.log(`🎯 Using deployment: ${deploymentName}`);
+      
+      const requestPayload = {
+        model: deploymentName,
         messages,
         max_tokens: 1000,
         temperature: 0.7
-      });
+      };
+      
+      console.log(`📋 Request payload:`, JSON.stringify(requestPayload, null, 2));
+
+      // Call Azure OpenAI
+      const response = await this.client.chat.completions.create(requestPayload);
 
       const aiResponse = response.choices[0]?.message?.content || "I apologize, but I couldn't generate a response. Please try again.";
 
