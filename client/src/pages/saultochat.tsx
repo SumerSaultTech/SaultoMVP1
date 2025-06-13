@@ -85,7 +85,7 @@ export default function SaultoChat() {
           <CardHeader className="border-b">
             <CardTitle className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-blue-600" />
-              AI Business Assistant
+              Internal AI Chat
             </CardTitle>
           </CardHeader>
           
