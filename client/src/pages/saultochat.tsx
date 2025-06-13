@@ -80,8 +80,8 @@ export default function SaultoChat() {
   };
 
   return (
-    <div className="flex-1 flex flex-col p-6 bg-gray-50">
-      <div className="mb-6">
+    <div className="flex-1 flex flex-col p-4 bg-gray-50 h-screen">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <MessageCircle className="w-8 h-8 text-blue-600" />
           SaultoChat
@@ -92,7 +92,7 @@ export default function SaultoChat() {
       </div>
 
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
-        <Card className="flex-1 flex flex-col h-[calc(100vh-200px)]">
+        <Card className="flex-1 flex flex-col h-[calc(100vh-140px)]">
           <CardHeader className="border-b flex-shrink-0">
             <CardTitle className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-blue-600" />
