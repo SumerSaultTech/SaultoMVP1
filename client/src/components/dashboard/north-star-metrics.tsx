@@ -270,15 +270,14 @@ export default function NorthStarMetrics() {
       return [];
     }
 
-    // Find revenue and expenses metrics by metricId (based on storage initialization order)
+    // Find revenue and profit metrics by metricId from real Snowflake calculations
     const revenueMetric = dashboardMetrics.find(m => m.metricId === 1); // Annual Revenue 
-    const expensesMetric = dashboardMetrics.find(m => m.metricId === 3); // Monthly Expenses
+    const profitMetric = dashboardMetrics.find(m => m.metricId === 2); // Annual Profit (calculated in backend)
 
-    // Calculate profit as revenue - expenses
+    // Use real Snowflake calculated values
     const revenueValue = revenueMetric?.currentValue || 0;
-    const expensesValue = expensesMetric?.currentValue || 0;
-    const profitValue = revenueValue - expensesValue;
-    const profitGoal = (revenueMetric?.yearlyGoal || 0) - (expensesMetric?.yearlyGoal || 0);
+    const profitValue = profitMetric?.currentValue || 0;
+    const profitGoal = profitMetric?.yearlyGoal || 0;
 
     return [
       {
