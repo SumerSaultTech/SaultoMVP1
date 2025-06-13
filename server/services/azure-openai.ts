@@ -11,7 +11,7 @@ export class AzureOpenAIService {
     try {
       const apiKey = process.env.AZURE_OPENAI_KEY;
       const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-02-01";
+      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview";
 
       if (!apiKey || !endpoint) {
         console.warn("Azure OpenAI credentials not found. Chatbot will use fallback responses.");
