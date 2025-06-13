@@ -380,7 +380,9 @@ export class DatabaseStorage implements IStorage {
 
   // Chat Messages
   async getChatMessages(companyId: number): Promise<ChatMessage[]> {
-    return await db.select().from(chatMessages).where(eq(chatMessages.companyId, companyId));
+    // Since chat_messages table doesn't have companyId column, get all messages
+    // and filter by metadata in the route handler
+    return await db.select().from(chatMessages).orderBy(chatMessages.timestamp);
   }
 
   async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> {

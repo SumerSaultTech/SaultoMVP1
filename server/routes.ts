@@ -820,8 +820,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn("Could not fetch conversation history:", storageError);
       }
 
-      // Get AI response using OpenAI service
-      const aiResponse = await openaiService.getChatResponse(message);
+      // Get AI response using Azure OpenAI service
+      const aiResponse = await azureOpenAIService.getChatResponse(message);
       
       // Try to save chat message to storage
       try {
