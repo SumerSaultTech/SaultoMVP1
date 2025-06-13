@@ -140,6 +140,7 @@ export default function SaultoChat() {
                       )}
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
