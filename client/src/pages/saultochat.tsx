@@ -137,24 +137,24 @@ export default function SaultoChat() {
                     Start a conversation
                   </h3>
                   <p className="text-gray-500 max-w-md">
-                    Ask questions about your business metrics, request KPI analysis, 
-                    or get insights from your Snowflake data.
+                    Chat with our AI assistant about anything - from business questions to general topics, 
+                    coding help, creative writing, or casual conversation.
                   </p>
                   <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
                     <div className="bg-gray-50 rounded-lg p-3 text-left">
-                      <p className="text-sm font-medium text-gray-900">Example questions:</p>
+                      <p className="text-sm font-medium text-gray-900">Business & Analytics:</p>
                       <ul className="text-sm text-gray-600 mt-1 space-y-1">
-                        <li>• "What are our top performing metrics?"</li>
-                        <li>• "Analyze our customer acquisition trends"</li>
-                        <li>• "Suggest KPIs for our business type"</li>
+                        <li>• "Analyze our quarterly performance"</li>
+                        <li>• "What are the key market trends?"</li>
+                        <li>• "Help create a financial forecast"</li>
                       </ul>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 text-left">
-                      <p className="text-sm font-medium text-gray-900">Data insights:</p>
+                      <p className="text-sm font-medium text-gray-900">General Topics:</p>
                       <ul className="text-sm text-gray-600 mt-1 space-y-1">
-                        <li>• Revenue and profit analysis</li>
-                        <li>• Customer growth patterns</li>
-                        <li>• Performance benchmarking</li>
+                        <li>• "Explain a technical concept"</li>
+                        <li>• "Help with creative writing"</li>
+                        <li>• "Answer general questions"</li>
                       </ul>
                     </div>
                   </div>
@@ -168,7 +168,7 @@ export default function SaultoChat() {
                 <Input
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Ask about your business metrics, KPIs, or data insights..."
+                  placeholder="Ask me anything - business questions, general topics, coding help, or just chat..."
                   className="flex-1"
                   disabled={sendMessageMutation.isPending}
                 />
