@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ export default function SaultoChat() {
   const [message, setMessage] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: chatMessages, isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat-messages"],
@@ -64,6 +66,15 @@ export default function SaultoChat() {
     }
   };
 
+  // Auto-scroll to bottom when new messages arrive
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatMessages]);
+
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
   };
@@ -81,16 +92,16 @@ export default function SaultoChat() {
       </div>
 
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
-        <Card className="flex-1 flex flex-col">
-          <CardHeader className="border-b">
+        <Card className="flex-1 flex flex-col h-[calc(100vh-200px)]">
+          <CardHeader className="border-b flex-shrink-0">
             <CardTitle className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-blue-600" />
               Internal AI Chat
             </CardTitle>
           </CardHeader>
           
-          <CardContent className="flex-1 flex flex-col p-0">
-            <ScrollArea className="flex-1 p-4">
+          <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
+            <ScrollArea className="flex-1 p-4 h-full">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="text-gray-500">Loading chat history...</div>
@@ -163,7 +174,7 @@ export default function SaultoChat() {
             </ScrollArea>
 
             {/* Message Input */}
-            <div className="border-t p-4">
+            <div className="border-t p-4 flex-shrink-0">
               <form onSubmit={handleSendMessage} className="flex gap-2">
                 <Input
                   value={message}
