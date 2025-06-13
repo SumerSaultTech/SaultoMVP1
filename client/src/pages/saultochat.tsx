@@ -80,19 +80,19 @@ export default function SaultoChat() {
   };
 
   return (
-    <div className="flex-1 flex flex-col p-4 bg-gray-50 h-screen">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <MessageCircle className="w-8 h-8 text-blue-600" />
+    <div className="flex-1 flex flex-col p-4 bg-gray-50 min-h-0">
+      <div className="mb-3">
+        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <MessageCircle className="w-6 h-6 text-blue-600" />
           SaultoChat
         </h1>
-        <p className="text-gray-600 mt-1">
+        <p className="text-gray-600 text-sm mt-1">
           Chat with your AI assistant for business insights, data analysis, and KPI recommendations
         </p>
       </div>
 
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
-        <Card className="flex-1 flex flex-col h-[calc(100vh-140px)]">
+      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
+        <Card className="flex-1 flex flex-col h-[500px] min-h-[400px] max-h-[600px]">
           <CardHeader className="border-b flex-shrink-0">
             <CardTitle className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-blue-600" />
