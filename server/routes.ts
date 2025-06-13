@@ -10,6 +10,7 @@ import { snowflakeCortexService } from "./services/snowflake-cortex";
 import { snowflakeMetricsService } from "./services/snowflake-metrics";
 import { snowflakeCalculatorService } from "./services/snowflake-calculator";
 import { snowflakePythonService } from "./services/snowflake-python";
+import { azureOpenAIService } from "./services/azure-openai";
 import { spawn } from 'child_process';
 import {
   insertDataSourceSchema,
@@ -719,7 +720,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chat Messages
   app.get("/api/chat-messages", async (req, res) => {
     try {
-      const messages = await storage.getChatMessages();
+      // Use default company ID (1) if the storage interface requires it
+      const messages = await (storage as any).getChatMessages?.() || await (storage as any).getChatMessages?.(1) || [];
       res.json(messages);
     } catch (error) {
       res.status(500).json({ message: "Failed to get chat messages" });
@@ -1050,6 +1052,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("SQL execution error:", error);
       res.status(500).json({ error: `Failed to execute SQL: ${error.message}` });
+    }
+  });
+
+  // SaultoChat integration routes - using integrated Azure OpenAI
+  app.post("/api/ai-assistant/chat", async (req: any, res: any) => {
+    try {
+      const { message } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      // Get recent conversation history for context
+      try {
+        // Use default company ID (1) if the storage interface requires it
+        const recentMessages = await (storage as any).getChatMessages?.() || await (storage as any).getChatMessages?.(1) || [];
+        const conversationHistory = recentMessages
+          .slice(-10) // Get last 10 messages for context
+          .map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }));
+
+        // Use integrated Azure OpenAI service
+        const aiResponse = await azureOpenAIService.getChatResponse(message, conversationHistory);
+        
+        // Create a chat message record in our storage
+        const timestamp = new Date().toISOString();
+        await storage.createChatMessage({
+          role: "user",
+          content: message,
+          metadata: { timestamp, source: "saultochat" }
+        });
+
+        await storage.createChatMessage({
+          role: "assistant", 
+          content: aiResponse.content,
+          metadata: { timestamp, ...aiResponse.metadata }
+        });
+
+        res.json({
+          response: aiResponse.content,
+          timestamp,
+          source: aiResponse.metadata.source
+        });
+      } catch (storageError) {
+        // Fallback: use Azure OpenAI without conversation history
+        console.warn("Storage error, using Azure OpenAI without history:", storageError);
+        const aiResponse = await azureOpenAIService.getChatResponse(message, []);
+        
+        res.json({
+          response: aiResponse.content,
+          timestamp: new Date().toISOString(),
+          source: aiResponse.metadata.source
+        });
+      }
+    } catch (error: any) {
+      console.error("SaultoChat integration error:", error);
+      res.status(500).json({ error: `Failed to get chatbot response: ${error.message}` });
     }
   });
 
