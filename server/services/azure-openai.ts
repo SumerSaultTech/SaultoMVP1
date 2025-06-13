@@ -11,7 +11,7 @@ export class AzureOpenAIService {
     try {
       const apiKey = process.env.AZURE_OPENAI_KEY;
       const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview";
+      const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-02-01";
 
       if (!apiKey || !endpoint) {
         console.warn("Azure OpenAI credentials not found. Chatbot will use fallback responses.");
@@ -25,6 +25,9 @@ export class AzureOpenAIService {
       });
 
       console.log("✅ Azure OpenAI client initialized successfully");
+      console.log(`🔧 Endpoint: ${endpoint}`);
+      console.log(`🔧 API Version: ${apiVersion}`);
+      console.log(`🔧 Deployment: ${process.env.AZURE_OPENAI_DEPLOYMENT_NAME}`);
     } catch (error) {
       console.error("❌ Error initializing Azure OpenAI client:", error);
       this.client = null;
