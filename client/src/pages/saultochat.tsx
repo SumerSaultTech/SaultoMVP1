@@ -92,7 +92,7 @@ export default function SaultoChat() {
       </div>
 
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
-        <Card className="flex-1 flex flex-col h-[500px] min-h-[400px] max-h-[600px]">
+        <Card className="flex-1 flex flex-col h-[580px] min-h-[480px] max-h-[700px]">
           <CardHeader className="border-b flex-shrink-0">
             <CardTitle className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-blue-600" />
