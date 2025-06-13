@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, MessageCircle, Plus, Clock, Loader2 } from "lucide-react";
+import { Send, Bot, User, MessageCircle, Plus, Clock, Loader2, ChevronLeft, ChevronRight, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ChatMessage {
@@ -28,6 +28,7 @@ export default function SaultoChat() {
   const [message, setMessage] = useState("");
   const [currentSessionId, setCurrentSessionId] = useState<string>("current");
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -122,57 +123,103 @@ export default function SaultoChat() {
   return (
     <div className="flex-1 flex bg-gray-50 min-h-0">
       {/* Chat History Sidebar */}
-      <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Chat History</h2>
-          <Button 
-            onClick={createNewChat}
-            className="w-full flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <Plus className="w-4 h-4" />
-            New Chat
-          </Button>
+      <div 
+        className={`border-r border-gray-200 bg-white flex flex-col transition-all duration-300 ${
+          sidebarExpanded ? "w-80" : "w-16"
+        }`}
+      >
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          {sidebarExpanded ? (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900">Chat History</h2>
+              <Button
+                onClick={() => setSidebarExpanded(false)}
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+            </>
+          ) : (
+            <div className="flex flex-col items-center w-full">
+              <Button
+                onClick={() => setSidebarExpanded(true)}
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 mb-2"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+              <Button
+                onClick={() => setSidebarExpanded(true)}
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                title="Chat History"
+              >
+                <History className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
-        
-        <ScrollArea className="flex-1">
-          <div className="p-2">
-            {chatSessions.length > 0 ? (
-              chatSessions.map((session) => (
-                <div
-                  key={session.id}
-                  onClick={() => switchToSession(session.id)}
-                  className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
-                    currentSessionId === session.id
-                      ? "bg-blue-50 border border-blue-200"
-                      : "hover:bg-gray-50 border border-transparent"
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 text-sm truncate">
-                        {session.title}
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                        {session.lastMessage}
-                      </p>
+
+        {sidebarExpanded && (
+          <>
+            {/* New Chat Button */}
+            <div className="p-4 border-b border-gray-200">
+              <Button 
+                onClick={createNewChat}
+                className="w-full flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Plus className="w-4 h-4" />
+                New Chat
+              </Button>
+            </div>
+            
+            {/* Chat Sessions */}
+            <ScrollArea className="flex-1">
+              <div className="p-2">
+                {chatSessions.length > 0 ? (
+                  chatSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      onClick={() => switchToSession(session.id)}
+                      className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
+                        currentSessionId === session.id
+                          ? "bg-blue-50 border border-blue-200"
+                          : "hover:bg-gray-50 border border-transparent"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 text-sm truncate">
+                            {session.title}
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                            {session.lastMessage}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-gray-400 ml-2">
+                          <Clock className="w-3 h-3" />
+                          {session.messageCount}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-2">
+                        {new Date(session.timestamp).toLocaleDateString()}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-gray-400 ml-2">
-                      <Clock className="w-3 h-3" />
-                      {session.messageCount}
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 text-sm py-8">
+                    No chat history yet
                   </div>
-                  <div className="text-xs text-gray-400 mt-2">
-                    {new Date(session.timestamp).toLocaleDateString()}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center text-gray-500 text-sm py-8">
-                No chat history yet
+                )}
               </div>
-            )}
-          </div>
-        </ScrollArea>
+            </ScrollArea>
+          </>
+        )}
       </div>
 
       {/* Main Chat Area */}
