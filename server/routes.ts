@@ -761,8 +761,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Sort by timestamp (newest first)
-      transformedMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      // Sort by timestamp (oldest first)
+      transformedMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       
       res.json(transformedMessages);
     } catch (error) {
