@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, MessageCircle } from "lucide-react";
+import { Send, Bot, User, MessageCircle, Plus, Clock, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ChatMessage {
@@ -16,8 +16,18 @@ interface ChatMessage {
   timestamp: string;
 }
 
+interface ChatSession {
+  id: string;
+  title: string;
+  lastMessage: string;
+  timestamp: string;
+  messageCount: number;
+}
+
 export default function SaultoChat() {
   const [message, setMessage] = useState("");
+  const [currentSessionId, setCurrentSessionId] = useState<string>("current");
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -79,37 +89,123 @@ export default function SaultoChat() {
     return new Date(timestamp).toLocaleString();
   };
 
+  // Generate chat sessions from messages
+  useEffect(() => {
+    if (chatMessages && chatMessages.length > 0) {
+      const currentSession: ChatSession = {
+        id: "current",
+        title: "Current Chat",
+        lastMessage: chatMessages[chatMessages.length - 1]?.message || "New conversation",
+        timestamp: chatMessages[chatMessages.length - 1]?.timestamp || new Date().toISOString(),
+        messageCount: chatMessages.length
+      };
+      setChatSessions([currentSession]);
+    }
+  }, [chatMessages]);
+
+  const createNewChat = () => {
+    const newSessionId = `chat-${Date.now()}`;
+    setCurrentSessionId(newSessionId);
+    queryClient.setQueryData(["/api/chat-messages"], []);
+    toast({
+      title: "New chat started",
+      description: "You can now start a new conversation",
+    });
+  };
+
+  const switchToSession = (sessionId: string) => {
+    setCurrentSessionId(sessionId);
+    // In a real implementation, this would load messages for the specific session
+    queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+  };
+
   return (
-    <div className="flex-1 flex flex-col p-4 bg-gray-50 min-h-0">
-      <div className="mb-3">
-        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <MessageCircle className="w-6 h-6 text-blue-600" />
-          SaultoChat
-        </h1>
-        <p className="text-gray-600 text-sm mt-1">
-          Chat with your AI assistant for business insights, data analysis, and KPI recommendations
-        </p>
+    <div className="flex-1 flex bg-gray-50 min-h-0">
+      {/* Chat History Sidebar */}
+      <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Chat History</h2>
+          <Button 
+            onClick={createNewChat}
+            className="w-full flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Plus className="w-4 h-4" />
+            New Chat
+          </Button>
+        </div>
+        
+        <ScrollArea className="flex-1">
+          <div className="p-2">
+            {chatSessions.length > 0 ? (
+              chatSessions.map((session) => (
+                <div
+                  key={session.id}
+                  onClick={() => switchToSession(session.id)}
+                  className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
+                    currentSessionId === session.id
+                      ? "bg-blue-50 border border-blue-200"
+                      : "hover:bg-gray-50 border border-transparent"
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-sm truncate">
+                        {session.title}
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                        {session.lastMessage}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-400 ml-2">
+                      <Clock className="w-3 h-3" />
+                      {session.messageCount}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-2">
+                    {new Date(session.timestamp).toLocaleDateString()}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center text-gray-500 text-sm py-8">
+                No chat history yet
+              </div>
+            )}
+          </div>
+        </ScrollArea>
       </div>
 
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
-        <Card className="flex-1 flex flex-col h-[580px] min-h-[480px] max-h-[700px]">
-          <CardHeader className="border-b flex-shrink-0">
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="w-5 h-5 text-blue-600" />
-              Internal AI Chat
-            </CardTitle>
-          </CardHeader>
-          
-          <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-            <ScrollArea className="flex-1 p-4 h-full">
-              {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="text-gray-500">Loading chat history...</div>
-                </div>
-              ) : chatMessages && chatMessages.length > 0 ? (
-                <div className="space-y-4">
-                  {chatMessages.map((chat) => (
-                    <div key={chat.id} className="space-y-3">
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col p-4 min-h-0">
+        <div className="mb-3">
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <MessageCircle className="w-6 h-6 text-blue-600" />
+            SaultoChat
+          </h1>
+          <p className="text-gray-600 text-sm mt-1">
+            Chat with your AI assistant for business insights, data analysis, and KPI recommendations
+          </p>
+        </div>
+
+        <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
+          <Card className="flex-1 flex flex-col h-[580px] min-h-[480px] max-h-[700px]">
+            <CardHeader className="border-b flex-shrink-0">
+              <CardTitle className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-blue-600" />
+                Internal AI Chat
+              </CardTitle>
+            </CardHeader>
+            
+            <CardContent className="flex-1 overflow-hidden p-0">
+              <ScrollArea ref={scrollAreaRef} className="h-full p-4">
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                    <span className="ml-2 text-gray-600">Loading messages...</span>
+                  </div>
+                ) : chatMessages && chatMessages.length > 0 ? (
+                  chatMessages.map((chat) => (
+                    <div key={chat.id} className="space-y-4 mb-6">
                       {/* User Message */}
                       <div className="flex items-start gap-3">
                         <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -139,66 +235,48 @@ export default function SaultoChat() {
                         </div>
                       )}
                     </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Bot className="w-12 h-12 text-gray-300 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Start a conversation
-                  </h3>
-                  <p className="text-gray-500 max-w-md">
-                    Chat with our AI assistant about anything - from business questions to general topics, 
-                    coding help, creative writing, or casual conversation.
-                  </p>
-                  <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
-                    <div className="bg-gray-50 rounded-lg p-3 text-left">
-                      <p className="text-sm font-medium text-gray-900">Business & Analytics:</p>
-                      <ul className="text-sm text-gray-600 mt-1 space-y-1">
-                        <li>• "Analyze our quarterly performance"</li>
-                        <li>• "What are the key market trends?"</li>
-                        <li>• "Help create a financial forecast"</li>
-                      </ul>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-left">
-                      <p className="text-sm font-medium text-gray-900">General Topics:</p>
-                      <ul className="text-sm text-gray-600 mt-1 space-y-1">
-                        <li>• "Explain a technical concept"</li>
-                        <li>• "Help with creative writing"</li>
-                        <li>• "Answer general questions"</li>
-                      </ul>
-                    </div>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Bot className="w-12 h-12 text-gray-300 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      Start a conversation
+                    </h3>
+                    <p className="text-gray-500 max-w-md">
+                      Chat with our AI assistant about anything - from business questions to general topics, 
+                      coding help, creative writing, or casual conversation.
+                    </p>
                   </div>
-                </div>
-              )}
-            </ScrollArea>
+                )}
+                <div ref={messagesEndRef} />
+              </ScrollArea>
 
-            {/* Message Input */}
-            <div className="border-t p-4 flex-shrink-0">
-              <form onSubmit={handleSendMessage} className="flex gap-2">
-                <Input
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Ask me anything - business questions, general topics, coding help, or just chat..."
-                  className="flex-1"
-                  disabled={sendMessageMutation.isPending}
-                />
-                <Button 
-                  type="submit" 
-                  disabled={!message.trim() || sendMessageMutation.isPending}
-                  className="px-4"
-                >
-                  {sendMessageMutation.isPending ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </Button>
-              </form>
-            </div>
-          </CardContent>
-        </Card>
+              {/* Message Input */}
+              <div className="border-t p-4 flex-shrink-0">
+                <form onSubmit={handleSendMessage} className="flex gap-2">
+                  <Input
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Ask me anything - business questions, general topics, coding help, or just chat..."
+                    className="flex-1"
+                    disabled={sendMessageMutation.isPending}
+                  />
+                  <Button 
+                    type="submit" 
+                    disabled={!message.trim() || sendMessageMutation.isPending}
+                    className="px-4"
+                  >
+                    {sendMessageMutation.isPending ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </Button>
+                </form>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
