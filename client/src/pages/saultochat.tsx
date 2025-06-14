@@ -389,7 +389,7 @@ export default function SaultoChat() {
         </div>
 
         <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
-          <Card className="flex-1 flex flex-col h-[580px] min-h-[480px] max-h-[700px]">
+          <Card className="flex-1 flex flex-col min-h-[480px] max-h-[700px]">
             <CardHeader className="border-b flex-shrink-0">
               <CardTitle className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-blue-600" />
@@ -461,14 +461,16 @@ export default function SaultoChat() {
               </ScrollArea>
 
               {/* Message Input */}
-              <div className="border-t p-4 flex-shrink-0 space-y-3">
-                {/* File Upload Component */}
-                <FileUpload
-                  onFilesSelect={handleFilesSelect}
-                  selectedFiles={selectedFiles}
-                  onRemoveFile={handleRemoveFile}
-                  disabled={isStreaming}
-                />
+              <div className="border-t p-4 flex-shrink-0">
+                {/* File Upload Component - Constrained height */}
+                <div className="max-h-28 overflow-hidden mb-3">
+                  <FileUpload
+                    onFilesSelect={handleFilesSelect}
+                    selectedFiles={selectedFiles}
+                    onRemoveFile={handleRemoveFile}
+                    disabled={isStreaming}
+                  />
+                </div>
                 
                 <form onSubmit={handleSendMessage} className="flex gap-2">
                   <Input

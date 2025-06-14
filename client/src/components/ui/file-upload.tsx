@@ -1,5 +1,4 @@
-import React, { useRef, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import React, { useRef } from 'react';
 import { Paperclip, X, File, Image, FileText, Archive, Video, Music } from 'lucide-react';
 
 interface FileUploadProps {
@@ -85,33 +84,35 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
       {/* Selected Files Preview */}
       {selectedFiles.length > 0 && (
-        <div className="space-y-1 max-h-24 overflow-y-auto">
-          {selectedFiles.map((file, index) => (
-            <div
-              key={`${file.name}-${index}`}
-              className="flex items-center gap-2 p-2 bg-gray-50 rounded-md text-sm"
-            >
-              <div className="text-gray-500">
-                {getFileIcon(file)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="truncate font-medium text-gray-900">
-                  {file.name}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {formatFileSize(file.size)}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemoveFile(index)}
-                className="h-6 w-6 p-0 hover:bg-red-100 rounded flex items-center justify-center"
-                disabled={disabled}
+        <div className="max-h-20 overflow-y-auto border border-gray-200 rounded-md bg-gray-50 p-1">
+          <div className="space-y-1">
+            {selectedFiles.map((file, index) => (
+              <div
+                key={`${file.name}-${index}`}
+                className="flex items-center gap-2 p-1 bg-white rounded text-xs"
               >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
+                <div className="text-gray-500 flex-shrink-0">
+                  {getFileIcon(file)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-medium text-gray-900">
+                    {file.name}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {formatFileSize(file.size)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRemoveFile(index)}
+                  className="h-5 w-5 p-0 hover:bg-red-100 rounded flex items-center justify-center flex-shrink-0"
+                  disabled={disabled}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
