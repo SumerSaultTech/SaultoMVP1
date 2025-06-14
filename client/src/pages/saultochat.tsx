@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// Card components removed - using full page layout
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -388,17 +388,18 @@ export default function SaultoChat() {
           </p>
         </div>
 
-        <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
-          <Card className="flex-1 flex flex-col min-h-[650px] max-h-[750px]">
-            <CardHeader className="border-b flex-shrink-0">
-              <CardTitle className="flex items-center gap-2">
-                <Bot className="w-5 h-5 text-blue-600" />
-                Internal AI Chat
-              </CardTitle>
-            </CardHeader>
-            
-            <CardContent className="flex-1 overflow-hidden p-0">
-              <ScrollArea ref={scrollAreaRef} className="h-full p-4">
+        <div className="flex-1 flex flex-col w-full min-h-0">
+          {/* Chat Header */}
+          <div className="border-b border-gray-200 bg-white px-6 py-4">
+            <div className="flex items-center gap-2">
+              <Bot className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Internal AI Chat</h2>
+            </div>
+          </div>
+          
+          {/* Chat Messages Area */}
+          <div className="flex-1 overflow-hidden bg-white">
+            <ScrollArea ref={scrollAreaRef} className="h-full p-6">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
@@ -459,43 +460,42 @@ export default function SaultoChat() {
                 )}
                 <div ref={messagesEndRef} />
               </ScrollArea>
+            </div>
 
-              {/* Message Input */}
-              <div className="border-t p-4 flex-shrink-0">
-                {/* File Upload Component - Constrained height */}
-                <div className="max-h-28 overflow-hidden mb-3">
-                  <FileUpload
-                    onFilesSelect={handleFilesSelect}
-                    selectedFiles={selectedFiles}
-                    onRemoveFile={handleRemoveFile}
-                    disabled={isStreaming}
-                  />
-                </div>
-                
-                <form onSubmit={handleSendMessage} className="flex gap-2">
-                  <Input
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Ask me anything - business questions, general topics, coding help, or just chat..."
-                    className="flex-1"
-                    disabled={isStreaming}
-                  />
-                  <Button 
-                    type="submit" 
-                    disabled={(!message.trim() && selectedFiles.length === 0) || isStreaming}
-                    className="px-4"
-                  >
-                    {isStreaming ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </Button>
-                </form>
+            {/* Message Input */}
+            <div className="border-t border-gray-200 bg-white p-6 flex-shrink-0">
+              {/* File Upload Component - Constrained height */}
+              <div className="max-h-28 overflow-hidden mb-3">
+                <FileUpload
+                  onFilesSelect={handleFilesSelect}
+                  selectedFiles={selectedFiles}
+                  onRemoveFile={handleRemoveFile}
+                  disabled={isStreaming}
+                />
               </div>
-            </CardContent>
-          </Card>
-        </div>
+              
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <Input
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Ask me anything - business questions, general topics, coding help, or just chat..."
+                  className="flex-1"
+                  disabled={isStreaming}
+                />
+                <Button 
+                  type="submit" 
+                  disabled={(!message.trim() && selectedFiles.length === 0) || isStreaming}
+                  className="px-4"
+                >
+                  {isStreaming ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </Button>
+              </form>
+            </div>
+          </div>
       </div>
     </div>
   );
