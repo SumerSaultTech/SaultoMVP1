@@ -12,6 +12,9 @@ import { snowflakeCalculatorService } from "./services/snowflake-calculator";
 import { snowflakePythonService } from "./services/snowflake-python";
 import { azureOpenAIService } from "./services/azure-openai";
 import { spawn } from 'child_process';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -20,6 +23,70 @@ import {
   insertPipelineActivitySchema,
 } from "@shared/schema";
 import { z } from "zod";
+
+// File upload configuration
+const UPLOAD_FOLDER = 'uploads';
+const ALLOWED_EXTENSIONS = new Set([
+  'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx', 
+  'ppt', 'pptx', 'csv', 'json', 'zip', 'py', 'js', 'html', 'css', 'c', 
+  'cpp', 'h', 'java', 'rb', 'php', 'xml', 'md'
+]);
+
+// Create uploads directory if it doesn't exist
+if (!fs.existsSync(UPLOAD_FOLDER)) {
+  fs.mkdirSync(UPLOAD_FOLDER, { recursive: true });
+}
+
+// Multer configuration
+const multerStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_FOLDER);
+  },
+  filename: (req, file, cb) => {
+    // Create unique filename with timestamp prefix
+    const timestamp = Date.now();
+    const originalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${timestamp}_${originalName}`);
+  }
+});
+
+const upload = multer({
+  storage: multerStorage,
+  limits: {
+    fileSize: 16 * 1024 * 1024, // 16MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().slice(1);
+    if (ALLOWED_EXTENSIONS.has(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type .${ext} not allowed`));
+    }
+  }
+});
+
+// File content reading helper function
+const readFileContent = (filename: string): string => {
+  try {
+    const filePath = path.join(UPLOAD_FOLDER, filename);
+    if (!fs.existsSync(filePath)) {
+      return `[File ${filename} not found]`;
+    }
+    
+    const ext = path.extname(filename).toLowerCase().slice(1);
+    const textExtensions = ['txt', 'md', 'csv', 'json', 'py', 'js', 'html', 'css', 'c', 'cpp', 'h', 'xml'];
+    
+    if (textExtensions.includes(ext)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      return `\n\n--- File: ${filename} ---\n${content}\n--- End of File ---\n`;
+    } else {
+      return `\n\n[File attached: ${filename} (${ext.toUpperCase()} file)]`;
+    }
+  } catch (error) {
+    console.error(`Error reading file ${filename}:`, error);
+    return `[Error reading file ${filename}]`;
+  }
+};
 
 // Global company storage to persist across hot reloads
 const companiesArray: any[] = [
@@ -803,13 +870,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Assistant Chat (SaultoChat)
   app.post("/api/ai-assistant/chat", async (req, res) => {
     try {
-      const { message } = req.body;
+      const { message, files = [] } = req.body;
       
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
       }
 
       console.log("📤 SaultoChat message received:", message.substring(0, 100));
+      console.log("📎 Files attached:", files.length);
+
+      // Process attached files
+      let messageWithFiles = message;
+      if (files.length > 0) {
+        for (const filename of files) {
+          const fileContent = readFileContent(filename);
+          messageWithFiles += fileContent;
+        }
+      }
 
       // Try to get conversation history from storage
       let conversationHistory: any[] = [];
@@ -827,7 +904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get AI response using Azure OpenAI service
-      const aiResponse = await azureOpenAIService.getChatResponse(message);
+      const aiResponse = await azureOpenAIService.getChatResponse(messageWithFiles);
       
       // Try to save chat message to storage
       try {
@@ -868,13 +945,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Assistant Chat Streaming (SaultoChat with thinking out loud)
   app.post("/api/ai-assistant/chat/stream", async (req, res) => {
     try {
-      const { message } = req.body;
+      const { message, files = [] } = req.body;
       
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
       }
 
       console.log("📤 SaultoChat streaming message received:", message.substring(0, 100));
+      console.log("📎 Files attached:", files.length);
+
+      // Process attached files
+      let messageWithFiles = message;
+      if (files.length > 0) {
+        for (const filename of files) {
+          const fileContent = readFileContent(filename);
+          messageWithFiles += fileContent;
+        }
+      }
 
       // Set up Server-Sent Events headers
       res.writeHead(200, {
@@ -907,7 +994,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         // Get streaming response from Azure OpenAI
-        const stream = await azureOpenAIService.getChatResponseStreaming(message, conversationHistory);
+        const stream = await azureOpenAIService.getChatResponseStreaming(messageWithFiles, conversationHistory);
         
         // Process streaming response
         for await (const chunk of stream) {
@@ -945,6 +1032,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: `Failed to start streaming chat: ${error.message}`,
         details: error.stack
       });
+    }
+  });
+
+  // File Upload Endpoint
+  app.post("/api/upload", upload.single('file'), (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      console.log(`📎 File uploaded: ${req.file.originalname} -> ${req.file.filename}`);
+      
+      res.json({
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      });
+    } catch (error) {
+      console.error("❌ File upload error:", error);
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
+
+  // File Download Endpoint
+  app.get("/api/uploads/:filename", (req, res) => {
+    try {
+      const filename = req.params.filename;
+      const filePath = path.join(UPLOAD_FOLDER, filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      
+      res.sendFile(path.resolve(filePath));
+    } catch (error) {
+      console.error("❌ File download error:", error);
+      res.status(500).json({ error: "Failed to download file" });
     }
   });
 

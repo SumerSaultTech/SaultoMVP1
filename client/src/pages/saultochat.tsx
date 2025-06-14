@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { FileUpload } from "@/components/ui/file-upload";
+import { FileDisplay } from "@/components/ui/file-display";
 import { Send, Bot, User, MessageCircle, Plus, Clock, Loader2, ChevronLeft, ChevronRight, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,6 +17,7 @@ interface ChatMessage {
   response?: string;
   timestamp: string;
   streaming?: boolean;
+  files?: string[];
 }
 
 interface ChatSession {
@@ -32,6 +35,7 @@ export default function SaultoChat() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -45,13 +49,66 @@ export default function SaultoChat() {
   // Simple combination: show DB messages + any active streaming message
   const allMessages = [...(chatMessages || []), ...localMessages];
 
+  // File handling functions
+  const handleFilesSelect = (files: File[]) => {
+    setSelectedFiles(files);
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadFiles = async (files: File[]): Promise<string[]> => {
+    const uploadedFiles: string[] = [];
+    
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          uploadedFiles.push(result.filename);
+        } else {
+          throw new Error(`Failed to upload ${file.name}`);
+        }
+      } catch (error) {
+        console.error(`Error uploading ${file.name}:`, error);
+        toast({
+          title: "Upload Error",
+          description: `Failed to upload ${file.name}`,
+          variant: "destructive",
+        });
+      }
+    }
+    
+    return uploadedFiles;
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim() || isStreaming) return;
+    if ((!message.trim() && selectedFiles.length === 0) || isStreaming) return;
 
     const messageText = message.trim();
+    const filesToUpload = [...selectedFiles];
     setMessage("");
+    setSelectedFiles([]);
     setIsStreaming(true);
+
+    // Upload files first if any
+    let uploadedFileNames: string[] = [];
+    if (filesToUpload.length > 0) {
+      uploadedFileNames = await uploadFiles(filesToUpload);
+      if (uploadedFileNames.length !== filesToUpload.length) {
+        setIsStreaming(false);
+        return; // Stop if not all files uploaded successfully
+      }
+    }
 
     // Create a temporary streaming message for visual effect only
     const tempStreamingMessage: ChatMessage = {
@@ -61,7 +118,8 @@ export default function SaultoChat() {
       message: messageText,
       response: "",
       timestamp: new Date().toISOString(),
-      streaming: true
+      streaming: true,
+      files: filesToUpload.map(f => f.name) // Show original filenames during streaming
     };
 
     setLocalMessages([tempStreamingMessage]);
@@ -71,7 +129,10 @@ export default function SaultoChat() {
       const streamResponse = await fetch("/api/ai-assistant/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: messageText }),
+        body: JSON.stringify({ 
+          message: messageText,
+          files: uploadedFileNames 
+        }),
       });
 
       if (streamResponse.ok) {
@@ -122,7 +183,10 @@ export default function SaultoChat() {
         await fetch("/api/ai-assistant/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: messageText }),
+          body: JSON.stringify({ 
+            message: messageText,
+            files: uploadedFileNames 
+          }),
         });
       }
 
@@ -142,7 +206,10 @@ export default function SaultoChat() {
         await fetch("/api/ai-assistant/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: messageText }),
+          body: JSON.stringify({ 
+            message: messageText,
+            files: uploadedFileNames 
+          }),
         });
         
         setLocalMessages([]);
@@ -348,6 +415,9 @@ export default function SaultoChat() {
                         <div className="flex-1">
                           <div className="bg-gray-100 rounded-lg p-3">
                             <p className="text-gray-900">{chat.message}</p>
+                            {chat.files && chat.files.length > 0 && (
+                              <FileDisplay filenames={chat.files} />
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">
                             {formatTimestamp(chat.timestamp)}
@@ -391,7 +461,15 @@ export default function SaultoChat() {
               </ScrollArea>
 
               {/* Message Input */}
-              <div className="border-t p-4 flex-shrink-0">
+              <div className="border-t p-4 flex-shrink-0 space-y-3">
+                {/* File Upload Component */}
+                <FileUpload
+                  onFilesSelect={handleFilesSelect}
+                  selectedFiles={selectedFiles}
+                  onRemoveFile={handleRemoveFile}
+                  disabled={isStreaming}
+                />
+                
                 <form onSubmit={handleSendMessage} className="flex gap-2">
                   <Input
                     value={message}
@@ -402,7 +480,7 @@ export default function SaultoChat() {
                   />
                   <Button 
                     type="submit" 
-                    disabled={!message.trim() || isStreaming}
+                    disabled={(!message.trim() && selectedFiles.length === 0) || isStreaming}
                     className="px-4"
                   >
                     {isStreaming ? (
