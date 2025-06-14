@@ -6,8 +6,13 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileUpload } from "@/components/ui/file-upload";
 import { FileDisplay } from "@/components/ui/file-display";
-import { Send, Bot, User, MessageCircle, Plus, Clock, Loader2, ChevronLeft, ChevronRight, History } from "lucide-react";
+import { Send, Bot, User, MessageCircle, Plus, Clock, Loader2, ChevronLeft, ChevronRight, History, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
+import 'highlight.js/styles/github.css';
 
 interface ChatMessage {
   id: number;
@@ -36,6 +41,7 @@ export default function SaultoChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -274,6 +280,24 @@ export default function SaultoChat() {
     queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
   };
 
+  const handleCopyMessage = async (messageId: number, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedMessageId(messageId);
+      toast({
+        title: "Copied!",
+        description: "Message copied to clipboard",
+      });
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      toast({
+        title: "Copy failed",
+        description: "Failed to copy message to clipboard",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="flex-1 flex bg-gray-50 min-h-0 max-h-screen overflow-hidden">
       {/* Chat History Sidebar */}
@@ -408,38 +432,146 @@ export default function SaultoChat() {
                 ) : allMessages && allMessages.length > 0 ? (
                   allMessages.map((chat) => (
                     <div key={chat.id} className="space-y-4 mb-6">
-                      {/* User Message */}
-                      <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <User className="w-4 h-4 text-gray-600" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="bg-gray-100 rounded-lg p-3">
-                            <p className="text-gray-900">{chat.message}</p>
+                      {/* User Message - Right Side */}
+                      <div className="flex items-start gap-3 justify-end">
+                        <div className="flex-1 max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl">
+                          <div className="bg-blue-600 text-white rounded-lg p-3 ml-auto relative group">
+                            <p className="text-white">{chat.message}</p>
                             {chat.files && chat.files.length > 0 && (
-                              <FileDisplay filenames={chat.files} />
+                              <FileDisplay filenames={chat.files} variant="user" />
                             )}
+                            <button
+                              onClick={() => handleCopyMessage(chat.id, chat.message)}
+                              className="absolute -top-2 -left-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-1.5 shadow-md hover:bg-gray-100"
+                              title="Copy message"
+                            >
+                              {copiedMessageId === chat.id ? (
+                                <Check className="w-3 h-3 text-green-600" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-gray-600" />
+                              )}
+                            </button>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-500 mt-1 text-right">
                             {formatTimestamp(chat.timestamp)}
                           </p>
                         </div>
+                        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                          <User className="w-4 h-4 text-white" />
+                        </div>
                       </div>
 
-                      {/* AI Response */}
+                      {/* AI Response - Left Side */}
                       {chat.response !== undefined && (
                         <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Bot className="w-4 h-4 text-blue-600" />
+                          <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <Bot className="w-4 h-4 text-gray-600" />
                           </div>
-                          <div className="flex-1">
-                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                              <p className="text-gray-900 whitespace-pre-wrap">
-                                {chat.response}
+                          <div className="flex-1 max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl">
+                            <div className="bg-gray-100 rounded-lg p-4 relative group">
+                              <div className="prose prose-sm max-w-none prose-gray">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeHighlight, rehypeRaw]}
+                                  components={{
+                                    // Custom styling for code blocks
+                                    pre: ({ children, ...props }) => (
+                                      <pre 
+                                        {...props} 
+                                        className="bg-gray-900 text-white p-3 rounded-md overflow-x-auto text-sm border"
+                                      >
+                                        {children}
+                                      </pre>
+                                    ),
+                                    // Custom styling for inline code
+                                    code: ({ children, ...props }: any) => (
+                                      !props.className ? (
+                                        <code 
+                                          {...props} 
+                                          className="bg-gray-200 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono"
+                                        >
+                                          {children}
+                                        </code>
+                                      ) : (
+                                        <code {...props}>{children}</code>
+                                      )
+                                    ),
+                                    // Custom styling for headings
+                                    h1: ({ children, ...props }) => (
+                                      <h1 {...props} className="text-lg font-bold text-gray-900 mb-2 mt-4 first:mt-0">
+                                        {children}
+                                      </h1>
+                                    ),
+                                    h2: ({ children, ...props }) => (
+                                      <h2 {...props} className="text-base font-bold text-gray-900 mb-2 mt-3 first:mt-0">
+                                        {children}
+                                      </h2>
+                                    ),
+                                    h3: ({ children, ...props }) => (
+                                      <h3 {...props} className="text-sm font-bold text-gray-900 mb-1 mt-2 first:mt-0">
+                                        {children}
+                                      </h3>
+                                    ),
+                                    // Custom styling for paragraphs
+                                    p: ({ children, ...props }) => (
+                                      <p {...props} className="text-gray-900 mb-2 last:mb-0 leading-relaxed">
+                                        {children}
+                                      </p>
+                                    ),
+                                    // Custom styling for lists
+                                    ul: ({ children, ...props }) => (
+                                      <ul {...props} className="list-disc list-inside mb-2 text-gray-900 space-y-1">
+                                        {children}
+                                      </ul>
+                                    ),
+                                    ol: ({ children, ...props }) => (
+                                      <ol {...props} className="list-decimal list-inside mb-2 text-gray-900 space-y-1">
+                                        {children}
+                                      </ol>
+                                    ),
+                                    // Custom styling for blockquotes
+                                    blockquote: ({ children, ...props }) => (
+                                      <blockquote {...props} className="border-l-4 border-blue-500 pl-4 italic text-gray-700 mb-2">
+                                        {children}
+                                      </blockquote>
+                                    ),
+                                    // Custom styling for tables
+                                    table: ({ children, ...props }) => (
+                                      <div className="overflow-x-auto mb-2">
+                                        <table {...props} className="min-w-full divide-y divide-gray-200 border border-gray-300 text-sm">
+                                          {children}
+                                        </table>
+                                      </div>
+                                    ),
+                                    th: ({ children, ...props }) => (
+                                      <th {...props} className="px-3 py-2 bg-gray-50 text-left font-medium text-gray-900 border-b border-gray-300">
+                                        {children}
+                                      </th>
+                                    ),
+                                    td: ({ children, ...props }) => (
+                                      <td {...props} className="px-3 py-2 text-gray-900 border-b border-gray-200">
+                                        {children}
+                                      </td>
+                                    ),
+                                  }}
+                                >
+                                  {chat.response}
+                                </ReactMarkdown>
                                 {chat.streaming && (
                                   <span className="inline-block ml-1 w-2 h-5 bg-blue-600 animate-pulse"></span>
                                 )}
-                              </p>
+                              </div>
+                              <button
+                                onClick={() => handleCopyMessage(chat.id + 1000, chat.response!)}
+                                className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-1.5 shadow-md hover:bg-gray-100"
+                                title="Copy response"
+                              >
+                                {copiedMessageId === chat.id + 1000 ? (
+                                  <Check className="w-3 h-3 text-green-600" />
+                                ) : (
+                                  <Copy className="w-3 h-3 text-gray-600" />
+                                )}
+                              </button>
                             </div>
                           </div>
                         </div>
