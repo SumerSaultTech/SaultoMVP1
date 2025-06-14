@@ -42,6 +42,8 @@ export default function SaultoChat() {
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  // Store messages for each session separately
+  const [sessionMessages, setSessionMessages] = useState<Record<string, ChatMessage[]>>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -52,8 +54,10 @@ export default function SaultoChat() {
     refetchInterval: 5000, // Back to normal refresh
   });
 
-  // Simple combination: show DB messages + any active streaming message
-  const allMessages = [...(chatMessages || []), ...localMessages];
+  // Get messages for current session only
+  const currentSessionMessages = sessionMessages[currentSessionId] || [];
+  // Simple combination: show session messages + any active streaming message
+  const allMessages = [...currentSessionMessages, ...localMessages];
 
   // File handling functions
   const handleFilesSelect = (files: File[]) => {
@@ -196,10 +200,30 @@ export default function SaultoChat() {
         });
       }
 
-      // Clear temp message and refresh
+      // Clear temp message and add the final message to current session
       setTimeout(() => {
         setLocalMessages([]);
-        queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        
+        // For new sessions, we need to manually add the message since database won't have it
+        if (currentSessionId !== "current") {
+          const finalMessage: ChatMessage = {
+            ...tempStreamingMessage,
+            response: aiResponseText,
+            streaming: false,
+            files: uploadedFileNames // Use uploaded filenames for storage
+          };
+          
+          setSessionMessages(prev => ({
+            ...prev,
+            [currentSessionId]: [...(prev[currentSessionId] || []), finalMessage]
+          }));
+          
+          queryClient.setQueryData(["/api/chat-messages"], [...(sessionMessages[currentSessionId] || []), finalMessage]);
+        } else {
+          // For original session, refresh from database
+          queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        }
+        
         // Auto-scroll after new message is added
         setTimeout(() => scrollToBottom(), 100);
       }, 500);
@@ -219,7 +243,14 @@ export default function SaultoChat() {
         });
         
         setLocalMessages([]);
-        queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        
+        // Handle session-specific message storage for fallback too
+        if (currentSessionId !== "current") {
+          queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        }
+        
         setTimeout(() => scrollToBottom(), 100);
       } catch (fallbackError) {
         toast({
@@ -258,6 +289,16 @@ export default function SaultoChat() {
       setChatSessions([defaultSession]);
     }
   }, [chatSessions.length, currentSessionId, isLoading]);
+
+  // Update session messages when database messages change
+  useEffect(() => {
+    if (chatMessages && chatMessages.length > 0) {
+      setSessionMessages(prev => ({
+        ...prev,
+        [currentSessionId]: chatMessages
+      }));
+    }
+  }, [chatMessages, currentSessionId]);
 
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
@@ -307,6 +348,14 @@ export default function SaultoChat() {
     setChatSessions(prevSessions => [newSession, ...prevSessions]);
     setCurrentSessionId(newSessionId);
     setLocalMessages([]);
+    
+    // Initialize empty messages for the new session
+    setSessionMessages(prev => ({
+      ...prev,
+      [newSessionId]: []
+    }));
+    
+    // Clear the database query cache so new messages start fresh
     queryClient.setQueryData(["/api/chat-messages"], []);
     
     toast({
@@ -317,8 +366,16 @@ export default function SaultoChat() {
 
   const switchToSession = (sessionId: string) => {
     setCurrentSessionId(sessionId);
-    // In a real implementation, this would load messages for the specific session
-    queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+    setLocalMessages([]); // Clear any streaming messages
+    
+    // If switching to the original session, refresh from database
+    if (sessionId === "current") {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+    } else {
+      // For new sessions, use the stored session messages
+      const sessionMsgs = sessionMessages[sessionId] || [];
+      queryClient.setQueryData(["/api/chat-messages"], sessionMsgs);
+    }
   };
 
   const handleCopyMessage = async (messageId: number, text: string) => {
