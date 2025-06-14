@@ -51,11 +51,15 @@ export default function SaultoChat() {
 
   const { data: chatMessages, isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat-messages"],
-    refetchInterval: 5000, // Back to normal refresh
+    refetchInterval: currentSessionId === "current" ? 5000 : false, // Only refetch for original session
+    enabled: currentSessionId === "current", // Only enable query for original session
   });
 
   // Get messages for current session only
-  const currentSessionMessages = sessionMessages[currentSessionId] || [];
+  const currentSessionMessages = currentSessionId === "current" 
+    ? (chatMessages || [])  // Use database messages for original session
+    : (sessionMessages[currentSessionId] || []); // Use stored messages for new sessions
+  
   // Simple combination: show session messages + any active streaming message
   const allMessages = [...currentSessionMessages, ...localMessages];
 
@@ -278,7 +282,7 @@ export default function SaultoChat() {
 
   // Initialize with a default session if no sessions exist
   useEffect(() => {
-    if (chatSessions.length === 0 && !isLoading) {
+    if (chatSessions.length === 0 && (currentSessionId === "current" ? !isLoading : true)) {
       const defaultSession: ChatSession = {
         id: currentSessionId,
         title: "Chat Session",
@@ -290,9 +294,9 @@ export default function SaultoChat() {
     }
   }, [chatSessions.length, currentSessionId, isLoading]);
 
-  // Update session messages when database messages change
+  // Update session messages when database messages change - but only for the original session
   useEffect(() => {
-    if (chatMessages && chatMessages.length > 0) {
+    if (chatMessages && chatMessages.length > 0 && currentSessionId === "current") {
       setSessionMessages(prev => ({
         ...prev,
         [currentSessionId]: chatMessages
