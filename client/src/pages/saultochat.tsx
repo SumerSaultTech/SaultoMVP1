@@ -39,11 +39,28 @@ export default function SaultoChat() {
 
   const { data: chatMessages, isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat-messages"],
-    refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
+    refetchInterval: localMessages.length > 0 ? false : 5000, // Disable auto-refresh during streaming
   });
 
-  // Combine database messages with local streaming messages
-  const allMessages = [...(chatMessages || []), ...localMessages];
+  // Combine database messages with local streaming messages, avoiding duplicates
+  const allMessages = (() => {
+    const dbMessages = chatMessages || [];
+    const local = localMessages;
+    
+    console.log("📊 Message state:", { 
+      dbCount: dbMessages.length, 
+      localCount: local.length,
+      isStreaming 
+    });
+    
+    // If we have local messages, show them. Otherwise show DB messages
+    if (local.length > 0) {
+      // Combine, but prefer local messages for any that are currently streaming
+      return [...dbMessages, ...local];
+    }
+    
+    return dbMessages;
+  })();
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,13 +154,15 @@ export default function SaultoChat() {
         }
       }
 
-      // Refresh main messages after streaming completes
-      queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+      // Refresh main messages after streaming completes and clear local messages
+      console.log("🔄 Refreshing chat messages from database...");
+      await queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
       
       // Clear local messages since they're now in the database
       setTimeout(() => {
+        console.log("🧹 Clearing local streaming messages...");
         setLocalMessages([]);
-      }, 1000);
+      }, 1500);
 
     } catch (error: any) {
       console.error("Streaming error:", error);
