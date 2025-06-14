@@ -130,6 +130,8 @@ export default function SaultoChat() {
       setTimeout(() => {
         setLocalMessages([]);
         queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        // Auto-scroll after new message is added
+        setTimeout(() => scrollToBottom(), 100);
       }, 500);
 
     } catch (error: any) {
@@ -145,6 +147,7 @@ export default function SaultoChat() {
         
         setLocalMessages([]);
         queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+        setTimeout(() => scrollToBottom(), 100);
       } catch (fallbackError) {
         toast({
           title: "Error",
@@ -162,9 +165,12 @@ export default function SaultoChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Only auto-scroll for database messages, not streaming messages
   useEffect(() => {
-    scrollToBottom();
-  }, [allMessages]);
+    if (!isStreaming && localMessages.length === 0) {
+      scrollToBottom();
+    }
+  }, [chatMessages, isStreaming, localMessages.length]);
 
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
