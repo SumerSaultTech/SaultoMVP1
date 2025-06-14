@@ -10,7 +10,11 @@ import { snowflakeCortexService } from "./services/snowflake-cortex";
 import { snowflakeMetricsService } from "./services/snowflake-metrics";
 import { snowflakeCalculatorService } from "./services/snowflake-calculator";
 import { snowflakePythonService } from "./services/snowflake-python";
+import { azureOpenAIService } from "./services/azure-openai";
 import { spawn } from 'child_process';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
@@ -19,6 +23,70 @@ import {
   insertPipelineActivitySchema,
 } from "@shared/schema";
 import { z } from "zod";
+
+// File upload configuration
+const UPLOAD_FOLDER = 'uploads';
+const ALLOWED_EXTENSIONS = new Set([
+  'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx', 
+  'ppt', 'pptx', 'csv', 'json', 'zip', 'py', 'js', 'html', 'css', 'c', 
+  'cpp', 'h', 'java', 'rb', 'php', 'xml', 'md'
+]);
+
+// Create uploads directory if it doesn't exist
+if (!fs.existsSync(UPLOAD_FOLDER)) {
+  fs.mkdirSync(UPLOAD_FOLDER, { recursive: true });
+}
+
+// Multer configuration
+const multerStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_FOLDER);
+  },
+  filename: (req, file, cb) => {
+    // Create unique filename with timestamp prefix
+    const timestamp = Date.now();
+    const originalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${timestamp}_${originalName}`);
+  }
+});
+
+const upload = multer({
+  storage: multerStorage,
+  limits: {
+    fileSize: 16 * 1024 * 1024, // 16MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().slice(1);
+    if (ALLOWED_EXTENSIONS.has(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type .${ext} not allowed`));
+    }
+  }
+});
+
+// File content reading helper function
+const readFileContent = (filename: string): string => {
+  try {
+    const filePath = path.join(UPLOAD_FOLDER, filename);
+    if (!fs.existsSync(filePath)) {
+      return `[File ${filename} not found]`;
+    }
+    
+    const ext = path.extname(filename).toLowerCase().slice(1);
+    const textExtensions = ['txt', 'md', 'csv', 'json', 'py', 'js', 'html', 'css', 'c', 'cpp', 'h', 'xml'];
+    
+    if (textExtensions.includes(ext)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      return `\n\n--- File: ${filename} ---\n${content}\n--- End of File ---\n`;
+    } else {
+      return `\n\n[File attached: ${filename} (${ext.toUpperCase()} file)]`;
+    }
+  } catch (error) {
+    console.error(`Error reading file ${filename}:`, error);
+    return `[Error reading file ${filename}]`;
+  }
+};
 
 // Global company storage to persist across hot reloads
 const companiesArray: any[] = [
@@ -719,9 +787,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chat Messages
   app.get("/api/chat-messages", async (req, res) => {
     try {
-      const messages = await storage.getChatMessages();
-      res.json(messages);
+      const companyId = 1748544793859; // MIAS_DATA company ID
+      const allMessages = await storage.getChatMessages(companyId);
+      
+      console.log(`📥 Raw messages from DB: ${allMessages.length}`);
+      
+      // Filter and group messages for this company
+      const companyMessages = allMessages.filter(msg => {
+        const metadata = msg.metadata as any;
+        return metadata?.companyId === companyId;
+      });
+      
+      console.log(`🏢 Company messages after filter: ${companyMessages.length}`);
+      
+      // Group consecutive user-assistant pairs
+      const transformedMessages = [];
+      for (let i = 0; i < companyMessages.length; i++) {
+        const msg = companyMessages[i];
+        
+        if (msg.role === 'user') {
+          // Look for the next assistant message
+          const assistantMsg = companyMessages[i + 1];
+          
+          if (assistantMsg && assistantMsg.role === 'assistant') {
+            transformedMessages.push({
+              id: transformedMessages.length + 1,
+              companyId: companyId,
+              userId: (msg.metadata as any)?.userId || 1,
+              message: msg.content,
+              response: assistantMsg.content,
+              timestamp: msg.timestamp
+            });
+            i++; // Skip the assistant message since we've processed it
+          } else {
+            transformedMessages.push({
+              id: transformedMessages.length + 1,
+              companyId: companyId,
+              userId: (msg.metadata as any)?.userId || 1,
+              message: msg.content,
+              response: null,
+              timestamp: msg.timestamp
+            });
+          }
+        }
+      }
+      
+      // Sort by timestamp (oldest first)
+      transformedMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      
+      console.log(`✅ Transformed messages: ${transformedMessages.length}`);
+      
+      res.json(transformedMessages);
     } catch (error) {
+      console.error("Error fetching chat messages:", error);
       res.status(500).json({ message: "Failed to get chat messages" });
     }
   });
@@ -746,6 +864,212 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ message: "Failed to process chat message" });
       }
+    }
+  });
+
+  // AI Assistant Chat (SaultoChat)
+  app.post("/api/ai-assistant/chat", async (req, res) => {
+    try {
+      const { message, files = [] } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      console.log("📤 SaultoChat message received:", message.substring(0, 100));
+      console.log("📎 Files attached:", files.length);
+
+      // Process attached files
+      let messageWithFiles = message;
+      if (files.length > 0) {
+        for (const filename of files) {
+          const fileContent = readFileContent(filename);
+          messageWithFiles += fileContent;
+        }
+      }
+
+      // Try to get conversation history from storage
+      let conversationHistory: any[] = [];
+      try {
+        const companyId = 1748544793859; // MIAS_DATA company ID
+        const recentMessages = await storage.getChatMessages(companyId);
+        
+        // Convert to format expected by AI service
+        conversationHistory = recentMessages.slice(-10).map((msg: any) => ({
+          role: msg.role || (msg.message ? "user" : "assistant"),
+          content: msg.message || msg.response || msg.content
+        }));
+      } catch (storageError) {
+        console.warn("Could not fetch conversation history:", storageError);
+      }
+
+      // Get AI response using Azure OpenAI service
+      const aiResponse = await azureOpenAIService.getChatResponse(messageWithFiles);
+      
+      // Try to save chat message to storage
+      try {
+        // Save user message
+        await storage.createChatMessage({
+          role: "user",
+          content: message,
+          metadata: { companyId: 1748544793859, userId: 1 }
+        });
+        
+        // Save AI response
+        await storage.createChatMessage({
+          role: "assistant", 
+          content: aiResponse.content,
+          metadata: { companyId: 1748544793859, userId: 1, source: aiResponse.metadata?.source || "openai" }
+        });
+      } catch (storageError) {
+        console.warn("Could not save chat message to storage:", storageError);
+      }
+
+      console.log("✅ SaultoChat response generated");
+      
+      res.json({
+        response: aiResponse.content,
+        timestamp: new Date().toISOString(),
+        source: aiResponse.metadata?.source || "openai"
+      });
+
+    } catch (error: any) {
+      console.error("❌ SaultoChat error:", error);
+      res.status(500).json({ 
+        error: `Failed to get chatbot response: ${error.message}`,
+        details: error.stack
+      });
+    }
+  });
+
+  // AI Assistant Chat Streaming (SaultoChat with thinking out loud)
+  app.post("/api/ai-assistant/chat/stream", async (req, res) => {
+    try {
+      const { message, files = [] } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      console.log("📤 SaultoChat streaming message received:", message.substring(0, 100));
+      console.log("📎 Files attached:", files.length);
+
+      // Process attached files
+      let messageWithFiles = message;
+      if (files.length > 0) {
+        for (const filename of files) {
+          const fileContent = readFileContent(filename);
+          messageWithFiles += fileContent;
+        }
+      }
+
+      // Set up Server-Sent Events headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Cache-Control'
+      });
+
+      // Get conversation history from storage
+      let conversationHistory: any[] = [];
+      try {
+        const companyId = 1748544793859; // MIAS_DATA company ID
+        const recentMessages = await storage.getChatMessages(companyId);
+        
+        // Convert to format expected by AI service
+        conversationHistory = recentMessages.slice(-10).map((msg: any) => ({
+          role: msg.role || (msg.message ? "user" : "assistant"),
+          content: msg.message || msg.response || msg.content
+        }));
+      } catch (storageError) {
+        console.warn("Could not fetch conversation history:", storageError);
+      }
+
+      // Don't save to database here - let the original system handle persistence
+      // This endpoint is only for streaming visual effect
+
+      let aiResponseText = "";
+
+      try {
+        // Get streaming response from Azure OpenAI
+        const stream = await azureOpenAIService.getChatResponseStreaming(messageWithFiles, conversationHistory);
+        
+        // Process streaming response
+        for await (const chunk of stream) {
+          if (chunk.choices && chunk.choices.length > 0) {
+            const delta = chunk.choices[0].delta;
+            if (delta && delta.content) {
+              const content = delta.content;
+              aiResponseText += content;
+              
+              // Send each token as Server-Sent Event
+              res.write(`data: ${JSON.stringify({ content })}\n\n`);
+            }
+          }
+        }
+        
+        // Send completion signal
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        
+        // Don't save here - frontend will call the original /api/ai-assistant/chat endpoint
+
+        console.log("✅ SaultoChat streaming response completed");
+        
+      } catch (error: any) {
+        console.error("❌ Streaming error:", error);
+        res.write(`data: ${JSON.stringify({ 
+          error: `Failed to get streaming response: ${error.message}` 
+        })}\n\n`);
+      }
+      
+      res.end();
+
+    } catch (error: any) {
+      console.error("❌ SaultoChat streaming error:", error);
+      res.status(500).json({ 
+        error: `Failed to start streaming chat: ${error.message}`,
+        details: error.stack
+      });
+    }
+  });
+
+  // File Upload Endpoint
+  app.post("/api/upload", upload.single('file'), (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      console.log(`📎 File uploaded: ${req.file.originalname} -> ${req.file.filename}`);
+      
+      res.json({
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      });
+    } catch (error) {
+      console.error("❌ File upload error:", error);
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
+
+  // File Download Endpoint
+  app.get("/api/uploads/:filename", (req, res) => {
+    try {
+      const filename = req.params.filename;
+      const filePath = path.join(UPLOAD_FOLDER, filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      
+      res.sendFile(path.resolve(filePath));
+    } catch (error) {
+      console.error("❌ File download error:", error);
+      res.status(500).json({ error: "Failed to download file" });
     }
   });
 
@@ -1050,6 +1374,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("SQL execution error:", error);
       res.status(500).json({ error: `Failed to execute SQL: ${error.message}` });
+    }
+  });
+
+  // SaultoChat integration routes - using integrated Azure OpenAI
+  app.post("/api/ai-assistant/chat", async (req: any, res: any) => {
+    try {
+      const { message } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      // Get recent conversation history for context
+      try {
+        // Use default company ID (1) if the storage interface requires it
+        const recentMessages = await (storage as any).getChatMessages?.() || await (storage as any).getChatMessages?.(1) || [];
+        const conversationHistory = recentMessages
+          .slice(-10) // Get last 10 messages for context
+          .map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }));
+
+        // Use integrated Azure OpenAI service
+        const aiResponse = await azureOpenAIService.getChatResponse(message, conversationHistory);
+        
+        // Create a chat message record in our storage
+        const timestamp = new Date().toISOString();
+        await storage.createChatMessage({
+          role: "user",
+          content: message,
+          metadata: { timestamp, source: "saultochat" }
+        });
+
+        await storage.createChatMessage({
+          role: "assistant", 
+          content: aiResponse.content,
+          metadata: { timestamp, ...aiResponse.metadata }
+        });
+
+        res.json({
+          response: aiResponse.content,
+          timestamp,
+          source: aiResponse.metadata.source
+        });
+      } catch (storageError) {
+        // Fallback: use Azure OpenAI without conversation history
+        console.warn("Storage error, using Azure OpenAI without history:", storageError);
+        const aiResponse = await azureOpenAIService.getChatResponse(message, []);
+        
+        res.json({
+          response: aiResponse.content,
+          timestamp: new Date().toISOString(),
+          source: aiResponse.metadata.source
+        });
+      }
+    } catch (error: any) {
+      console.error("SaultoChat integration error:", error);
+      res.status(500).json({ error: `Failed to get chatbot response: ${error.message}` });
     }
   });
 
