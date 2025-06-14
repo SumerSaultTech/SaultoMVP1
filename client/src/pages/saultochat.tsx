@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ interface ChatMessage {
   message: string;
   response?: string;
   timestamp: string;
+  streaming?: boolean;
 }
 
 interface ChatSession {
@@ -29,6 +30,8 @@ export default function SaultoChat() {
   const [currentSessionId, setCurrentSessionId] = useState<string>("current");
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -39,41 +42,121 @@ export default function SaultoChat() {
     refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
   });
 
-  const sendMessageMutation = useMutation({
-    mutationFn: async (messageText: string) => {
-      const response = await fetch("/api/ai-assistant/chat", {
+  // Combine database messages with local streaming messages
+  const allMessages = [...(chatMessages || []), ...localMessages];
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message.trim() || isStreaming) return;
+
+    const messageText = message.trim();
+    setMessage("");
+    setIsStreaming(true);
+
+    // Generate unique ID for this message pair
+    const messageId = Date.now();
+    const aiMessageId = messageId + 1;
+
+    // Add user message to local state immediately
+    const userMessage: ChatMessage = {
+      id: messageId,
+      companyId: 1748544793859,
+      userId: 1,
+      message: messageText,
+      timestamp: new Date().toISOString()
+    };
+
+    // Add AI message placeholder with streaming flag
+    const aiMessage: ChatMessage = {
+      id: aiMessageId,
+      companyId: 1748544793859,
+      userId: 1,
+      message: "",
+      response: "",
+      timestamp: new Date().toISOString(),
+      streaming: true
+    };
+
+    setLocalMessages(prev => [...prev, userMessage, aiMessage]);
+
+    try {
+      // Start streaming request
+      const response = await fetch("/api/ai-assistant/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: messageText }),
       });
-      
+
       if (!response.ok) {
-        throw new Error("Failed to send message");
+        throw new Error("Failed to start streaming");
       }
-      
-      return response.json();
-    },
-    onSuccess: () => {
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let aiResponseText = "";
+      let buffer = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              try {
+                const jsonData = JSON.parse(line.slice(5));
+                
+                if (jsonData.content !== undefined) {
+                  aiResponseText += jsonData.content;
+                  
+                  // Update AI message in real-time
+                  setLocalMessages(prev => prev.map(msg =>
+                    msg.id === aiMessageId
+                      ? { ...msg, response: aiResponseText }
+                      : msg
+                  ));
+                } else if (jsonData.done) {
+                  // Streaming completed
+                  setLocalMessages(prev => prev.map(msg =>
+                    msg.id === aiMessageId
+                      ? { ...msg, streaming: false }
+                      : msg
+                  ));
+                } else if (jsonData.error) {
+                  throw new Error(jsonData.error);
+                }
+              } catch (parseError) {
+                console.warn("Failed to parse streaming data:", line);
+              }
+            }
+          }
+        }
+      }
+
+      // Refresh main messages after streaming completes
       queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
-      setMessage("");
-      toast({
-        title: "Message sent",
-        description: "AI assistant is processing your request",
-      });
-    },
-    onError: (error) => {
+      
+      // Clear local messages since they're now in the database
+      setTimeout(() => {
+        setLocalMessages([]);
+      }, 1000);
+
+    } catch (error: any) {
+      console.error("Streaming error:", error);
       toast({
         title: "Error",
         description: "Failed to send message. Please try again.",
         variant: "destructive",
       });
-    },
-  });
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (message.trim()) {
-      sendMessageMutation.mutate(message.trim());
+      
+      // Remove failed messages
+      setLocalMessages(prev => prev.filter(msg => msg.id !== messageId && msg.id !== aiMessageId));
+    } finally {
+      setIsStreaming(false);
     }
   };
 
@@ -84,7 +167,7 @@ export default function SaultoChat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatMessages]);
+  }, [allMessages]);
 
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
@@ -92,21 +175,22 @@ export default function SaultoChat() {
 
   // Generate chat sessions from messages
   useEffect(() => {
-    if (chatMessages && chatMessages.length > 0) {
+    if (allMessages && allMessages.length > 0) {
       const currentSession: ChatSession = {
         id: "current",
         title: "Current Chat",
-        lastMessage: chatMessages[chatMessages.length - 1]?.message || "New conversation",
-        timestamp: chatMessages[chatMessages.length - 1]?.timestamp || new Date().toISOString(),
-        messageCount: chatMessages.length
+        lastMessage: allMessages[allMessages.length - 1]?.message || "New conversation",
+        timestamp: allMessages[allMessages.length - 1]?.timestamp || new Date().toISOString(),
+        messageCount: allMessages.length
       };
       setChatSessions([currentSession]);
     }
-  }, [chatMessages]);
+  }, [allMessages]);
 
   const createNewChat = () => {
     const newSessionId = `chat-${Date.now()}`;
     setCurrentSessionId(newSessionId);
+    setLocalMessages([]);
     queryClient.setQueryData(["/api/chat-messages"], []);
     toast({
       title: "New chat started",
@@ -250,8 +334,8 @@ export default function SaultoChat() {
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     <span className="ml-2 text-gray-600">Loading messages...</span>
                   </div>
-                ) : chatMessages && chatMessages.length > 0 ? (
-                  chatMessages.map((chat) => (
+                ) : allMessages && allMessages.length > 0 ? (
+                  allMessages.map((chat) => (
                     <div key={chat.id} className="space-y-4 mb-6">
                       {/* User Message */}
                       <div className="flex items-start gap-3">
@@ -269,14 +353,19 @@ export default function SaultoChat() {
                       </div>
 
                       {/* AI Response */}
-                      {chat.response && (
+                      {chat.response !== undefined && (
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                             <Bot className="w-4 h-4 text-blue-600" />
                           </div>
                           <div className="flex-1">
                             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                              <p className="text-gray-900 whitespace-pre-wrap">{chat.response}</p>
+                              <p className="text-gray-900 whitespace-pre-wrap">
+                                {chat.response}
+                                {chat.streaming && (
+                                  <span className="inline-block ml-1 w-2 h-5 bg-blue-600 animate-pulse"></span>
+                                )}
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -306,14 +395,14 @@ export default function SaultoChat() {
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="Ask me anything - business questions, general topics, coding help, or just chat..."
                     className="flex-1"
-                    disabled={sendMessageMutation.isPending}
+                    disabled={isStreaming}
                   />
                   <Button 
                     type="submit" 
-                    disabled={!message.trim() || sendMessageMutation.isPending}
+                    disabled={!message.trim() || isStreaming}
                     className="px-4"
                   >
-                    {sendMessageMutation.isPending ? (
+                    {isStreaming ? (
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <Send className="w-4 h-4" />

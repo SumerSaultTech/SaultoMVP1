@@ -859,6 +859,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Assistant Chat Streaming (SaultoChat with thinking out loud)
+  app.post("/api/ai-assistant/chat/stream", async (req, res) => {
+    try {
+      const { message } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      console.log("📤 SaultoChat streaming message received:", message.substring(0, 100));
+
+      // Set up Server-Sent Events headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Cache-Control'
+      });
+
+      // Get conversation history from storage
+      let conversationHistory: any[] = [];
+      try {
+        const companyId = 1748544793859; // MIAS_DATA company ID
+        const recentMessages = await storage.getChatMessages(companyId);
+        
+        // Convert to format expected by AI service
+        conversationHistory = recentMessages.slice(-10).map((msg: any) => ({
+          role: msg.role || (msg.message ? "user" : "assistant"),
+          content: msg.message || msg.response || msg.content
+        }));
+      } catch (storageError) {
+        console.warn("Could not fetch conversation history:", storageError);
+      }
+
+      // Save user message first
+      try {
+        await storage.createChatMessage({
+          role: "user",
+          content: message,
+          metadata: { companyId: 1748544793859, userId: 1 }
+        });
+      } catch (storageError) {
+        console.warn("Could not save user message to storage:", storageError);
+      }
+
+      let aiResponseText = "";
+
+      try {
+        // Get streaming response from Azure OpenAI
+        const stream = await azureOpenAIService.getChatResponseStreaming(message, conversationHistory);
+        
+        // Process streaming response
+        for await (const chunk of stream) {
+          if (chunk.choices && chunk.choices.length > 0) {
+            const delta = chunk.choices[0].delta;
+            if (delta && delta.content) {
+              const content = delta.content;
+              aiResponseText += content;
+              
+              // Send each token as Server-Sent Event
+              res.write(`data: ${JSON.stringify({ content })}\n\n`);
+            }
+          }
+        }
+        
+        // Send completion signal
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        
+        // Save complete AI response to storage
+        try {
+          await storage.createChatMessage({
+            role: "assistant", 
+            content: aiResponseText,
+            metadata: { companyId: 1748544793859, userId: 1, source: "azure_openai_streaming" }
+          });
+        } catch (storageError) {
+          console.warn("Could not save AI response to storage:", storageError);
+        }
+
+        console.log("✅ SaultoChat streaming response completed");
+        
+      } catch (error: any) {
+        console.error("❌ Streaming error:", error);
+        res.write(`data: ${JSON.stringify({ 
+          error: `Failed to get streaming response: ${error.message}` 
+        })}\n\n`);
+      }
+      
+      res.end();
+
+    } catch (error: any) {
+      console.error("❌ SaultoChat streaming error:", error);
+      res.status(500).json({ 
+        error: `Failed to start streaming chat: ${error.message}`,
+        details: error.stack
+      });
+    }
+  });
+
   // KPI Assistant
   app.post("/api/assistant/suggest-kpis", async (req, res) => {
     try {
