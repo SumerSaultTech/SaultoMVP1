@@ -723,11 +723,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = 1748544793859; // MIAS_DATA company ID
       const allMessages = await storage.getChatMessages(companyId);
       
+      console.log(`📥 Raw messages from DB: ${allMessages.length}`);
+      
       // Filter and group messages for this company
       const companyMessages = allMessages.filter(msg => {
         const metadata = msg.metadata as any;
         return metadata?.companyId === companyId;
       });
+      
+      console.log(`🏢 Company messages after filter: ${companyMessages.length}`);
       
       // Group consecutive user-assistant pairs
       const transformedMessages = [];
@@ -763,6 +767,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Sort by timestamp (oldest first)
       transformedMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      
+      console.log(`✅ Transformed messages: ${transformedMessages.length}`);
       
       res.json(transformedMessages);
     } catch (error) {

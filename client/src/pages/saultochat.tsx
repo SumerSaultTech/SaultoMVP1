@@ -40,6 +40,9 @@ export default function SaultoChat() {
   const { data: chatMessages, isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat-messages"],
     refetchInterval: localMessages.length > 0 ? false : 5000, // Disable auto-refresh during streaming
+    onSuccess: (data) => {
+      console.log("🔍 API Response - Chat messages:", data);
+    },
   });
 
   // Combine database messages with local streaming messages, avoiding duplicates
