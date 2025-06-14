@@ -245,6 +245,20 @@ export default function SaultoChat() {
     }
   }, [chatMessages, isStreaming, localMessages.length]);
 
+  // Initialize with a default session if no sessions exist
+  useEffect(() => {
+    if (chatSessions.length === 0 && !isLoading) {
+      const defaultSession: ChatSession = {
+        id: currentSessionId,
+        title: "Chat Session",
+        lastMessage: "Start typing to begin conversation...",
+        timestamp: new Date().toISOString(),
+        messageCount: 0
+      };
+      setChatSessions([defaultSession]);
+    }
+  }, [chatSessions.length, currentSessionId, isLoading]);
+
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
   };
@@ -253,21 +267,48 @@ export default function SaultoChat() {
   useEffect(() => {
     if (allMessages && allMessages.length > 0) {
       const currentSession: ChatSession = {
-        id: "current",
-        title: "Current Chat",
+        id: currentSessionId,
+        title: allMessages.length === 1 ? 
+          allMessages[0].message.slice(0, 30) + (allMessages[0].message.length > 30 ? "..." : "") : 
+          "Chat Session",
         lastMessage: allMessages[allMessages.length - 1]?.message || "New conversation",
         timestamp: allMessages[allMessages.length - 1]?.timestamp || new Date().toISOString(),
         messageCount: allMessages.length
       };
-      setChatSessions([currentSession]);
+      
+      // Update existing session or add new one
+      setChatSessions(prevSessions => {
+        const existingIndex = prevSessions.findIndex(session => session.id === currentSessionId);
+        if (existingIndex >= 0) {
+          // Update existing session
+          const updated = [...prevSessions];
+          updated[existingIndex] = currentSession;
+          return updated;
+        } else {
+          // Add new session to the beginning of the list
+          return [currentSession, ...prevSessions];
+        }
+      });
     }
-  }, [allMessages]);
+  }, [allMessages, currentSessionId]);
 
   const createNewChat = () => {
     const newSessionId = `chat-${Date.now()}`;
+    
+    // Create a new empty session and add it to the chat sessions
+    const newSession: ChatSession = {
+      id: newSessionId,
+      title: "New Chat",
+      lastMessage: "Start typing to begin conversation...",
+      timestamp: new Date().toISOString(),
+      messageCount: 0
+    };
+    
+    setChatSessions(prevSessions => [newSession, ...prevSessions]);
     setCurrentSessionId(newSessionId);
     setLocalMessages([]);
     queryClient.setQueryData(["/api/chat-messages"], []);
+    
     toast({
       title: "New chat started",
       description: "You can now start a new conversation",
