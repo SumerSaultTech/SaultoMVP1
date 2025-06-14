@@ -275,7 +275,7 @@ export default function SaultoChat() {
   };
 
   return (
-    <div className="flex-1 flex bg-gray-50 min-h-0">
+    <div className="flex-1 flex bg-gray-50 min-h-0 max-h-screen overflow-hidden">
       {/* Chat History Sidebar */}
       <div 
         className={`border-r border-gray-200 bg-white flex flex-col transition-all duration-300 ${
@@ -377,7 +377,7 @@ export default function SaultoChat() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col p-4 min-h-0">
+      <div className="flex-1 flex flex-col p-4 min-h-0 max-h-screen overflow-hidden">
         <div className="mb-3">
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <MessageCircle className="w-6 h-6 text-blue-600" />
@@ -388,7 +388,7 @@ export default function SaultoChat() {
           </p>
         </div>
 
-        <div className="flex-1 flex flex-col w-full min-h-0">
+        <div className="flex-1 flex flex-col w-full min-h-0 max-h-full overflow-hidden">
           {/* Chat Header */}
           <div className="border-b border-gray-200 bg-white px-6 py-4">
             <div className="flex items-center gap-2">
@@ -398,7 +398,7 @@ export default function SaultoChat() {
           </div>
           
           {/* Chat Messages Area */}
-          <div className="flex-1 overflow-hidden bg-white">
+          <div className="flex-1 overflow-hidden bg-white min-h-0">
             <ScrollArea ref={scrollAreaRef} className="h-full p-6">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
