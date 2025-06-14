@@ -900,16 +900,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn("Could not fetch conversation history:", storageError);
       }
 
-      // Save user message first
-      try {
-        await storage.createChatMessage({
-          role: "user",
-          content: message,
-          metadata: { companyId: 1748544793859, userId: 1 }
-        });
-      } catch (storageError) {
-        console.warn("Could not save user message to storage:", storageError);
-      }
+      // Don't save to database here - let the original system handle persistence
+      // This endpoint is only for streaming visual effect
 
       let aiResponseText = "";
 
@@ -934,16 +926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Send completion signal
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         
-        // Save complete AI response to storage
-        try {
-          await storage.createChatMessage({
-            role: "assistant", 
-            content: aiResponseText,
-            metadata: { companyId: 1748544793859, userId: 1, source: "azure_openai_streaming" }
-          });
-        } catch (storageError) {
-          console.warn("Could not save AI response to storage:", storageError);
-        }
+        // Don't save here - frontend will call the original /api/ai-assistant/chat endpoint
 
         console.log("✅ SaultoChat streaming response completed");
         

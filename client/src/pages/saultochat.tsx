@@ -39,31 +39,11 @@ export default function SaultoChat() {
 
   const { data: chatMessages, isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat-messages"],
-    refetchInterval: localMessages.length > 0 ? false : 5000, // Disable auto-refresh during streaming
-    onSuccess: (data) => {
-      console.log("🔍 API Response - Chat messages:", data);
-    },
+    refetchInterval: 5000, // Back to normal refresh
   });
 
-  // Combine database messages with local streaming messages, avoiding duplicates
-  const allMessages = (() => {
-    const dbMessages = chatMessages || [];
-    const local = localMessages;
-    
-    console.log("📊 Message state:", { 
-      dbCount: dbMessages.length, 
-      localCount: local.length,
-      isStreaming 
-    });
-    
-    // If we have local messages, show them. Otherwise show DB messages
-    if (local.length > 0) {
-      // Combine, but prefer local messages for any that are currently streaming
-      return [...dbMessages, ...local];
-    }
-    
-    return dbMessages;
-  })();
+  // Simple combination: show DB messages + any active streaming message
+  const allMessages = [...(chatMessages || []), ...localMessages];
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,110 +53,105 @@ export default function SaultoChat() {
     setMessage("");
     setIsStreaming(true);
 
-    // Generate unique ID for this message pair
-    const messageId = Date.now();
-    const aiMessageId = messageId + 1;
-
-    // Add user message to local state immediately
-    const userMessage: ChatMessage = {
-      id: messageId,
+    // Create a temporary streaming message for visual effect only
+    const tempStreamingMessage: ChatMessage = {
+      id: Date.now(),
       companyId: 1748544793859,
       userId: 1,
       message: messageText,
-      timestamp: new Date().toISOString()
-    };
-
-    // Add AI message placeholder with streaming flag
-    const aiMessage: ChatMessage = {
-      id: aiMessageId,
-      companyId: 1748544793859,
-      userId: 1,
-      message: "",
       response: "",
       timestamp: new Date().toISOString(),
       streaming: true
     };
 
-    setLocalMessages(prev => [...prev, userMessage, aiMessage]);
+    setLocalMessages([tempStreamingMessage]);
 
     try {
-      // Start streaming request
-      const response = await fetch("/api/ai-assistant/chat/stream", {
+      // Try streaming first for visual effect
+      const streamResponse = await fetch("/api/ai-assistant/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: messageText }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to start streaming");
-      }
+      if (streamResponse.ok) {
+        const reader = streamResponse.body?.getReader();
+        const decoder = new TextDecoder();
+        let aiResponseText = "";
+        let buffer = "";
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let aiResponseText = "";
-      let buffer = "";
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.trim().startsWith('data: ')) {
-              try {
-                const jsonData = JSON.parse(line.slice(5));
-                
-                if (jsonData.content !== undefined) {
-                  aiResponseText += jsonData.content;
+            for (const line of lines) {
+              if (line.trim().startsWith('data: ')) {
+                try {
+                  const jsonData = JSON.parse(line.slice(5));
                   
-                  // Update AI message in real-time
-                  setLocalMessages(prev => prev.map(msg =>
-                    msg.id === aiMessageId
-                      ? { ...msg, response: aiResponseText }
-                      : msg
-                  ));
-                } else if (jsonData.done) {
-                  // Streaming completed
-                  setLocalMessages(prev => prev.map(msg =>
-                    msg.id === aiMessageId
-                      ? { ...msg, streaming: false }
-                      : msg
-                  ));
-                } else if (jsonData.error) {
-                  throw new Error(jsonData.error);
+                  if (jsonData.content !== undefined) {
+                    aiResponseText += jsonData.content;
+                    
+                    // Update streaming message
+                    setLocalMessages([{
+                      ...tempStreamingMessage,
+                      response: aiResponseText
+                    }]);
+                  } else if (jsonData.done) {
+                    // Streaming completed
+                    setLocalMessages([{
+                      ...tempStreamingMessage,
+                      response: aiResponseText,
+                      streaming: false
+                    }]);
+                  }
+                } catch (parseError) {
+                  console.warn("Failed to parse streaming data:", line);
                 }
-              } catch (parseError) {
-                console.warn("Failed to parse streaming data:", line);
               }
             }
           }
         }
+
+        // Now save to database using the original endpoint
+        await fetch("/api/ai-assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: messageText }),
+        });
       }
 
-      // Refresh main messages after streaming completes and clear local messages
-      console.log("🔄 Refreshing chat messages from database...");
-      await queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
-      
-      // Clear local messages since they're now in the database
+      // Clear temp message and refresh
       setTimeout(() => {
-        console.log("🧹 Clearing local streaming messages...");
         setLocalMessages([]);
-      }, 1500);
+        queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+      }, 500);
 
     } catch (error: any) {
-      console.error("Streaming error:", error);
-      toast({
-        title: "Error",
-        description: "Failed to send message. Please try again.",
-        variant: "destructive",
-      });
+      console.error("Error:", error);
       
-      // Remove failed messages
-      setLocalMessages(prev => prev.filter(msg => msg.id !== messageId && msg.id !== aiMessageId));
+      // Fallback to regular chat without streaming
+      try {
+        await fetch("/api/ai-assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: messageText }),
+        });
+        
+        setLocalMessages([]);
+        queryClient.invalidateQueries({ queryKey: ["/api/chat-messages"] });
+      } catch (fallbackError) {
+        toast({
+          title: "Error",
+          description: "Failed to send message. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsStreaming(false);
     }
