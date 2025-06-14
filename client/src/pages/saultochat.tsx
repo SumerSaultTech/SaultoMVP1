@@ -133,6 +133,7 @@ export default function SaultoChat() {
     };
 
     setLocalMessages([tempStreamingMessage]);
+    let aiResponseText = ""; // Move this to higher scope
 
     try {
       // Try streaming first for visual effect
@@ -148,7 +149,6 @@ export default function SaultoChat() {
       if (streamResponse.ok) {
         const reader = streamResponse.body?.getReader();
         const decoder = new TextDecoder();
-        let aiResponseText = "";
         let buffer = "";
 
         if (reader) {
