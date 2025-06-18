@@ -210,3 +210,6 @@ class DataConnectorService {
 }
 
 export const dataConnectorService = new DataConnectorService();
+
+// Clean up old file
+export default dataConnectorService;
