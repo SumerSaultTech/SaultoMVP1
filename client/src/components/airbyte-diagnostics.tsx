@@ -30,59 +30,104 @@ export function AirbyteDiagnostics() {
       });
 
       // Test 2: Check workspace permissions
-      const workspaceTest = await fetch('/api/airbyte/diagnostics/workspace', {
-        method: 'POST',
-      });
-      
-      if (workspaceTest.ok) {
-        const workspaceResult = await workspaceTest.json();
-        tests.push({
-          test: "Workspace Access",
-          status: workspaceResult.canRead ? 'success' : 'warning',
-          message: workspaceResult.canRead ? 
-            "Can read workspace data" : 
-            "Limited workspace permissions",
-          details: workspaceResult.message
+      try {
+        const workspaceTest = await fetch('/api/airbyte/diagnostics/workspace', {
+          method: 'POST',
         });
-      } else {
+        
+        if (workspaceTest.ok) {
+          const workspaceResult = await workspaceTest.json();
+          tests.push({
+            test: "Workspace Access",
+            status: workspaceResult.canRead ? 'success' : 'warning',
+            message: workspaceResult.canRead ? 
+              "Can read workspace data" : 
+              "Limited workspace permissions",
+            details: workspaceResult.message
+          });
+        } else {
+          const errorText = await workspaceTest.text();
+          tests.push({
+            test: "Workspace Access",
+            status: 'error',
+            message: "Failed to test workspace access",
+            details: `HTTP ${workspaceTest.status}: ${errorText.substring(0, 100)}`
+          });
+        }
+      } catch (error) {
         tests.push({
           test: "Workspace Access",
           status: 'error',
           message: "Failed to test workspace access",
+          details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
 
       // Test 3: Check if we can create sources
-      const sourceTest = await fetch('/api/airbyte/diagnostics/sources', {
-        method: 'POST',
-      });
-      
-      if (sourceTest.ok) {
-        const sourceResult = await sourceTest.json();
+      try {
+        const sourceTest = await fetch('/api/airbyte/diagnostics/sources', {
+          method: 'POST',
+        });
+        
+        if (sourceTest.ok) {
+          const sourceResult = await sourceTest.json();
+          tests.push({
+            test: "Source Creation",
+            status: sourceResult.canCreate ? 'success' : 'warning',
+            message: sourceResult.canCreate ? 
+              "Can create sources" : 
+              "Cannot create sources - need higher permissions",
+            details: sourceResult.details || sourceResult.message
+          });
+        } else {
+          const errorText = await sourceTest.text();
+          tests.push({
+            test: "Source Creation",
+            status: 'error',
+            message: "Failed to test source creation",
+            details: `HTTP ${sourceTest.status}: ${errorText.substring(0, 100)}`
+          });
+        }
+      } catch (error) {
         tests.push({
           test: "Source Creation",
-          status: sourceResult.canCreate ? 'success' : 'warning',
-          message: sourceResult.canCreate ? 
-            "Can create sources" : 
-            "Cannot create sources - need higher permissions",
-          details: sourceResult.message
+          status: 'error',
+          message: "Failed to test source creation",
+          details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
 
       // Test 4: Check destinations
-      const destTest = await fetch('/api/airbyte/diagnostics/destinations', {
-        method: 'POST',
-      });
-      
-      if (destTest.ok) {
-        const destResult = await destTest.json();
+      try {
+        const destTest = await fetch('/api/airbyte/diagnostics/destinations', {
+          method: 'POST',
+        });
+        
+        if (destTest.ok) {
+          const destResult = await destTest.json();
+          tests.push({
+            test: "Destination Access",
+            status: destResult.canAccess ? 'success' : 'warning',
+            message: destResult.canAccess ? 
+              "Can access destinations" : 
+              "Limited destination access",
+            details: destResult.details || destResult.message
+          });
+        } else {
+          const errorText = await destTest.text();
+          tests.push({
+            test: "Destination Access",
+            status: 'error',
+            message: "Failed to test destination access",
+            details: `HTTP ${destTest.status}: ${errorText.substring(0, 100)}`
+          });
+        }
+      } catch (error) {
         tests.push({
           test: "Destination Access",
-          status: destResult.canAccess ? 'success' : 'warning',
-          message: destResult.canAccess ? 
-            "Can access destinations" : 
-            "Limited destination access",
-          details: destResult.message
+          status: 'error',
+          message: "Failed to test destination access",
+          details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
 
