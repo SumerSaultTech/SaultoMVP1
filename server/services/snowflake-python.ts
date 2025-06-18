@@ -34,10 +34,10 @@ try:
     
     conn = snowflake.connector.connect(
         account=account_format,
-        user=os.getenv("SNOWFLAKE_USERNAME"),
+        user=os.getenv("SNOWFLAKE_USER"),
         password=os.getenv("SNOWFLAKE_PASSWORD"),
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
-        database='MIAS_DATA_DB',
+        database=os.getenv("SNOWFLAKE_DATABASE", "MIAS_DATA_DB"),
         schema='CORE',
         timeout=30
     )
@@ -86,7 +86,16 @@ finally:
       const scriptPath = join(process.cwd(), 'temp_snowflake_query.py');
       writeFileSync(scriptPath, scriptContent);
 
-      const pythonProcess = spawn('python3', [scriptPath]);
+      const pythonProcess = spawn('python3', [scriptPath], {
+        env: {
+          ...process.env,
+          SNOWFLAKE_ACCOUNT: process.env.SNOWFLAKE_ACCOUNT || '',
+          SNOWFLAKE_USER: process.env.SNOWFLAKE_USER || '',
+          SNOWFLAKE_PASSWORD: process.env.SNOWFLAKE_PASSWORD || '',
+          SNOWFLAKE_WAREHOUSE: process.env.SNOWFLAKE_WAREHOUSE || '',
+          SNOWFLAKE_DATABASE: process.env.SNOWFLAKE_DATABASE || ''
+        }
+      });
       let output = '';
       let errorOutput = '';
 
