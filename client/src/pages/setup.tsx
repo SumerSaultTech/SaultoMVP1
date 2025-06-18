@@ -126,9 +126,16 @@ export default function Setup() {
       const result = await response.json();
       
       setCompletedLogins(prev => [...prev, currentToolForCredentials]);
+      
+      // Show appropriate message based on connection status
+      const toolName = availableTools.find(t => t.id === currentToolForCredentials)?.name;
+      const isAuthenticated = result.status === "authenticated";
+      
       toast({
-        title: "Connection Created",
-        description: `Successfully connected to ${availableTools.find(t => t.id === currentToolForCredentials)?.name}`,
+        title: isAuthenticated ? "Connection Ready" : "Connection Created",
+        description: isAuthenticated 
+          ? `${toolName} credentials validated and ready for sync`
+          : `Successfully connected to ${toolName}`,
       });
     } catch (error) {
       console.error("Failed to create connection:", error);

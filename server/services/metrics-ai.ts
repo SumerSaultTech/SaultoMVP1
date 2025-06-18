@@ -2,7 +2,11 @@ import OpenAI from "openai";
 import { snowflakeService } from "./snowflake.ts";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) {
+  console.warn("OpenAI API key not found in environment variables");
+}
+const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
 interface MetricDefinition {
   name: string;
@@ -106,6 +110,10 @@ ${businessContext ? `Business context: ${businessContext}` : ''}
 Please define this metric and provide the SQL query to calculate it.`;
 
     try {
+      if (!openai) {
+        throw new Error("OpenAI API key not configured");
+      }
+      
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -163,6 +171,10 @@ Business Type: ${businessType}
 Please suggest the most important metrics this business should track.`;
 
     try {
+      if (!openai) {
+        throw new Error("OpenAI API key not configured");
+      }
+      
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -215,6 +227,10 @@ You can:
 Keep responses concise, actionable, and business-focused. Focus on metric concepts rather than specific database implementations.`;
 
     try {
+      if (!openai) {
+        throw new Error("OpenAI API key not configured");
+      }
+      
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
