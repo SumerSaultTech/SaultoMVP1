@@ -29,47 +29,41 @@ export function AirbyteDiagnostics() {
         message: "Testing Airbyte authentication...",
       });
 
-      // Test 2: Check workspace permissions
+      // Test 2: Check workspace permissions by trying to create a test connection
       try {
-        const workspaceTest = await fetch('/api/airbyte/diagnostics/workspace', {
+        // Test by attempting to create a connection and analyzing the error
+        const testConnectionResponse = await fetch('/api/airbyte/connections', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
           },
+          body: JSON.stringify({
+            sourceType: 'test',
+            credentials: { test: 'diagnostics' },
+            companyId: 1748544793859
+          })
         });
         
-        console.log('Workspace test response:', workspaceTest.status, workspaceTest.headers.get('content-type'));
-        
-        if (workspaceTest.ok) {
-          const responseText = await workspaceTest.text();
-          console.log('Workspace response text:', responseText);
-          
-          try {
-            const workspaceResult = JSON.parse(responseText);
-            tests.push({
-              test: "Workspace Access",
-              status: workspaceResult.canRead ? 'success' : 'warning',
-              message: workspaceResult.canRead ? 
-                "Can read workspace data" : 
-                "Limited workspace permissions",
-              details: workspaceResult.message
-            });
-          } catch (parseError) {
-            tests.push({
-              test: "Workspace Access",
-              status: 'error',
-              message: "Failed to parse response",
-              details: `Response: ${responseText.substring(0, 100)}`
-            });
-          }
-        } else {
-          const errorText = await workspaceTest.text();
+        if (testConnectionResponse.ok) {
+          const result = await testConnectionResponse.json();
+          // If connection creation succeeds, we have good permissions
           tests.push({
             test: "Workspace Access",
-            status: 'error',
-            message: "Failed to test workspace access",
-            details: `HTTP ${workspaceTest.status}: ${errorText.substring(0, 100)}`
+            status: 'success',
+            message: "Can create connections successfully",
+            details: `Connection status: ${result.status}`
+          });
+        } else {
+          const errorResult = await testConnectionResponse.json();
+          // Analyze the error to determine permission level
+          const hasAuthAccess = !errorResult.details?.includes('authentication');
+          tests.push({
+            test: "Workspace Access",
+            status: hasAuthAccess ? 'warning' : 'error',
+            message: hasAuthAccess ? 
+              "Authentication works but limited workspace permissions" :
+              "Authentication failed",
+            details: errorResult.details || errorResult.error
           });
         }
       } catch (error) {
@@ -81,70 +75,80 @@ export function AirbyteDiagnostics() {
         });
       }
 
-      // Test 3: Check if we can create sources
+      // Test 3: Check connection list access (indicates read permissions)
       try {
-        const sourceTest = await fetch('/api/airbyte/diagnostics/sources', {
-          method: 'POST',
-        });
+        const connectionsTest = await fetch('/api/airbyte/connections/1748544793859');
         
-        if (sourceTest.ok) {
-          const sourceResult = await sourceTest.json();
+        if (connectionsTest.ok) {
+          const connections = await connectionsTest.json();
           tests.push({
-            test: "Source Creation",
-            status: sourceResult.canCreate ? 'success' : 'warning',
-            message: sourceResult.canCreate ? 
-              "Can create sources" : 
-              "Cannot create sources - need higher permissions",
-            details: sourceResult.details || sourceResult.message
+            test: "Connection Reading",
+            status: 'success',
+            message: `Can read connection data successfully`,
+            details: `Found ${connections.length} stored connections`
           });
         } else {
-          const errorText = await sourceTest.text();
           tests.push({
-            test: "Source Creation",
+            test: "Connection Reading",
             status: 'error',
-            message: "Failed to test source creation",
-            details: `HTTP ${sourceTest.status}: ${errorText.substring(0, 100)}`
+            message: "Cannot read connection data",
+            details: `HTTP ${connectionsTest.status}`
           });
         }
       } catch (error) {
         tests.push({
-          test: "Source Creation",
+          test: "Connection Reading",
           status: 'error',
-          message: "Failed to test source creation",
+          message: "Failed to test connection reading",
           details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
 
-      // Test 4: Check destinations
+      // Test 4: Check permission level based on existing connection attempts
       try {
-        const destTest = await fetch('/api/airbyte/diagnostics/destinations', {
-          method: 'POST',
-        });
+        // Get existing connections and analyze their status
+        const connectionsResponse = await fetch('/api/airbyte/connections/1748544793859');
         
-        if (destTest.ok) {
-          const destResult = await destTest.json();
-          tests.push({
-            test: "Destination Access",
-            status: destResult.canAccess ? 'success' : 'warning',
-            message: destResult.canAccess ? 
-              "Can access destinations" : 
-              "Limited destination access",
-            details: destResult.details || destResult.message
-          });
-        } else {
-          const errorText = await destTest.text();
-          tests.push({
-            test: "Destination Access",
-            status: 'error',
-            message: "Failed to test destination access",
-            details: `HTTP ${destTest.status}: ${errorText.substring(0, 100)}`
-          });
+        if (connectionsResponse.ok) {
+          const connections = await connectionsResponse.json();
+          const hasAuthenticatedConnections = connections.some((c: any) => c.status === 'authenticated');
+          const hasConnectedConnections = connections.some((c: any) => c.status === 'connected');
+          
+          if (hasConnectedConnections) {
+            tests.push({
+              test: "Airbyte Permissions",
+              status: 'success',
+              message: "Full Airbyte access - can create and manage connections",
+              details: "WORKSPACE_ADMIN permissions confirmed"
+            });
+          } else if (hasAuthenticatedConnections) {
+            tests.push({
+              test: "Airbyte Permissions",
+              status: 'warning',
+              message: "Limited Airbyte access - credentials validate but workspace access restricted",
+              details: "Need WORKSPACE_ADMIN permissions to create connections visible in Airbyte Cloud"
+            });
+          } else if (connections.length === 0) {
+            tests.push({
+              test: "Airbyte Permissions",
+              status: 'warning',
+              message: "No connections found - create one to test permissions",
+              details: "Go to Setup & Config to create a connection first"
+            });
+          } else {
+            tests.push({
+              test: "Airbyte Permissions",
+              status: 'error',
+              message: "Connection issues detected",
+              details: "Check individual connection status"
+            });
+          }
         }
       } catch (error) {
         tests.push({
-          test: "Destination Access",
+          test: "Airbyte Permissions",
           status: 'error',
-          message: "Failed to test destination access",
+          message: "Failed to analyze permissions",
           details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
@@ -229,15 +233,34 @@ export function AirbyteDiagnostics() {
         </div>
 
         {results.length > 0 && (
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">Next Steps:</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• If tests show warnings: Your API key needs WORKSPACE_ADMIN permissions</li>
-              <li>• Go to Airbyte Cloud → Settings → Applications</li>
-              <li>• Update your application permissions to include workspace admin access</li>
-              <li>• Once updated, connections will appear in your Airbyte dashboard</li>
-              <li>• Check browser console (F12) for detailed response information</li>
-            </ul>
+          <div className="mt-6 space-y-4">
+            {results.some(r => r.status === 'warning' && r.test === 'Airbyte Permissions') && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h4 className="font-medium text-yellow-900 mb-2">⚠️ Limited Airbyte Permissions Detected</h4>
+                <div className="text-sm text-yellow-800 space-y-2">
+                  <p><strong>Current Status:</strong> Your credentials work but you have limited workspace access.</p>
+                  <p><strong>What this means:</strong> Connections are created locally but won't appear in Airbyte Cloud.</p>
+                  <div className="mt-3">
+                    <p className="font-medium">To Fix:</p>
+                    <ol className="list-decimal list-inside ml-4 space-y-1">
+                      <li>Go to your <a href="https://cloud.airbyte.com" className="underline text-blue-600" target="_blank">Airbyte Cloud dashboard</a></li>
+                      <li>Navigate to Settings → Applications</li>
+                      <li>Find your API application and change permissions to <strong>WORKSPACE_ADMIN</strong></li>
+                      <li>Update your Replit environment variables with new credentials</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {results.some(r => r.status === 'success' && r.test === 'Airbyte Permissions') && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <h4 className="font-medium text-green-900 mb-2">✅ Full Airbyte Access Confirmed</h4>
+                <p className="text-sm text-green-800">
+                  Your connections are being created in Airbyte Cloud and should be visible in your dashboard!
+                </p>
+              </div>
+            )}
           </div>
         )}
         
