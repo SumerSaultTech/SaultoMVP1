@@ -1476,39 +1476,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         config: credentials
       });
 
-      if (!result.success) {
-        return res.status(500).json({ 
-          error: "Failed to create Airbyte connection",
-          details: result.error
-        });
-      }
+      // dataConnectorService.createConnector returns a ConnectorResponse, not a success/error object
+      // So if we get here, it was successful
 
       // Store connection in memory
       const connection: StoredConnection = {
         id: connectionIdCounter++,
         companyId,
-        name: `${sourceType} Connection`,
+        name: result.name,
         type: sourceType,
-        status: 'connected',
-        connectorId: result.data.connectionId,
-        tableCount: 0,
-        lastSyncAt: null,
+        status: result.status,
+        connectorId: result.id,
+        tableCount: result.tableCount,
+        lastSyncAt: result.lastSyncAt,
         createdAt: new Date()
       };
 
       connectionsStore.push(connection);
       
       console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
-      console.log(`Connection ID: ${result.data.connectionId}`);
+      console.log(`Connection ID: ${result.id}`);
       
       res.json({
         success: true,
-        connectionId: result.data.connectionId,
+        connectionId: result.id,
         sourceType,
         companyId,
-        status: "created",
+        status: result.status,
         message: `Successfully created ${sourceType} connection for ${company.name}`,
-        data: result.data
+        data: {
+          name: result.name,
+          status: result.status,
+          tableCount: result.tableCount,
+          lastSyncAt: result.lastSyncAt,
+          config: result.config
+        }
       });
       
     } catch (error: any) {
