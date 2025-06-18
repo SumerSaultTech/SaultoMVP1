@@ -1594,6 +1594,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Airbyte Diagnostics Endpoints
+  app.post("/api/airbyte/diagnostics/workspace", async (req, res) => {
+    try {
+      const result = await dataConnectorService.setupConnectors();
+      res.json({
+        canRead: result.success,
+        message: result.success ? 
+          "Workspace authentication successful" : 
+          result.error || "Failed to access workspace"
+      });
+    } catch (error) {
+      res.json({
+        canRead: false,
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.post("/api/airbyte/diagnostics/sources", async (req, res) => {
+    try {
+      // Try to test source creation capability
+      await dataConnectorService.getAccessToken();
+      
+      // Test if we can make API calls to sources endpoint
+      const testResult = await dataConnectorService.makeApiCall(`/workspaces/${process.env.AIRBYTE_WORKSPACE_ID}/sources`);
+      
+      res.json({
+        canCreate: true,
+        message: "Can access sources endpoint successfully"
+      });
+    } catch (error: any) {
+      const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
+      res.json({
+        canCreate: false,
+        message: is403 ? 
+          "403 Forbidden - Need WORKSPACE_ADMIN permissions" : 
+          "Error accessing sources endpoint"
+      });
+    }
+  });
+
+  app.post("/api/airbyte/diagnostics/destinations", async (req, res) => {
+    try {
+      await dataConnectorService.getAccessToken();
+      const testResult = await dataConnectorService.makeApiCall(`/workspaces/${process.env.AIRBYTE_WORKSPACE_ID}/destinations`);
+      
+      res.json({
+        canAccess: true,
+        message: "Can access destinations endpoint successfully"
+      });
+    } catch (error: any) {
+      const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
+      res.json({
+        canAccess: false,
+        message: is403 ? 
+          "403 Forbidden - Need WORKSPACE_ADMIN permissions" : 
+          "Error accessing destinations endpoint"
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
