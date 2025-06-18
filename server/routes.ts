@@ -1618,19 +1618,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await dataConnectorService.getAccessToken();
       
       // Test if we can make API calls to sources endpoint
-      const testResult = await dataConnectorService.makeApiCall(`/workspaces/${process.env.AIRBYTE_WORKSPACE_ID}/sources`);
+      const workspaceId = process.env.AIRBYTE_WORKSPACE_ID?.replace(/['"]/g, '') || "bc926a02-3f86-446a-84cb-740d9a13caef";
+      const testResult = await dataConnectorService.makeApiCall(`/workspaces/${workspaceId}/sources`);
       
       res.json({
         canCreate: true,
-        message: "Can access sources endpoint successfully"
+        message: "Can access sources endpoint successfully",
+        details: `Found ${testResult.data?.length || 0} sources`
       });
     } catch (error: any) {
       const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
       res.json({
         canCreate: false,
         message: is403 ? 
-          "403 Forbidden - Need WORKSPACE_ADMIN permissions" : 
-          "Error accessing sources endpoint"
+          "403 Forbidden - Need WORKSPACE_ADMIN permissions to create sources" : 
+          `Error accessing sources endpoint: ${error.message}`,
+        details: error.message
       });
     }
   });
@@ -1638,19 +1641,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/airbyte/diagnostics/destinations", async (req, res) => {
     try {
       await dataConnectorService.getAccessToken();
-      const testResult = await dataConnectorService.makeApiCall(`/workspaces/${process.env.AIRBYTE_WORKSPACE_ID}/destinations`);
+      const workspaceId = process.env.AIRBYTE_WORKSPACE_ID?.replace(/['"]/g, '') || "bc926a02-3f86-446a-84cb-740d9a13caef";
+      const testResult = await dataConnectorService.makeApiCall(`/workspaces/${workspaceId}/destinations`);
       
       res.json({
         canAccess: true,
-        message: "Can access destinations endpoint successfully"
+        message: "Can access destinations endpoint successfully",
+        details: `Found ${testResult.data?.length || 0} destinations`
       });
     } catch (error: any) {
       const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
       res.json({
         canAccess: false,
         message: is403 ? 
-          "403 Forbidden - Need WORKSPACE_ADMIN permissions" : 
-          "Error accessing destinations endpoint"
+          "403 Forbidden - Need WORKSPACE_ADMIN permissions to access destinations" : 
+          `Error accessing destinations endpoint: ${error.message}`,
+        details: error.message
       });
     }
   });
