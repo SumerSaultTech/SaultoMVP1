@@ -1597,15 +1597,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Airbyte Diagnostics Endpoints
   app.post("/api/airbyte/diagnostics/workspace", async (req, res) => {
     try {
+      res.setHeader('Content-Type', 'application/json');
       const result = await dataConnectorService.setupConnectors();
-      res.json({
+      res.status(200).json({
         canRead: result.success,
         message: result.success ? 
           "Workspace authentication successful" : 
           result.error || "Failed to access workspace"
       });
     } catch (error) {
-      res.json({
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).json({
         canRead: false,
         message: error instanceof Error ? error.message : "Unknown error"
       });
@@ -1614,6 +1616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/airbyte/diagnostics/sources", async (req, res) => {
     try {
+      res.setHeader('Content-Type', 'application/json');
       // Try to test source creation capability
       await dataConnectorService.getAccessToken();
       
@@ -1621,14 +1624,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const workspaceId = process.env.AIRBYTE_WORKSPACE_ID?.replace(/['"]/g, '') || "bc926a02-3f86-446a-84cb-740d9a13caef";
       const testResult = await dataConnectorService.makeApiCall(`/workspaces/${workspaceId}/sources`);
       
-      res.json({
+      res.status(200).json({
         canCreate: true,
         message: "Can access sources endpoint successfully",
         details: `Found ${testResult.data?.length || 0} sources`
       });
     } catch (error: any) {
+      res.setHeader('Content-Type', 'application/json');
       const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
-      res.json({
+      res.status(200).json({
         canCreate: false,
         message: is403 ? 
           "403 Forbidden - Need WORKSPACE_ADMIN permissions to create sources" : 
@@ -1640,18 +1644,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/airbyte/diagnostics/destinations", async (req, res) => {
     try {
+      res.setHeader('Content-Type', 'application/json');
       await dataConnectorService.getAccessToken();
       const workspaceId = process.env.AIRBYTE_WORKSPACE_ID?.replace(/['"]/g, '') || "bc926a02-3f86-446a-84cb-740d9a13caef";
       const testResult = await dataConnectorService.makeApiCall(`/workspaces/${workspaceId}/destinations`);
       
-      res.json({
+      res.status(200).json({
         canAccess: true,
         message: "Can access destinations endpoint successfully",
         details: `Found ${testResult.data?.length || 0} destinations`
       });
     } catch (error: any) {
+      res.setHeader('Content-Type', 'application/json');
       const is403 = error.message?.includes('403') || error.message?.includes('Forbidden');
-      res.json({
+      res.status(200).json({
         canAccess: false,
         message: is403 ? 
           "403 Forbidden - Need WORKSPACE_ADMIN permissions to access destinations" : 

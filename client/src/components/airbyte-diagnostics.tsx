@@ -33,18 +33,36 @@ export function AirbyteDiagnostics() {
       try {
         const workspaceTest = await fetch('/api/airbyte/diagnostics/workspace', {
           method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
         });
         
+        console.log('Workspace test response:', workspaceTest.status, workspaceTest.headers.get('content-type'));
+        
         if (workspaceTest.ok) {
-          const workspaceResult = await workspaceTest.json();
-          tests.push({
-            test: "Workspace Access",
-            status: workspaceResult.canRead ? 'success' : 'warning',
-            message: workspaceResult.canRead ? 
-              "Can read workspace data" : 
-              "Limited workspace permissions",
-            details: workspaceResult.message
-          });
+          const responseText = await workspaceTest.text();
+          console.log('Workspace response text:', responseText);
+          
+          try {
+            const workspaceResult = JSON.parse(responseText);
+            tests.push({
+              test: "Workspace Access",
+              status: workspaceResult.canRead ? 'success' : 'warning',
+              message: workspaceResult.canRead ? 
+                "Can read workspace data" : 
+                "Limited workspace permissions",
+              details: workspaceResult.message
+            });
+          } catch (parseError) {
+            tests.push({
+              test: "Workspace Access",
+              status: 'error',
+              message: "Failed to parse response",
+              details: `Response: ${responseText.substring(0, 100)}`
+            });
+          }
         } else {
           const errorText = await workspaceTest.text();
           tests.push({
@@ -218,9 +236,31 @@ export function AirbyteDiagnostics() {
               <li>• Go to Airbyte Cloud → Settings → Applications</li>
               <li>• Update your application permissions to include workspace admin access</li>
               <li>• Once updated, connections will appear in your Airbyte dashboard</li>
+              <li>• Check browser console (F12) for detailed response information</li>
             </ul>
           </div>
         )}
+        
+        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+          <h4 className="font-medium text-gray-700 mb-2">Quick Test:</h4>
+          <Button 
+            onClick={async () => {
+              try {
+                const response = await fetch('/api/companies');
+                const data = await response.json();
+                console.log('Companies API test:', data);
+                alert(`Companies API works! Found ${data.length} companies`);
+              } catch (error) {
+                console.error('Companies API test failed:', error);
+                alert(`Companies API failed: ${error}`);
+              }
+            }}
+            variant="outline"
+            size="sm"
+          >
+            Test Basic API
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
