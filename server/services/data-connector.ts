@@ -144,29 +144,41 @@ class DataConnectorService {
 
   async triggerSync(): Promise<{ success: boolean; message?: string; error?: string }> {
     try {
-      // Simulate data sync trigger
+      // Get all connections in workspace and trigger sync
+      const connections = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/connections`);
+      
+      for (const connection of connections.data || []) {
+        await this.makeApiCall(`/connections/${connection.connectionId}/sync`, {
+          method: 'POST'
+        });
+      }
+
       return { 
         success: true, 
-        message: 'Data synchronization started successfully' 
+        message: `Triggered sync for ${connections.data?.length || 0} connections` 
       };
     } catch (error) {
-      return { success: false, error: 'Failed to trigger data sync' };
+      console.error('Failed to trigger sync:', error);
+      return { success: false, error: `Failed to trigger data sync: ${error}` };
     }
   }
 
   async getConnectorStatus(connectionId: string): Promise<ConnectorResponse> {
     try {
-      // Simulate status check
+      // Get actual connection status from Airbyte API
+      const connection = await this.makeApiCall(`/connections/${connectionId}`);
+      
       const status = {
-        connectionId,
-        status: 'running',
-        lastSync: new Date().toISOString(),
-        recordsSynced: Math.floor(Math.random() * 10000)
+        connectionId: connection.connectionId,
+        status: connection.status,
+        lastSync: connection.latestSyncJobStatus?.startTime || null,
+        recordsSynced: connection.latestSyncJobStatus?.recordsCommitted || 0
       };
 
       return { success: true, data: status };
     } catch (error) {
-      return { success: false, error: 'Failed to get connector status' };
+      console.error('Failed to get connector status:', error);
+      return { success: false, error: `Failed to get connector status: ${error}` };
     }
   }
 }
