@@ -44,55 +44,31 @@ class DataConnectorService {
     }
 
     try {
-      // Try different possible OAuth endpoints for Airbyte Cloud
-      const possibleEndpoints = [
-        `${this.config.serverUrl}/api/public/v1/oauth/token`,
-        `${this.config.serverUrl}/api/v1/oauth/token`,
-        `${this.config.serverUrl}/oauth/token`
-      ];
+      console.log('Obtaining access token from Airbyte Cloud');
+      
+      const response = await fetch(`${this.config.serverUrl}/applications/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+        }),
+      });
 
-      let response;
-      let lastError;
-
-      for (const endpoint of possibleEndpoints) {
-        try {
-          console.log('Trying OAuth endpoint:', endpoint);
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-              grant_type: 'client_credentials',
-              client_id: this.config.clientId,
-              client_secret: this.config.clientSecret
-            })
-          });
-
-          if (response.ok) {
-            console.log('OAuth successful with endpoint:', endpoint);
-            break;
-          } else {
-            const errorText = await response.text();
-            console.log(`OAuth failed for ${endpoint}:`, response.status, errorText);
-            lastError = `${response.status}: ${errorText}`;
-          }
-        } catch (err) {
-          console.log(`Network error for ${endpoint}:`, err);
-          lastError = `Network error: ${err}`;
-        }
-      }
-
-      if (!response || !response.ok) {
-        console.error('All OAuth endpoints failed. Last error:', lastError);
+      if (response.ok) {
+        const data = await response.json();
+        this.accessToken = data.access_token;
+        const expiresIn = data.expires_in || 900;
+        this.tokenExpiry = new Date(Date.now() + ((expiresIn - 60) * 1000)); // Refresh 1 min early
+        console.log('Successfully obtained access token from Airbyte Cloud');
+        return this.accessToken;
+      } else {
+        const errorText = await response.text();
+        console.error('Token request failed:', response.status, errorText);
         return null;
       }
-
-      const data = await response.json();
-      this.accessToken = data.access_token;
-      this.tokenExpiry = new Date(Date.now() + (data.expires_in - 60) * 1000); // Refresh 1 min early
-      
-      return this.accessToken;
     } catch (error) {
       console.error('Error getting access token:', error);
       return null;
