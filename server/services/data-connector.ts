@@ -1,7 +1,7 @@
 interface DataConnectorConfig {
   serverUrl: string;
-  username: string;
-  password: string;
+  clientId: string;
+  clientSecret: string;
   workspaceId: string;
 }
 
@@ -19,64 +19,126 @@ interface ConnectorResponse {
 
 class DataConnectorService {
   private config: DataConnectorConfig;
+  private accessToken: string | null = null;
+  private tokenExpiry: Date | null = null;
 
   constructor() {
     this.config = {
-      serverUrl: process.env.AIRBYTE_SERVER_URL || 'http://localhost:8001',
-      username: process.env.AIRBYTE_USERNAME || 'airbyte',
-      password: process.env.AIRBYTE_PASSWORD || 'password',
-      workspaceId: process.env.AIRBYTE_WORKSPACE_ID || '',
+      serverUrl: process.env.AIRBYTE_SERVER_URL || 'https://api.airbyte.com',
+      clientId: process.env.AIRBYTE_CLIENT_ID || '',
+      clientSecret: process.env.AIRBYTE_CLIENT_SECRET || '',
+      workspaceId: 'bc926a02-3f86-446a-84cb-740d9a13caef'
     };
+  }
+
+  private async getAccessToken(): Promise<string | null> {
+    if (this.accessToken && this.tokenExpiry && new Date() < this.tokenExpiry) {
+      return this.accessToken;
+    }
+
+    try {
+      const response = await fetch(`${this.config.serverUrl}/oauth/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret
+        })
+      });
+
+      if (!response.ok) {
+        console.error('OAuth token request failed:', response.status, response.statusText);
+        return null;
+      }
+
+      const data = await response.json();
+      this.accessToken = data.access_token;
+      this.tokenExpiry = new Date(Date.now() + (data.expires_in - 60) * 1000); // Refresh 1 min early
+      
+      return this.accessToken;
+    } catch (error) {
+      console.error('Error getting access token:', error);
+      return null;
+    }
+  }
+
+  private async makeApiCall(endpoint: string, options: any = {}): Promise<any> {
+    const token = await this.getAccessToken();
+    if (!token) {
+      throw new Error('Failed to obtain access token');
+    }
+
+    const response = await fetch(`${this.config.serverUrl}/v1${endpoint}`, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   async setupConnectors(): Promise<{ success: boolean; connectors?: any[]; error?: string }> {
     try {
-      // Return success without API calls since data is available via Snowflake
-      const connectors = [
-        {
-          id: 'salesforce_connector',
-          name: 'Salesforce',
-          service: 'salesforce',
-          status: 'connected_via_snowflake',
-          config: { note: 'Data available in Snowflake warehouse' }
-        },
-        {
-          id: 'hubspot_connector', 
-          name: 'HubSpot',
-          service: 'hubspot',
-          status: 'connected_via_snowflake',
-          config: { note: 'Data available in Snowflake warehouse' }
-        },
-        {
-          id: 'quickbooks_connector',
-          name: 'QuickBooks',
-          service: 'quickbooks', 
-          status: 'connected_via_snowflake',
-          config: { note: 'Data available in Snowflake warehouse' }
-        }
-      ];
+      // Get workspace sources from Airbyte API
+      const sources = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/sources`);
+      
+      const connectors = sources.data?.map((source: any) => ({
+        id: source.sourceId,
+        name: source.name,
+        service: source.sourceDefinitionId,
+        status: 'connected',
+        config: source.connectionConfiguration
+      })) || [];
 
       return { success: true, connectors };
     } catch (error) {
-      return { success: false, error: 'Failed to setup data connectors' };
+      console.error('Failed to setup connectors:', error);
+      return { success: false, error: `Failed to setup data connectors: ${error}` };
     }
   }
 
   async createConnector(config: ConnectorConfig): Promise<ConnectorResponse> {
     try {
-      // Return success without API calls since data is already in Snowflake
-      const snowflakeConnector = {
-        connectionId: `snowflake_${config.service}_${Date.now()}`,
-        name: `${config.service}_via_snowflake`,
-        status: 'connected_directly',
-        sourceId: `snowflake_${config.service}`,
-        destinationId: 'analytics_dashboard',
-        note: 'Using existing Snowflake data warehouse'
+      // Create actual Airbyte connection
+      const connectionData = {
+        name: `${config.service}_connection`,
+        sourceId: config.config.sourceId,
+        destinationId: config.config.destinationId,
+        syncCatalog: config.config.syncCatalog || {},
+        schedule: config.config.schedule || { scheduleType: 'manual' }
       };
 
-      return { success: true, data: snowflakeConnector };
+      const connection = await this.makeApiCall(
+        `/workspaces/${this.config.workspaceId}/connections`,
+        {
+          method: 'POST',
+          body: JSON.stringify(connectionData)
+        }
+      );
+
+      return { 
+        success: true, 
+        data: {
+          connectionId: connection.connectionId,
+          name: connection.name,
+          status: connection.status,
+          sourceId: connection.sourceId,
+          destinationId: connection.destinationId
+        }
+      };
     } catch (error) {
-      return { success: false, error: 'Failed to create connector' };
+      console.error('Failed to create connector:', error);
+      return { success: false, error: `Failed to create connector: ${error}` };
     }
   }
 
