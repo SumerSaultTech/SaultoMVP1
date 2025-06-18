@@ -264,159 +264,60 @@ export class MemStorage implements IStorage {
   }
 }
 
-// Use database storage for persistence
+// DatabaseStorage is disabled - using Snowflake instead of PostgreSQL
 import { snowflakeConfig } from "./db";
-import { eq } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
-  // Note: This class is disabled since we removed PostgreSQL dependency
-  // It would be replaced with proper Snowflake integration in production
+  // DatabaseStorage is disabled since we removed PostgreSQL dependency
+  // Using PersistentMemStorage with Snowflake integration instead
   
+  private throwError(): never {
+    throw new Error("DatabaseStorage is disabled. Using PersistentMemStorage with Snowflake integration.");
+  }
+
   // Companies
-  async getCompanies(): Promise<Company[]> {
-    throw new Error("DatabaseStorage is disabled. Use PersistentMemStorage instead.");
-  }
-
-  async getCompany(id: number): Promise<Company | undefined> {
-    throw new Error("DatabaseStorage is disabled. Use PersistentMemStorage instead.");
-  }
-
-  async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    throw new Error("DatabaseStorage is disabled. Use PersistentMemStorage instead.");
-  }
+  async getCompanies(): Promise<Company[]> { return this.throwError(); }
+  async getCompany(id: number): Promise<Company | undefined> { return this.throwError(); }
+  async createCompany(insertCompany: InsertCompany): Promise<Company> { return this.throwError(); }
 
   // Users
-  async getUsers(): Promise<User[]> {
-    return await db.select().from(users);
-  }
-
-  async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
-  }
+  async getUsers(): Promise<User[]> { return this.throwError(); }
+  async getUser(id: number): Promise<User | undefined> { return this.throwError(); }
+  async getUserByUsername(username: string): Promise<User | undefined> { return this.throwError(); }
+  async createUser(insertUser: InsertUser): Promise<User> { return this.throwError(); }
 
   // Data Sources
-  async getDataSources(companyId: number): Promise<DataSource[]> {
-    return await db.select().from(dataSources).where(eq(dataSources.companyId, companyId));
-  }
-
-  async getDataSource(id: number): Promise<DataSource | undefined> {
-    const [dataSource] = await db.select().from(dataSources).where(eq(dataSources.id, id));
-    return dataSource;
-  }
-
-  async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> {
-    const [dataSource] = await db.insert(dataSources).values(insertDataSource).returning();
-    return dataSource;
-  }
-
-  async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> {
-    const [dataSource] = await db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning();
-    return dataSource;
-  }
+  async getDataSources(companyId: number): Promise<DataSource[]> { return this.throwError(); }
+  async getDataSource(id: number): Promise<DataSource | undefined> { return this.throwError(); }
+  async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> { return this.throwError(); }
+  async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> { return this.throwError(); }
 
   // SQL Models
-  async getSqlModels(companyId: number): Promise<SqlModel[]> {
-    return await db.select().from(sqlModels).where(eq(sqlModels.companyId, companyId));
-  }
-
-  async getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]> {
-    return await db.select().from(sqlModels).where(eq(sqlModels.companyId, companyId));
-  }
-
-  async getSqlModel(id: number): Promise<SqlModel | undefined> {
-    const [model] = await db.select().from(sqlModels).where(eq(sqlModels.id, id));
-    return model;
-  }
-
-  async getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined> {
-    const [model] = await db.select().from(sqlModels).where(eq(sqlModels.name, name));
-    return model;
-  }
-
-  async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> {
-    const [model] = await db.insert(sqlModels).values(insertModel).returning();
-    return model;
-  }
-
-  async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> {
-    const [model] = await db.update(sqlModels).set(updates).where(eq(sqlModels.id, id)).returning();
-    return model;
-  }
+  async getSqlModels(companyId: number): Promise<SqlModel[]> { return this.throwError(); }
+  async getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]> { return this.throwError(); }
+  async getSqlModel(id: number): Promise<SqlModel | undefined> { return this.throwError(); }
+  async getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined> { return this.throwError(); }
+  async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> { return this.throwError(); }
+  async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> { return this.throwError(); }
 
   // KPI Metrics
-  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
-    return await db.select().from(kpiMetrics).where(eq(kpiMetrics.companyId, companyId));
-  }
-
-  async getKpiMetric(id: number): Promise<KpiMetric | undefined> {
-    const [metric] = await db.select().from(kpiMetrics).where(eq(kpiMetrics.id, id));
-    return metric;
-  }
-
-  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
-    const [metric] = await db.insert(kpiMetrics).values(insertMetric).returning();
-    return metric;
-  }
-
-  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> {
-    const [metric] = await db.update(kpiMetrics).set(updates).where(eq(kpiMetrics.id, id)).returning();
-    return metric;
-  }
-
-  async deleteKpiMetric(id: number): Promise<boolean> {
-    const result = await db.delete(kpiMetrics).where(eq(kpiMetrics.id, id));
-    return true;
-  }
+  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> { return this.throwError(); }
+  async getKpiMetric(id: number): Promise<KpiMetric | undefined> { return this.throwError(); }
+  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> { return this.throwError(); }
+  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> { return this.throwError(); }
+  async deleteKpiMetric(id: number): Promise<boolean> { return this.throwError(); }
 
   // Chat Messages
-  async getChatMessages(companyId: number): Promise<ChatMessage[]> {
-    // Since chat_messages table doesn't have companyId column, get all messages
-    // and filter by metadata in the route handler
-    return await db.select().from(chatMessages).orderBy(chatMessages.timestamp);
-  }
-
-  async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> {
-    const [message] = await db.insert(chatMessages).values(insertMessage).returning();
-    return message;
-  }
+  async getChatMessages(companyId: number): Promise<ChatMessage[]> { return this.throwError(); }
+  async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> { return this.throwError(); }
 
   // Pipeline Activities
-  async getPipelineActivities(companyId: number, limit = 50): Promise<PipelineActivity[]> {
-    return await db.select().from(pipelineActivities).where(eq(pipelineActivities.companyId, companyId));
-  }
-
-  async createPipelineActivity(insertActivity: InsertPipelineActivity): Promise<PipelineActivity> {
-    const [activity] = await db.insert(pipelineActivities).values(insertActivity).returning();
-    return activity;
-  }
+  async getPipelineActivities(companyId: number, limit = 50): Promise<PipelineActivity[]> { return this.throwError(); }
+  async createPipelineActivity(insertActivity: InsertPipelineActivity): Promise<PipelineActivity> { return this.throwError(); }
 
   // Setup Status
-  async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> {
-    const [status] = await db.select().from(setupStatus).where(eq(setupStatus.companyId, companyId));
-    return status;
-  }
-
-  async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> {
-    const existing = await this.getSetupStatus(companyId);
-    if (existing) {
-      const [status] = await db.update(setupStatus).set(updates).where(eq(setupStatus.companyId, companyId)).returning();
-      return status;
-    } else {
-      const [status] = await db.insert(setupStatus).values({ ...updates, companyId }).returning();
-      return status;
-    }
-  }
+  async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> { return this.throwError(); }
+  async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> { return this.throwError(); }
 }
 
 import fs from 'fs';
