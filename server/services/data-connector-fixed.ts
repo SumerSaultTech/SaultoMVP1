@@ -43,7 +43,7 @@ class DataConnectorService {
     });
   }
 
-  private async getAccessToken(): Promise<string> {
+  async getAccessToken(): Promise<string> {
     if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
       return this.accessToken;
     }
@@ -81,7 +81,7 @@ class DataConnectorService {
     }
   }
 
-  private async makeApiCall(endpoint: string, options: RequestInit = {}): Promise<any> {
+  async makeApiCall(endpoint: string, options: RequestInit = {}): Promise<any> {
     const token = await this.getAccessToken();
     const url = `${this.config.baseUrl}${endpoint}`;
     
