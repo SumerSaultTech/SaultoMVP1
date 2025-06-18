@@ -7,7 +7,9 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CredentialDialog } from "@/components/ui/credential-dialog";
 import { CheckCircle, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
 type SetupStep = "initial" | "appCount" | "toolSelection" | "confirmLogin" | "syncProgress" | "complete";
@@ -82,6 +84,12 @@ export default function Setup() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [completedLogins, setCompletedLogins] = useState<string[]>([]);
+  
+  // Credential dialog state
+  const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
+  const [currentToolForCredentials, setCurrentToolForCredentials] = useState<string | null>(null);
+  
+  const { toast } = useToast();
 
   // Handle tool selection
   const handleToolToggle = (toolId: string) => {
@@ -92,13 +100,53 @@ export default function Setup() {
     );
   };
 
-  // Simulate SSO login process
-  const simulateLogin = async (toolId: string) => {
+  // Handle credential submission for Airbyte connection
+  const handleCredentialSubmit = async (credentials: Record<string, string>) => {
+    if (!currentToolForCredentials) return;
+    
     setIsLoggingIn(true);
-    // Simulate login delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setCompletedLogins(prev => [...prev, toolId]);
-    setIsLoggingIn(false);
+    try {
+      // Call API to create Airbyte connection
+      const response = await fetch("/api/airbyte/connections", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sourceType: currentToolForCredentials,
+          credentials: credentials,
+          companyId: 1748544793859, // Using the company ID from CLAUDE.md
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create connection");
+      }
+
+      const result = await response.json();
+      
+      setCompletedLogins(prev => [...prev, currentToolForCredentials]);
+      toast({
+        title: "Connection Created",
+        description: `Successfully connected to ${availableTools.find(t => t.id === currentToolForCredentials)?.name}`,
+      });
+    } catch (error) {
+      console.error("Failed to create connection:", error);
+      toast({
+        title: "Connection Failed",
+        description: "Failed to create the connection. Please check your credentials and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoggingIn(false);
+      setCurrentToolForCredentials(null);
+    }
+  };
+
+  // Open credential dialog for a specific tool
+  const openCredentialDialog = (toolId: string) => {
+    setCurrentToolForCredentials(toolId);
+    setCredentialDialogOpen(true);
   };
 
   // Simulate data sync process
@@ -347,11 +395,11 @@ export default function Setup() {
                       </Badge>
                     ) : (
                       <Button
-                        onClick={() => simulateLogin(toolId)}
+                        onClick={() => openCredentialDialog(toolId)}
                         disabled={isLoggingIn}
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                       >
-                        {isLoggingIn ? (
+                        {isLoggingIn && currentToolForCredentials === toolId ? (
                           <>
                             <Clock className="w-4 h-4 mr-2 animate-spin" />
                             Connecting...
@@ -548,6 +596,15 @@ export default function Setup() {
         {currentStep === "syncProgress" && renderSyncProgressStep()}
         {currentStep === "complete" && renderCompleteStep()}
       </main>
+      
+      {/* Credential Dialog */}
+      <CredentialDialog
+        open={credentialDialogOpen}
+        onOpenChange={setCredentialDialogOpen}
+        appId={currentToolForCredentials || ""}
+        appName={currentToolForCredentials ? availableTools.find(t => t.id === currentToolForCredentials)?.name || "" : ""}
+        onSubmit={handleCredentialSubmit}
+      />
     </div>
   );
 }

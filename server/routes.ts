@@ -1436,6 +1436,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Airbyte Connection Management
+  app.post("/api/airbyte/connections", async (req, res) => {
+    try {
+      const { sourceType, credentials, companyId } = req.body;
+      
+      if (!sourceType || !credentials || !companyId) {
+        return res.status(400).json({ 
+          error: "Missing required fields: sourceType, credentials, and companyId" 
+        });
+      }
+
+      // Validate that the company exists
+      const company = companiesArray.find(c => c.id === companyId);
+      if (!company) {
+        return res.status(404).json({ error: "Company not found" });
+      }
+
+      // In a real implementation, this would:
+      // 1. Connect to Airbyte API
+      // 2. Create a source with the provided credentials
+      // 3. Create a destination (Snowflake with company database)
+      // 4. Create a connection between source and destination
+      // 5. Trigger initial sync
+      
+      // For now, we'll simulate the connection creation
+      const connectionId = `${sourceType}_${companyId}_${Date.now()}`;
+      
+      // Store connection info in a simple array (in production, use database)
+      // const connection = {
+      //   id: connectionId,
+      //   sourceType,
+      //   companyId,
+      //   status: "active",
+      //   createdAt: new Date().toISOString(),
+      //   lastSync: null,
+      //   // Don't store actual credentials for security
+      //   credentialsConfigured: true
+      // };
+
+      // Log connection creation (remove in production)
+      console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
+      console.log(`Connection ID: ${connectionId}`);
+      
+      // In a real implementation, you would:
+      // 1. Validate credentials by testing connection
+      // 2. Use Airbyte API to create actual connection
+      // 3. Handle different source types appropriately
+      // 4. Set up proper error handling and retry logic
+      
+      res.json({
+        success: true,
+        connectionId,
+        sourceType,
+        companyId,
+        status: "created",
+        message: `Successfully created ${sourceType} connection for ${company.name}`
+      });
+      
+    } catch (error: any) {
+      console.error("Airbyte connection creation error:", error);
+      res.status(500).json({ 
+        error: "Failed to create Airbyte connection",
+        details: error.message 
+      });
+    }
+  });
+
+  // Get Airbyte connections for a company
+  app.get("/api/airbyte/connections/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // In a real implementation, this would fetch from database
+      // For now, return mock data
+      const connections = [
+        {
+          id: `salesforce_${companyId}_example`,
+          sourceType: "salesforce",
+          companyId,
+          status: "active",
+          createdAt: new Date().toISOString(),
+          lastSync: new Date().toISOString()
+        }
+      ];
+      
+      res.json(connections);
+    } catch (error: any) {
+      console.error("Error fetching Airbyte connections:", error);
+      res.status(500).json({ 
+        error: "Failed to fetch connections",
+        details: error.message 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
