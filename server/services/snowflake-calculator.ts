@@ -315,31 +315,19 @@ export class SnowflakeCalculatorService {
                 // Skip cache warming for now to avoid method reference errors
                 console.log(`Skipping cache warming for ${period} - using on-demand calculation instead`);
                 continue;
-                  const periodResult = await this.executeQuery(periodSql);
-                  if (periodResult.success && periodResult.data && periodResult.data.length > 0) {
-                    let periodValue = 0;
-                    for (const row of periodResult.data) {
-                      const rawValue = row.VALUE || row.value || 0;
-                      const parsedValue = parseFloat(String(rawValue).replace(/[$,]/g, '')) || 0;
-                      periodValue += parsedValue;
-                    }
-                    
-                    const periodData: DashboardMetricData = {
-                      metricId,
-                      currentValue: periodValue,
-                      yearlyGoal,
-                      format: metric.format || 'currency',
-                      timeSeriesData: dashboardData.timeSeriesData
-                    };
-                    
-                    this.dashboardCache.set(periodCacheKey, {
-                      data: periodData,
-                      timestamp: new Date()
-                    });
-                    console.log(`Pre-cached ${period} data for metric ${metricId}: ${periodValue}`);
-                  }
-                } else {
-                  // Fallback to same data if no period-specific SQL
+              } catch (cacheError) {
+                console.log(`Cache warming failed for ${period}:`, cacheError);
+              }
+            }
+          } catch (error) {
+            console.error(`Cache warming error for metric ${metricId}:`, error);
+          }
+        })
+      );
+    } catch (error) {
+      console.error("Error in cache warming:", error);
+    }
+  }
                   const periodData: DashboardMetricData = {
                     ...dashboardData,
                     timeSeriesData: dashboardData.timeSeriesData
