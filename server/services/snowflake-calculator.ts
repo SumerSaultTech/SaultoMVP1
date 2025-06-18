@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { snowflakePythonService } from "./snowflake-python";
+import { snowflakeDirectService } from "./snowflake-direct";
 
 interface SnowflakeQueryResult {
   success: boolean;
@@ -154,77 +154,11 @@ export class SnowflakeCalculatorService {
   private dashboardCache: Map<string, { data: DashboardMetricData; timestamp: Date }> = new Map();
   private readonly DASHBOARD_CACHE_DURATION_HOURS = 1;
 
-  // Execute SQL query against Snowflake using the same method as data browser
+  // Execute SQL query against Snowflake using direct service
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
-      console.log("Executing Snowflake query via working connection:", sql);
-      
-      // Use the same spawn method that works in the data browser routes
-      const { spawn } = await import('child_process');
-      const result = await new Promise<any>((resolve) => {
-        const pythonProcess = spawn('python', ['snowflake_query_service.py', sql], {
-          cwd: process.cwd()
-        });
-        
-        let output = '';
-        let errorOutput = '';
-        
-        pythonProcess.stdout.on('data', (data: Buffer) => {
-          output += data.toString();
-        });
-        
-        pythonProcess.stderr.on('data', (data: Buffer) => {
-          errorOutput += data.toString();
-        });
-        
-        pythonProcess.on('close', (code: number) => {
-          console.log(`Python process exited with code: ${code}`);
-          console.log("Output:", output);
-          console.log("Error output:", errorOutput);
-          
-          if (code === 0 && output.trim()) {
-            try {
-              // Find the JSON result in the output
-              const lines = output.trim().split('\n');
-              let jsonResult = null;
-              
-              for (const line of lines) {
-                try {
-                  const parsed = JSON.parse(line);
-                  if (parsed.success !== undefined) {
-                    jsonResult = parsed;
-                    break;
-                  }
-                } catch (e) {
-                  // Skip non-JSON lines
-                  continue;
-                }
-              }
-              
-              if (jsonResult) {
-                resolve(jsonResult);
-              } else {
-                resolve({
-                  success: false,
-                  error: "No valid JSON result found in output"
-                });
-              }
-            } catch (parseError) {
-              resolve({
-                success: false,
-                error: `Failed to parse result: ${parseError.message}`
-              });
-            }
-          } else {
-            resolve({
-              success: false,
-              error: errorOutput || `Python process exited with code ${code}`
-            });
-          }
-        });
-      });
-      
-      return result;
+      console.log("Executing Snowflake query via direct service:", sql);
+      return await snowflakeDirectService.executeQuery(sql);
     } catch (error) {
       console.error("Snowflake query error:", error);
       return {
