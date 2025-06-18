@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { snowflakeDirectService } from "./snowflake-direct";
+import { snowflakeSimpleService } from "./snowflake-simple";
 
 interface SnowflakeQueryResult {
   success: boolean;
@@ -154,11 +154,11 @@ export class SnowflakeCalculatorService {
   private dashboardCache: Map<string, { data: DashboardMetricData; timestamp: Date }> = new Map();
   private readonly DASHBOARD_CACHE_DURATION_HOURS = 1;
 
-  // Execute SQL query against Snowflake using direct service
+  // Execute SQL query against Snowflake using simple service
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
-      console.log("Executing Snowflake query via direct service:", sql);
-      return await snowflakeDirectService.executeQuery(sql);
+      console.log("Executing Snowflake query via simple service:", sql);
+      return await snowflakeSimpleService.executeQuery(sql);
     } catch (error) {
       console.error("Snowflake query error:", error);
       return {

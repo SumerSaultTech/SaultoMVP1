@@ -1,7 +1,6 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { spawn } from 'child_process';
+import { writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
 
 interface SnowflakeResult {
   success: boolean;
@@ -26,11 +25,12 @@ export class SnowflakeDirectService {
         };
       }
 
-      // Use environment variables directly in the Python command
+      // Create temporary Python script with proper escaping
       const pythonScript = `
 import snowflake.connector
 import json
 import sys
+import os
 from decimal import Decimal
 from datetime import date, datetime
 
@@ -43,17 +43,17 @@ def json_serial(obj):
 
 try:
     conn = snowflake.connector.connect(
-        account='${account.replace(/'/g, "\\'")}',
-        user='${user.replace(/'/g, "\\'")}',
-        password='${password.replace(/'/g, "\\'")}',
-        warehouse='${warehouse.replace(/'/g, "\\'")}',
-        database='${database.replace(/'/g, "\\'")}',
-        schema='CORE',
+        account="${account}",
+        user="${user}",
+        password="${password}",
+        warehouse="${warehouse}",
+        database="${database}",
+        schema="CORE",
         timeout=30
     )
     
     cursor = conn.cursor()
-    cursor.execute("""${sql.replace(/"/g, '\\"').replace(/'/g, "\\'")}""")
+    cursor.execute("""${sql}""")
     
     columns = [desc[0] for desc in cursor.description]
     rows = cursor.fetchall()
@@ -86,14 +86,51 @@ finally:
         conn.close()
 `;
 
-      const { stdout, stderr } = await execAsync(`python3 -c "${pythonScript}"`);
+      const tempScript = join(process.cwd(), `temp_snowflake_${Date.now()}.py`);
+      writeFileSync(tempScript, pythonScript);
       
-      if (stderr && stderr.trim()) {
-        console.warn('Snowflake Python stderr:', stderr);
-      }
-      
-      const result = JSON.parse(stdout.trim());
-      return result;
+      return new Promise((resolve) => {
+        const python = spawn('python3', [tempScript], {
+          env: process.env
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        
+        python.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+        
+        python.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+        
+        python.on('close', (code) => {
+          // Clean up temp file
+          try {
+            unlinkSync(tempScript);
+          } catch (e) {
+            console.warn('Failed to clean up temp script:', e);
+          }
+          
+          if (code === 0 && output.trim()) {
+            try {
+              const result = JSON.parse(output.trim());
+              resolve(result);
+            } catch (e) {
+              resolve({
+                success: false,
+                error: `Failed to parse result: ${e.message}`
+              });
+            }
+          } else {
+            resolve({
+              success: false,
+              error: errorOutput || `Python process exited with code ${code}`
+            });
+          }
+        });
+      });
       
     } catch (error) {
       console.error('Snowflake query error:', error);
