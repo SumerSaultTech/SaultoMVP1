@@ -195,7 +195,7 @@ class SnowflakeService:
             companies_result = self.execute_query("SELECT COUNT(*) as count FROM companies")
             if companies_result["success"] and companies_result["data"][0]["COUNT"] == 0:
                 self.execute_query(
-                    "INSERT INTO companies (name, slug, database_name) VALUES (?, ?, ?)",
+                    "INSERT INTO companies (name, slug, database_name) VALUES (%s, %s, %s)",
                     ("Demo Company", "demo_company", "DEMO_COMPANY_DB")
                 )
                 logging.info("Created default demo company")
