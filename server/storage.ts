@@ -193,6 +193,10 @@ export class MemStorage implements IStorage {
     return this.kpiMetrics.get(id);
   }
 
+  async getKpiMetricById(id: number): Promise<KpiMetric | undefined> {
+    return this.kpiMetrics.get(id);
+  }
+
   async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
     const id = this.currentId++;
     const metric: KpiMetric = { ...insertMetric, id, lastCalculatedAt: null };
