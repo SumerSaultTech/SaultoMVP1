@@ -21,11 +21,24 @@ import {
   insertKpiMetricSchema,
   insertChatMessageSchema,
   insertPipelineActivitySchema,
-  dataSources,
 } from "@shared/schema";
 import { z } from "zod";
-import { db } from "./db";
-import { eq } from "drizzle-orm";
+
+// In-memory storage for connections (replace with database in production)
+interface StoredConnection {
+  id: number;
+  companyId: number;
+  name: string;
+  type: string;
+  status: string;
+  connectorId: string;
+  tableCount: number;
+  lastSyncAt: Date | null;
+  createdAt: Date;
+}
+
+const connectionsStore: StoredConnection[] = [];
+let connectionIdCounter = 1;
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
@@ -1470,8 +1483,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Store connection in database
-      const connection = {
+      // Store connection in memory
+      const connection: StoredConnection = {
+        id: connectionIdCounter++,
         companyId,
         name: `${sourceType} Connection`,
         type: sourceType,
@@ -1479,10 +1493,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         connectorId: result.data.connectionId,
         tableCount: 0,
         lastSyncAt: null,
-        config: {} // Don't store credentials
+        createdAt: new Date()
       };
 
-      const [insertedConnection] = await db.insert(dataSources).values(connection).returning();
+      connectionsStore.push(connection);
       
       console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
       console.log(`Connection ID: ${result.data.connectionId}`);
@@ -1511,8 +1525,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const companyId = parseInt(req.params.companyId);
       
-      // Fetch connections from database
-      const connections = await db.select().from(dataSources).where(eq(dataSources.companyId, companyId));
+      // Fetch connections from memory
+      const connections = connectionsStore.filter(conn => conn.companyId === companyId);
       
       // Get real-time status from Airbyte for each connection
       const connectionsWithStatus = await Promise.all(
