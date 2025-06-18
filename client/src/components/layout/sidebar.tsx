@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Database, BarChart3, Settings, Table, Shield, Target, Building2, LogOut, Users, MessageCircle } from "lucide-react";
+import { Database, BarChart3, Settings, Table, Shield, Target, Building2, LogOut, Users, MessageCircle, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
@@ -16,6 +16,7 @@ export default function Sidebar() {
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/data-browser", icon: Database, label: "Data Browser" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
+    { path: "/connections-test", icon: Zap, label: "Test Connections" },
     { path: "/users", icon: Users, label: "User Management" },
     { path: "/admin", icon: Shield, label: "Admin Panel" },
     { path: "/saultochat", icon: MessageCircle, label: "SaultoChat" },
