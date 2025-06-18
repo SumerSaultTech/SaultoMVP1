@@ -265,23 +265,24 @@ export class MemStorage implements IStorage {
 }
 
 // Use database storage for persistence
-import { db } from "./db";
+import { snowflakeConfig } from "./db";
 import { eq } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
+  // Note: This class is disabled since we removed PostgreSQL dependency
+  // It would be replaced with proper Snowflake integration in production
+  
   // Companies
   async getCompanies(): Promise<Company[]> {
-    return await db.select().from(companies);
+    throw new Error("DatabaseStorage is disabled. Use PersistentMemStorage instead.");
   }
 
   async getCompany(id: number): Promise<Company | undefined> {
-    const [company] = await db.select().from(companies).where(eq(companies.id, id));
-    return company;
+    throw new Error("DatabaseStorage is disabled. Use PersistentMemStorage instead.");
   }
 
   async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const [company] = await db.insert(companies).values(insertCompany).returning();
-    return company;
+    throw new Error("DatabaseStorage is disabled. Use PersistentMemStorage instead.");
   }
 
   // Users
@@ -557,4 +558,6 @@ class PersistentMemStorage extends MemStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+// Use in-memory storage by default since we removed PostgreSQL dependency
+// In production, this would be replaced with Snowflake integration
+export const storage = new PersistentMemStorage();

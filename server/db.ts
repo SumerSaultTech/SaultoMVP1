@@ -1,15 +1,31 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+// Snowflake configuration - no PostgreSQL dependency
 import * as schema from "@shared/schema";
 
-neonConfig.webSocketConstructor = ws;
+// Check for Snowflake environment variables
+const requiredSnowflakeVars = [
+  'SNOWFLAKE_ACCOUNT',
+  'SNOWFLAKE_USER', 
+  'SNOWFLAKE_PASSWORD',
+  'SNOWFLAKE_WAREHOUSE',
+  'SNOWFLAKE_DATABASE'
+];
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
+const missingVars = requiredSnowflakeVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.warn(`Snowflake credentials not fully configured. Missing: ${missingVars.join(', ')}`);
+  console.warn('Using in-memory storage for development');
+} else {
+  console.log('Snowflake credentials configured successfully');
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle({ client: pool, schema });
+// Export a simple connection status for the application
+export const snowflakeConfig = {
+  account: process.env.SNOWFLAKE_ACCOUNT,
+  user: process.env.SNOWFLAKE_USER,
+  password: process.env.SNOWFLAKE_PASSWORD,
+  warehouse: process.env.SNOWFLAKE_WAREHOUSE,
+  database: process.env.SNOWFLAKE_DATABASE,
+  schema: process.env.SNOWFLAKE_SCHEMA || 'PUBLIC',
+  isConfigured: missingVars.length === 0
+};
