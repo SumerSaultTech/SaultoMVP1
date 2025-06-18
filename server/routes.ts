@@ -21,8 +21,11 @@ import {
   insertKpiMetricSchema,
   insertChatMessageSchema,
   insertPipelineActivitySchema,
+  dataSources,
 } from "@shared/schema";
 import { z } from "zod";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
@@ -1453,45 +1456,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Company not found" });
       }
 
-      // In a real implementation, this would:
-      // 1. Connect to Airbyte API
-      // 2. Create a source with the provided credentials
-      // 3. Create a destination (Snowflake with company database)
-      // 4. Create a connection between source and destination
-      // 5. Trigger initial sync
-      
-      // For now, we'll simulate the connection creation
-      const connectionId = `${sourceType}_${companyId}_${Date.now()}`;
-      
-      // Store connection info in a simple array (in production, use database)
-      // const connection = {
-      //   id: connectionId,
-      //   sourceType,
-      //   companyId,
-      //   status: "active",
-      //   createdAt: new Date().toISOString(),
-      //   lastSync: null,
-      //   // Don't store actual credentials for security
-      //   credentialsConfigured: true
-      // };
+      // Create real Airbyte connection
+      const result = await dataConnectorService.createConnector({
+        service: sourceType,
+        workspaceId: '', // Will be auto-detected
+        config: credentials
+      });
 
-      // Log connection creation (remove in production)
-      console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
-      console.log(`Connection ID: ${connectionId}`);
+      if (!result.success) {
+        return res.status(500).json({ 
+          error: "Failed to create Airbyte connection",
+          details: result.error
+        });
+      }
+
+      // Store connection in database
+      const connection = {
+        companyId,
+        name: `${sourceType} Connection`,
+        type: sourceType,
+        status: 'connected',
+        connectorId: result.data.connectionId,
+        tableCount: 0,
+        lastSyncAt: null,
+        config: {} // Don't store credentials
+      };
+
+      const [insertedConnection] = await db.insert(dataSources).values(connection).returning();
       
-      // In a real implementation, you would:
-      // 1. Validate credentials by testing connection
-      // 2. Use Airbyte API to create actual connection
-      // 3. Handle different source types appropriately
-      // 4. Set up proper error handling and retry logic
+      console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
+      console.log(`Connection ID: ${result.data.connectionId}`);
       
       res.json({
         success: true,
-        connectionId,
+        connectionId: result.data.connectionId,
         sourceType,
         companyId,
         status: "created",
-        message: `Successfully created ${sourceType} connection for ${company.name}`
+        message: `Successfully created ${sourceType} connection for ${company.name}`,
+        data: result.data
       });
       
     } catch (error: any) {
@@ -1508,25 +1511,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const companyId = parseInt(req.params.companyId);
       
-      // In a real implementation, this would fetch from database
-      // For now, return mock data
-      const connections = [
-        {
-          id: `salesforce_${companyId}_example`,
-          sourceType: "salesforce",
-          companyId,
-          status: "active",
-          createdAt: new Date().toISOString(),
-          lastSync: new Date().toISOString()
-        }
-      ];
+      // Fetch connections from database
+      const connections = await db.select().from(dataSources).where(eq(dataSources.companyId, companyId));
       
-      res.json(connections);
+      // Get real-time status from Airbyte for each connection
+      const connectionsWithStatus = await Promise.all(
+        connections.map(async (conn) => {
+          if (conn.connectorId) {
+            const statusResult = await dataConnectorService.getConnectorStatus(conn.connectorId);
+            return {
+              id: conn.id,
+              sourceType: conn.type,
+              companyId: conn.companyId,
+              status: statusResult.success ? statusResult.data.status : conn.status,
+              createdAt: conn.createdAt,
+              lastSync: statusResult.success ? statusResult.data.lastSync : conn.lastSyncAt,
+              recordsSynced: statusResult.success ? statusResult.data.recordsSynced : 0
+            };
+          }
+          return {
+            id: conn.id,
+            sourceType: conn.type,
+            companyId: conn.companyId,
+            status: conn.status,
+            createdAt: conn.createdAt,
+            lastSync: conn.lastSyncAt
+          };
+        })
+      );
+      
+      res.json(connectionsWithStatus);
     } catch (error: any) {
       console.error("Error fetching Airbyte connections:", error);
       res.status(500).json({ 
         error: "Failed to fetch connections",
         details: error.message 
+      });
+    }
+  });
+
+  // Trigger sync for a specific connection
+  app.post("/api/airbyte/connections/:connectionId/sync", async (req, res) => {
+    try {
+      const { connectionId } = req.params;
+      
+      const result = await dataConnectorService.triggerSync(connectionId);
+      
+      if (!result.success) {
+        return res.status(500).json({ 
+          error: "Failed to trigger sync",
+          details: result.error
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: result.message,
+        jobId: result.jobId
+      });
+    } catch (error: any) {
+      console.error("Error triggering sync:", error);
+      res.status(500).json({ 
+        error: "Failed to trigger sync",
+        details: error.message
       });
     }
   });
