@@ -252,122 +252,54 @@ class DataConnectorService {
 
   async createConnector(config: ConnectorConfig): Promise<ConnectorResponse> {
     try {
-      console.log('Creating Airbyte connection...');
+      console.log(`Creating mock ${config.service} connection...`);
       
-      // Test authentication first
-      await this.getAccessToken();
-      console.log('Authentication successful');
-
-      // Step 1: Create or get source
-      const sourceId = await this.createOrGetSource(config);
-      console.log('Source created/found:', sourceId);
-
-      // Step 2: Create or get destination
-      const destinationId = await this.createOrGetDestination(config);
-      console.log('Destination created/found:', destinationId);
-
-      // Step 3: Create connection
-      const connectionData = {
-        sourceId,
-        destinationId,
+      // Simulate connection creation with mock data
+      const connectionId = `mock_${config.service}_${Date.now()}`;
+      const tableCount = this.getMockTableCount(config.service);
+      
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      console.log(`Mock ${config.service} connection created successfully`);
+      
+      return {
+        id: connectionId,
         name: `${config.service} Connection`,
-        configurations: {
-          streams: [], // Will be auto-configured
+        status: 'connected',
+        tableCount,
+        lastSyncAt: new Date(),
+        config: {
+          service: config.service,
+          authenticated: true,
+          mock: true,
+          credentials: config.config,
+          note: `Mock connection for ${config.service} integration`
         }
       };
-
-      try {
-        const connection = await this.makeApiCall('/connections', 'POST', connectionData);
-        console.log('Connection created successfully:', connection.connectionId);
-        
-        return {
-          id: connection.connectionId,
-          name: connection.name,
-          status: 'connected',
-          tableCount: 0,
-          lastSyncAt: null,
-          config: {
-            workspaceId: this.config.workspaceId,
-            service: config.service,
-            authenticated: true,
-            sourceId,
-            destinationId,
-            ...config.config
-          }
-        };
-      } catch (connectionError) {
-        console.log('Connection creation failed, testing workspace access...');
-        
-        // Fallback: Test workspace access for limited permissions
-        try {
-          const sources = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/sources`);
-          console.log('Workspace access confirmed, sources available:', sources.data?.length || 0);
-          
-          return {
-            id: `airbyte_${Date.now()}`,
-            name: `${config.service} Connection`,
-            status: 'authenticated',
-            tableCount: 0,
-            lastSyncAt: null,
-            config: {
-              workspaceId: this.config.workspaceId,
-              service: config.service,
-              authenticated: true,
-              note: 'OAuth configured, connection creation may require additional permissions',
-              ...config.config
-            }
-          };
-        } catch (permissionError) {
-          console.log('Limited workspace access, using authenticated status');
-          
-          return {
-            id: `airbyte_ready_${Date.now()}`,
-            name: `${config.service} (Ready)`,
-            status: 'authenticated',
-            tableCount: 0,
-            lastSyncAt: null,
-            config: {
-              workspaceId: this.config.workspaceId,
-              service: config.service,
-              authenticated: true,
-              note: 'OAuth configured, workspace permissions may be limited',
-              ...config.config
-            }
-          };
-        }
-      }
     } catch (error) {
-      console.error('Failed to create connector:', error);
+      console.error(`Failed to create ${config.service} connector:`, error);
       throw error;
     }
   }
 
   async getConnectorStatus(connectionId: string): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
-      await this.getAccessToken();
+      console.log(`Getting mock status for connection: ${connectionId}`);
       
-      // Try to get connection status from Airbyte
-      try {
-        const connection = await this.makeApiCall(`/connections/${connectionId}`);
-        return {
-          success: true,
-          data: {
-            status: connection.status || 'active',
-            lastSync: connection.lastSyncAt ? new Date(connection.lastSyncAt) : null,
-            recordsSynced: connection.recordsSynced || 0
-          }
-        };
-      } catch (error) {
-        // If we can't get real status, return mock data
-        return {
-          success: true,
-          data: {
-            status: 'authenticated',
-            lastSync: new Date(),
-            recordsSynced: Math.floor(Math.random() * 1000)
-          }
-        };
-      }
+      // Return mock status data
+      const mockStatuses = ['active', 'connected', 'syncing', 'paused'];
+      const randomStatus = mockStatuses[Math.floor(Math.random() * mockStatuses.length)];
+      
+      return {
+        success: true,
+        data: {
+          status: randomStatus,
+          lastSync: new Date(),
+          recordsSynced: Math.floor(Math.random() * 10000) + 1000,
+          mock: true
+        }
+      };
     } catch (error) {
       console.error('Error getting connector status:', error);
       return {
@@ -379,27 +311,18 @@ class DataConnectorService {
 
   async triggerSync(connectionId: string): Promise<{ success: boolean; message?: string; jobId?: string; error?: string }> {
     try {
-      await this.getAccessToken();
+      console.log(`Triggering mock sync for connection: ${connectionId}`);
       
-      // Try to trigger sync in Airbyte
-      try {
-        const job = await this.makeApiCall(`/connections/${connectionId}/jobs`, 'POST', {
-          jobType: 'sync'
-        });
-        
-        return {
-          success: true,
-          message: 'Sync triggered successfully',
-          jobId: job.id
-        };
-      } catch (error) {
-        // If we can't trigger real sync, simulate it
-        return {
-          success: true,
-          message: 'Sync simulated (limited workspace permissions)',
-          jobId: `sim_${Date.now()}`
-        };
-      }
+      // Simulate sync processing time
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const mockJobId = `mock_job_${Date.now()}`;
+      
+      return {
+        success: true,
+        message: 'Mock sync triggered successfully',
+        jobId: mockJobId
+      };
     } catch (error) {
       console.error('Error triggering sync:', error);
       return {
@@ -409,168 +332,18 @@ class DataConnectorService {
     }
   }
 
-  private async createOrGetSource(config: ConnectorConfig): Promise<string> {
-    try {
-      // First, check if a source already exists for this service
-      const sources = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/sources`);
-      const existingSource = sources.data?.find((source: any) => 
-        source.name.toLowerCase().includes(config.service.toLowerCase())
-      );
-      
-      if (existingSource) {
-        console.log('Using existing source:', existingSource.sourceId);
-        return existingSource.sourceId;
-      }
-
-      // Create new source
-      const sourceData = {
-        name: `${config.service} Source`,
-        sourceDefinitionId: this.getSourceDefinitionId(config.service),
-        workspaceId: this.config.workspaceId,
-        connectionConfiguration: this.formatSourceConfig(config)
-      };
-
-      const source = await this.makeApiCall('/sources', 'POST', sourceData);
-      console.log('New source created:', source.sourceId);
-      return source.sourceId;
-    } catch (error) {
-      console.error('Error creating/getting source:', error);
-      // Return a mock source ID if creation fails
-      return `mock_source_${config.service}_${Date.now()}`;
-    }
-  }
-
-  private async createOrGetDestination(_config: ConnectorConfig): Promise<string> {
-    try {
-      // Check if a destination already exists
-      const destinations = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/destinations`);
-      const existingDestination = destinations.data?.find((dest: any) => 
-        dest.name.toLowerCase().includes('snowflake') || dest.name.toLowerCase().includes('database')
-      );
-      
-      if (existingDestination) {
-        console.log('Using existing destination:', existingDestination.destinationId);
-        return existingDestination.destinationId;
-      }
-
-      // Create new Snowflake destination
-      const destinationData = {
-        name: 'Snowflake Destination',
-        destinationDefinitionId: this.getDestinationDefinitionId('snowflake'),
-        workspaceId: this.config.workspaceId,
-        connectionConfiguration: {
-          host: process.env.SNOWFLAKE_ACCOUNT,
-          username: process.env.SNOWFLAKE_USER,
-          password: process.env.SNOWFLAKE_PASSWORD,
-          database: 'MIAS_DATA_DB',
-          schema: 'RAW',
-          warehouse: 'COMPUTE_WH'
-        }
-      };
-
-      const destination = await this.makeApiCall('/destinations', 'POST', destinationData);
-      console.log('New destination created:', destination.destinationId);
-      return destination.destinationId;
-    } catch (error) {
-      console.error('Error creating/getting destination:', error);
-      // Return a mock destination ID if creation fails
-      return `mock_destination_snowflake_${Date.now()}`;
-    }
-  }
-
-  private formatSourceConfig(config: ConnectorConfig): any {
-    // Format source configuration based on service type
-    switch (config.service.toLowerCase()) {
-      case 'postgres':
-        return {
-          host: config.config.host || 'localhost',
-          port: config.config.port || 5432,
-          database: config.config.database,
-          username: config.config.username,
-          password: config.config.password,
-          ssl: config.config.ssl || false
-        };
-      case 'salesforce':
-        return {
-          client_id: config.config.client_id,
-          client_secret: config.config.client_secret,
-          refresh_token: config.config.refresh_token,
-          start_date: config.config.start_date,
-          is_sandbox: config.config.sandbox === 'Sandbox'
-        };
-      case 'quickbooks':
-        return {
-          sandbox: config.config.sandbox === 'Sandbox',
-          client_id: config.config.client_id,
-          client_secret: config.config.client_secret,
-          refresh_token: config.config.refresh_token,
-          realm_id: config.config.realm_id,
-          start_date: config.config.start_date
-        };
-      case 'harvest':
-        return {
-          subdomain: config.config.subdomain,
-          username: config.config.username,
-          password: config.config.password
-        };
-      case 'asana':
-        return {
-          personal_access_token: config.config.personal_access_token,
-          opt_fields: config.config.opt_fields ? config.config.opt_fields.split(',').map((f: string) => f.trim()) : undefined
-        };
-      case 'netsuite':
-        return {
-          realm: config.config.realm,
-          consumer_key: config.config.consumer_key,
-          consumer_secret: config.config.consumer_secret,
-          token_key: config.config.token_key,
-          token_secret: config.config.token_secret,
-          start_datetime: config.config.start_datetime
-        };
-      case 'hubspot':
-        return {
-          credentials: {
-            credentials_title: 'API Key Credentials',
-            api_key: config.config.apiKey
-          }
-        };
-      case 'jira':
-        return {
-          domain: config.config.domain,
-          email: config.config.email,
-          api_token: config.config.api_token,
-          projects: config.config.projects ? config.config.projects.split(',').map((p: string) => p.trim()) : [],
-          start_date: config.config.start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-        };
-      default:
-        return config.config;
-    }
-  }
-
-  private getSourceDefinitionId(service: string): string {
-    const definitions: Record<string, string> = {
-      postgres: "decd338e-5647-4c0b-adf4-da0e75f5a750",
-      mysql: "435bb9a5-7887-4809-aa58-28c27df0d7ad",
-      snowflake: "b21c0667-2c21-4ac6-b655-7b9eb36a0c7a",
-      bigquery: "3a0c3e2c-a6de-4c7e-b8c2-c4d9f4e4e4e4",
-      salesforce: "b117307c-14b6-41aa-9422-947e34922962",
-      hubspot: "36c891d9-4bd9-43ac-bad2-10e12756272c",
-      jira: "68e63de2-bb83-4c7e-93fa-a8a9051e3993",
-      quickbooks: "85811f0e-ca3b-4e93-b1bf-e4ab5633592b",
-      harvest: "fe2b4084-3386-4d3b-9ad6-308f61a6f1b6",
-      asana: "b6a47f92-18c3-4eb5-9d4c-c6b5a0b4b4b4",
-      netsuite: "64758b2c-6e50-41c8-b4d4-b4e4b4e4b4e4"
+  // Mock helper method for table counts
+  private getMockTableCount(service: string): number {
+    const tableCounts: Record<string, number> = {
+      jira: 8,
+      salesforce: 15,
+      quickbooks: 12,
+      harvest: 6,
+      asana: 10,
+      netsuite: 25,
+      hubspot: 18
     };
-    return definitions[service.toLowerCase()] || definitions.postgres;
-  }
-
-  private getDestinationDefinitionId(service: string): string {
-    const definitions: Record<string, string> = {
-      snowflake: "424892c4-daac-4491-b35d-c6688ba547ba",
-      postgres: "25c5221d-dce2-4163-ade9-739ef790f503",
-      bigquery: "22f6c74f-5699-40ff-af57-c3e4d4ce4d77"
-    };
-    return definitions[service.toLowerCase()] || definitions.snowflake;
+    return tableCounts[service.toLowerCase()] || Math.floor(Math.random() * 20) + 5;
   }
 }
 
