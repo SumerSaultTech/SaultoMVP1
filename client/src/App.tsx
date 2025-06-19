@@ -9,7 +9,6 @@ import Setup from "@/pages/setup";
 import DataBrowser from "@/pages/data-browser";
 import CompanySelection from "@/pages/company-selection";
 import Login from "@/pages/login";
-import ConnectionsTest from "@/pages/connections-test";
 
 import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
@@ -42,7 +41,6 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/setup" component={Setup} />
       <Route path="/data-browser" component={DataBrowser} />
-      <Route path="/connections-test" component={ConnectionsTest} />
       <Route path="/saultochat" component={SaultoChat} />
       <Route path="/metrics" component={MetricsManagement} />
       <Route path="/users" component={UserManagement} />
