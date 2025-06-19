@@ -111,6 +111,28 @@ class DataConnectorService {
     return response.json();
   }
 
+  async testWorkspaceAccess(): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      await this.getAccessToken();
+      console.log('Testing basic workspace access...');
+      
+      // Try the simpler workspaces endpoint first
+      const workspaces = await this.makeApiCall('/workspaces');
+      console.log('Workspaces response:', workspaces);
+      
+      return {
+        success: true,
+        data: workspaces
+      };
+    } catch (error) {
+      console.error('Workspace access test failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
   async setupConnectors(): Promise<{ success: boolean; connectors?: any[]; error?: string }> {
     console.log('Setting up data connectors with Airbyte Cloud integration');
     
@@ -394,10 +416,40 @@ class DataConnectorService {
         };
       case 'salesforce':
         return {
-          client_id: config.config.clientId,
-          client_secret: config.config.clientSecret,
-          refresh_token: config.config.refreshToken,
-          is_sandbox: config.config.isSandbox || false
+          client_id: config.config.client_id,
+          client_secret: config.config.client_secret,
+          refresh_token: config.config.refresh_token,
+          start_date: config.config.start_date,
+          is_sandbox: config.config.sandbox === 'Sandbox'
+        };
+      case 'quickbooks':
+        return {
+          sandbox: config.config.sandbox === 'Sandbox',
+          client_id: config.config.client_id,
+          client_secret: config.config.client_secret,
+          refresh_token: config.config.refresh_token,
+          realm_id: config.config.realm_id,
+          start_date: config.config.start_date
+        };
+      case 'harvest':
+        return {
+          subdomain: config.config.subdomain,
+          username: config.config.username,
+          password: config.config.password
+        };
+      case 'asana':
+        return {
+          personal_access_token: config.config.personal_access_token,
+          opt_fields: config.config.opt_fields ? config.config.opt_fields.split(',').map((f: string) => f.trim()) : undefined
+        };
+      case 'netsuite':
+        return {
+          realm: config.config.realm,
+          consumer_key: config.config.consumer_key,
+          consumer_secret: config.config.consumer_secret,
+          token_key: config.config.token_key,
+          token_secret: config.config.token_secret,
+          start_datetime: config.config.start_datetime
         };
       case 'hubspot':
         return {
@@ -405,6 +457,14 @@ class DataConnectorService {
             credentials_title: 'API Key Credentials',
             api_key: config.config.apiKey
           }
+        };
+      case 'jira':
+        return {
+          domain: config.config.domain,
+          email: config.config.email,
+          api_token: config.config.api_token,
+          projects: config.config.projects ? config.config.projects.split(',').map((p: string) => p.trim()) : [],
+          start_date: config.config.start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
         };
       default:
         return config.config;
@@ -418,7 +478,12 @@ class DataConnectorService {
       snowflake: "b21c0667-2c21-4ac6-b655-7b9eb36a0c7a",
       bigquery: "3a0c3e2c-a6de-4c7e-b8c2-c4d9f4e4e4e4",
       salesforce: "b117307c-14b6-41aa-9422-947e34922962",
-      hubspot: "36c891d9-4bd9-43ac-bad2-10e12756272c"
+      hubspot: "36c891d9-4bd9-43ac-bad2-10e12756272c",
+      jira: "68e63de2-bb83-4c7e-93fa-a8a9051e3993",
+      quickbooks: "85811f0e-ca3b-4e93-b1bf-e4ab5633592b",
+      harvest: "fe2b4084-3386-4d3b-9ad6-308f61a6f1b6",
+      asana: "b6a47f92-18c3-4eb5-9d4c-c6b5a0b4b4b4",
+      netsuite: "64758b2c-6e50-41c8-b4d4-b4e4b4e4b4e4"
     };
     return definitions[service.toLowerCase()] || definitions.postgres;
   }
