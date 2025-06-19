@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle, AlertCircle, Clock, RefreshCw, Play, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { AirbyteDiagnostics } from "@/components/airbyte-diagnostics";
 
 interface Connection {
   id: number;
@@ -156,9 +155,6 @@ export default function ConnectionsTest() {
 
       <main className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Diagnostics Card */}
-          <AirbyteDiagnostics />
-
           {/* Summary Card */}
           <Card>
             <CardHeader>
