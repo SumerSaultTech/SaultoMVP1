@@ -10,8 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CredentialDialog } from "@/components/ui/credential-dialog";
 import { CheckCircle, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { AirbyteDiagnostics } from "@/components/airbyte-diagnostics";
-import { AirbyteConfigDebugger } from "@/components/airbyte-config-debugger";
 
 // Step definitions
 type SetupStep = "initial" | "appCount" | "toolSelection" | "confirmLogin" | "syncProgress" | "complete";
@@ -598,10 +596,6 @@ export default function Setup() {
       </div>
 
       <main className="flex-1 overflow-y-auto p-6">
-        <div className="space-y-6">
-          <AirbyteConfigDebugger />
-          <AirbyteDiagnostics />
-        </div>
         {currentStep === "initial" && renderInitialStep()}
         {currentStep === "appCount" && renderAppCountStep()}
         {currentStep === "toolSelection" && renderToolSelectionStep()}
