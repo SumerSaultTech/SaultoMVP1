@@ -114,9 +114,14 @@ class DataConnectorService {
   async testWorkspaceAccess(): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
       await this.getAccessToken();
-      console.log('Testing workspace permissions...');
+      console.log('\n=== AIRBYTE PERMISSION TEST ===');
       
-      const tests = {
+      const tests: {
+        workspacesList: any;
+        sources: any;
+        destinations: any;
+        connections: any;
+      } = {
         workspacesList: null,
         sources: null,
         destinations: null,
@@ -124,52 +129,75 @@ class DataConnectorService {
       };
 
       // Test 1: List workspaces
+      console.log('Testing workspace list access...');
       try {
         tests.workspacesList = await this.makeApiCall('/workspaces');
-        console.log('✅ Can list workspaces');
+        console.log('✅ SUCCESS: Can list workspaces');
       } catch (error) {
         tests.workspacesList = { error: error instanceof Error ? error.message : 'Unknown error' };
-        console.log('❌ Cannot list workspaces:', error);
+        console.log('❌ FAILED: Cannot list workspaces');
+        console.log('   Error:', error instanceof Error ? error.message : error);
       }
 
       // Test 2: List sources in workspace
+      console.log(`Testing workspace sources access (workspace: ${this.config.workspaceId})...`);
       try {
         tests.sources = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/sources`);
-        console.log('✅ Can list workspace sources');
+        console.log('✅ SUCCESS: Can list workspace sources');
       } catch (error) {
         tests.sources = { error: error instanceof Error ? error.message : 'Unknown error' };
-        console.log('❌ Cannot list workspace sources:', error);
+        console.log('❌ FAILED: Cannot list workspace sources');
+        console.log('   Error:', error instanceof Error ? error.message : error);
       }
 
       // Test 3: List destinations in workspace
+      console.log('Testing workspace destinations access...');
       try {
         tests.destinations = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/destinations`);
-        console.log('✅ Can list workspace destinations');
+        console.log('✅ SUCCESS: Can list workspace destinations');
       } catch (error) {
         tests.destinations = { error: error instanceof Error ? error.message : 'Unknown error' };
-        console.log('❌ Cannot list workspace destinations:', error);
+        console.log('❌ FAILED: Cannot list workspace destinations');
+        console.log('   Error:', error instanceof Error ? error.message : error);
       }
 
       // Test 4: List connections in workspace
+      console.log('Testing workspace connections access...');
       try {
         tests.connections = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/connections`);
-        console.log('✅ Can list workspace connections');
+        console.log('✅ SUCCESS: Can list workspace connections');
       } catch (error) {
         tests.connections = { error: error instanceof Error ? error.message : 'Unknown error' };
-        console.log('❌ Cannot list workspace connections:', error);
+        console.log('❌ FAILED: Cannot list workspace connections');
+        console.log('   Error:', error instanceof Error ? error.message : error);
       }
+
+      // Summary
+      const summary = {
+        hasWorkspaceAccess: !tests.workspacesList?.error,
+        hasSourceAccess: !tests.sources?.error,
+        hasDestinationAccess: !tests.destinations?.error,
+        hasConnectionAccess: !tests.connections?.error
+      };
+
+      console.log('\n=== PERMISSION SUMMARY ===');
+      console.log('Workspace List:', summary.hasWorkspaceAccess ? '✅ ALLOWED' : '❌ DENIED');
+      console.log('Sources:', summary.hasSourceAccess ? '✅ ALLOWED' : '❌ DENIED');
+      console.log('Destinations:', summary.hasDestinationAccess ? '✅ ALLOWED' : '❌ DENIED');
+      console.log('Connections:', summary.hasConnectionAccess ? '✅ ALLOWED' : '❌ DENIED');
+
+      if (!summary.hasSourceAccess || !summary.hasDestinationAccess || !summary.hasConnectionAccess) {
+        console.log('\n🔧 TO FIX: Go to Airbyte Cloud → Settings → Applications');
+        console.log('   Update your application permissions to include WORKSPACE_READER or WORKSPACE_ADMIN');
+      }
+      console.log('=========================\n');
 
       return {
         success: true,
         data: {
           workspaceId: this.config.workspaceId,
           permissionTests: tests,
-          summary: {
-            hasWorkspaceAccess: !tests.workspacesList?.error,
-            hasSourceAccess: !tests.sources?.error,
-            hasDestinationAccess: !tests.destinations?.error,
-            hasConnectionAccess: !tests.connections?.error
-          }
+          summary
         }
       };
     } catch (error) {
