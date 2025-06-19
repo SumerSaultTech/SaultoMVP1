@@ -37,9 +37,10 @@ class DataConnectorService {
 
     console.log("Airbyte config:", {
       serverUrl: this.config.baseUrl,
-      clientId: this.config.clientId ? "***set***" : "missing",
+      clientId: this.config.clientId ? `***${this.config.clientId.substring(0, 8)}***` : "missing",
       clientSecret: this.config.clientSecret ? "***set***" : "missing",
-      workspaceId: this.config.workspaceId
+      workspaceId: this.config.workspaceId,
+      hasCredentials: !!(this.config.clientId && this.config.clientSecret)
     });
   }
 

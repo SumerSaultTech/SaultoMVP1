@@ -265,24 +265,62 @@ export function AirbyteDiagnostics() {
         )}
         
         <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-          <h4 className="font-medium text-gray-700 mb-2">Quick Test:</h4>
-          <Button 
-            onClick={async () => {
-              try {
-                const response = await fetch('/api/companies');
-                const data = await response.json();
-                console.log('Companies API test:', data);
-                alert(`Companies API works! Found ${data.length} companies`);
-              } catch (error) {
-                console.error('Companies API test failed:', error);
-                alert(`Companies API failed: ${error}`);
-              }
-            }}
-            variant="outline"
-            size="sm"
-          >
-            Test Basic API
-          </Button>
+          <h4 className="font-medium text-gray-700 mb-2">Debug Airbyte Config:</h4>
+          <div className="flex gap-2 flex-wrap">
+            <Button 
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/companies');
+                  const data = await response.json();
+                  console.log('Companies API test:', data);
+                  alert(`Companies API works! Found ${data.length} companies`);
+                } catch (error) {
+                  console.error('Companies API test failed:', error);
+                  alert(`Companies API failed: ${error}`);
+                }
+              }}
+              variant="outline"
+              size="sm"
+            >
+              Test Basic API
+            </Button>
+            <Button 
+              onClick={async () => {
+                // Check server environment variables
+                try {
+                  const response = await fetch('/api/airbyte/connections', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      sourceType: 'debug',
+                      credentials: { debug: 'config-check' },
+                      companyId: 1748544793859
+                    })
+                  });
+                  const result = await response.json();
+                  
+                  // Look at server logs for config info
+                  alert('Check server logs for Airbyte config details');
+                  console.log('Debug connection result:', result);
+                } catch (error) {
+                  console.error('Debug failed:', error);
+                }
+              }}
+              variant="outline"
+              size="sm"
+            >
+              Debug Config
+            </Button>
+          </div>
+          <div className="mt-3 text-xs text-gray-600">
+            <p><strong>If you have admin role but getting 403s:</strong></p>
+            <ul className="list-disc list-inside ml-2 mt-1 space-y-1">
+              <li>Check if Client ID/Secret match your admin application</li>
+              <li>Verify workspace ID is correct</li>
+              <li>Ensure API key isn't from a different workspace</li>
+              <li>Try regenerating the API credentials</li>
+            </ul>
+          </div>
         </div>
       </CardContent>
     </Card>
