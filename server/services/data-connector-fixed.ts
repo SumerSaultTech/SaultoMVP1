@@ -114,18 +114,66 @@ class DataConnectorService {
   async testWorkspaceAccess(): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
       await this.getAccessToken();
-      console.log('Testing basic workspace access...');
+      console.log('Testing workspace permissions...');
       
-      // Try the simpler workspaces endpoint first
-      const workspaces = await this.makeApiCall('/workspaces');
-      console.log('Workspaces response:', workspaces);
-      
+      const tests = {
+        workspacesList: null,
+        sources: null,
+        destinations: null,
+        connections: null
+      };
+
+      // Test 1: List workspaces
+      try {
+        tests.workspacesList = await this.makeApiCall('/workspaces');
+        console.log('✅ Can list workspaces');
+      } catch (error) {
+        tests.workspacesList = { error: error instanceof Error ? error.message : 'Unknown error' };
+        console.log('❌ Cannot list workspaces:', error);
+      }
+
+      // Test 2: List sources in workspace
+      try {
+        tests.sources = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/sources`);
+        console.log('✅ Can list workspace sources');
+      } catch (error) {
+        tests.sources = { error: error instanceof Error ? error.message : 'Unknown error' };
+        console.log('❌ Cannot list workspace sources:', error);
+      }
+
+      // Test 3: List destinations in workspace
+      try {
+        tests.destinations = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/destinations`);
+        console.log('✅ Can list workspace destinations');
+      } catch (error) {
+        tests.destinations = { error: error instanceof Error ? error.message : 'Unknown error' };
+        console.log('❌ Cannot list workspace destinations:', error);
+      }
+
+      // Test 4: List connections in workspace
+      try {
+        tests.connections = await this.makeApiCall(`/workspaces/${this.config.workspaceId}/connections`);
+        console.log('✅ Can list workspace connections');
+      } catch (error) {
+        tests.connections = { error: error instanceof Error ? error.message : 'Unknown error' };
+        console.log('❌ Cannot list workspace connections:', error);
+      }
+
       return {
         success: true,
-        data: workspaces
+        data: {
+          workspaceId: this.config.workspaceId,
+          permissionTests: tests,
+          summary: {
+            hasWorkspaceAccess: !tests.workspacesList?.error,
+            hasSourceAccess: !tests.sources?.error,
+            hasDestinationAccess: !tests.destinations?.error,
+            hasConnectionAccess: !tests.connections?.error
+          }
+        }
       };
     } catch (error) {
-      console.error('Workspace access test failed:', error);
+      console.error('Permission test failed:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
