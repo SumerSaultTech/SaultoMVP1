@@ -1667,6 +1667,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test endpoint for debugging Airbyte workspace access
+  app.get("/api/airbyte/test-workspace", async (req, res) => {
+    try {
+      const result = await dataConnectorService.testWorkspaceAccess();
+      res.json(result);
+    } catch (error) {
+      console.error('Test workspace endpoint error:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
