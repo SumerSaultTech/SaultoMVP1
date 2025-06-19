@@ -16,7 +16,6 @@ export default function Sidebar() {
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/data-browser", icon: Database, label: "Data Browser" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
-    { path: "/connections-test", icon: Zap, label: "Test Connections" },
     { path: "/users", icon: Users, label: "User Management" },
     { path: "/admin", icon: Shield, label: "Admin Panel" },
     { path: "/saultochat", icon: MessageCircle, label: "SaultoChat" },
