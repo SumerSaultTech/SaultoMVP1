@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CredentialDialog } from "@/components/ui/credential-dialog";
 import { CheckCircle, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AirbyteDiagnostics } from "@/components/airbyte-diagnostics";
+import { AirbyteConfigDebugger } from "@/components/airbyte-config-debugger";
 
 // Step definitions
 type SetupStep = "initial" | "appCount" | "toolSelection" | "confirmLogin" | "syncProgress" | "complete";
@@ -84,11 +86,11 @@ export default function Setup() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [completedLogins, setCompletedLogins] = useState<string[]>([]);
-  
+
   // Credential dialog state
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
   const [currentToolForCredentials, setCurrentToolForCredentials] = useState<string | null>(null);
-  
+
   const { toast } = useToast();
 
   // Handle tool selection
@@ -103,7 +105,7 @@ export default function Setup() {
   // Handle credential submission for Airbyte connection
   const handleCredentialSubmit = async (credentials: Record<string, string>) => {
     if (!currentToolForCredentials) return;
-    
+
     setIsLoggingIn(true);
     try {
       // Call API to create Airbyte connection
@@ -124,13 +126,13 @@ export default function Setup() {
       }
 
       const result = await response.json();
-      
+
       setCompletedLogins(prev => [...prev, currentToolForCredentials]);
-      
+
       // Show appropriate message based on connection status
       const toolName = availableTools.find(t => t.id === currentToolForCredentials)?.name;
       const isAuthenticated = result.status === "authenticated";
-      
+
       toast({
         title: isAuthenticated ? "Connection Ready" : "Connection Created",
         description: isAuthenticated 
@@ -160,10 +162,10 @@ export default function Setup() {
   const simulateDataSync = async () => {
     setIsSyncing(true);
     setSyncProgress(0);
-    
+
     const totalSteps = selectedTools.length * 20; // 20 progress points per tool
     let currentProgress = 0;
-    
+
     for (const tool of selectedTools) {
       // Simulate sync for each tool
       for (let i = 0; i < 20; i++) {
@@ -172,7 +174,7 @@ export default function Setup() {
         setSyncProgress((currentProgress / totalSteps) * 100);
       }
     }
-    
+
     setIsSyncing(false);
     setCurrentStep("complete");
   };
@@ -297,7 +299,7 @@ export default function Setup() {
         {availableTools.map((tool) => {
           const Icon = tool.icon;
           const isSelected = selectedTools.includes(tool.id);
-          
+
           return (
             <Card 
               key={tool.id}
@@ -378,7 +380,7 @@ export default function Setup() {
           const tool = availableTools.find(t => t.id === toolId)!;
           const Icon = tool.icon;
           const isCompleted = completedLogins.includes(toolId);
-          
+
           return (
             <Card key={toolId}>
               <CardContent className="p-6">
@@ -491,7 +493,7 @@ export default function Setup() {
               const Icon = tool.icon;
               const toolProgress = Math.max(0, Math.min(100, (syncProgress - (index * (100 / selectedTools.length))) * (selectedTools.length)));
               const isCompleted = toolProgress >= 100;
-              
+
               return (
                 <div key={toolId} className="flex items-center space-x-4 p-3 rounded-lg bg-gray-50">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tool.color}`}>
@@ -596,6 +598,10 @@ export default function Setup() {
       </div>
 
       <main className="flex-1 overflow-y-auto p-6">
+        <div className="space-y-6">
+          <AirbyteConfigDebugger />
+          <AirbyteDiagnostics />
+        </div>
         {currentStep === "initial" && renderInitialStep()}
         {currentStep === "appCount" && renderAppCountStep()}
         {currentStep === "toolSelection" && renderToolSelectionStep()}
@@ -603,7 +609,7 @@ export default function Setup() {
         {currentStep === "syncProgress" && renderSyncProgressStep()}
         {currentStep === "complete" && renderCompleteStep()}
       </main>
-      
+
       {/* Credential Dialog */}
       <CredentialDialog
         open={credentialDialogOpen}
