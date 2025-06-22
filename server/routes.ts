@@ -1567,7 +1567,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (conn.connectorId) {
             const statusResult = await pythonConnectorService.getConnectorStatusById(conn.connectorId);
             return {
-              id: conn.id,
+              id: conn.connectorId, // Use the Python connector ID for sync operations
+              connectionId: conn.connectorId, // Also provide as connectionId for compatibility
               sourceType: conn.type,
               companyId: conn.companyId,
               status: statusResult.success ? statusResult.data.status : conn.status,
@@ -1577,7 +1578,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             };
           }
           return {
-            id: conn.id,
+            id: conn.connectorId || conn.id, // Use connector ID if available, fallback to database ID
+            connectionId: conn.connectorId || conn.id,
             sourceType: conn.type,
             companyId: conn.companyId,
             status: conn.status,
