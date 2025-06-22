@@ -1,13 +1,17 @@
 """
-Snowflake data loader for simple connectors.
+Snowflake data loader for simple connectors using pure Python mode.
 """
 
 import os
 import json
 import logging
-import snowflake.connector
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+
+# Enable pure Python mode to avoid libcrypto issues
+os.environ["SNOWFLAKE_CONNECTOR_PREFER_PYTHON_SSL"] = "true"
+
+import snowflake.connector
 
 logger = logging.getLogger(__name__)
 
