@@ -16,9 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Python Services
 - `python start_python_service.py` - Start Snowflake service on port 5001
-- `python start_connector_service.py` - Start Python connector API service on port 5002
+- `python start_simple_connector_service.py` - Start Python connector API service on port 5002
 - `python test_snowflake_connection.py` - Test Snowflake connectivity
-- `python test_python_connectors.py` - Test Python connector system
 - `python test_jira_connector.py` - Test Jira connector specifically
 
 ### Replit Setup
@@ -187,14 +186,19 @@ This codebase uses **TypeScript for application logic** and **Python for data op
 - Communication between services via HTTP APIs
 
 ### Python Connector System
-Custom Python-based data pipeline replacing Airbyte:
-- **Base Connector Class**: `python_connectors/base_connector.py` - Abstract base for all connectors
-- **Salesforce Connector**: `python_connectors/salesforce_connector.py` - Salesforce REST API integration  
-- **HubSpot Connector**: `python_connectors/hubspot_connector.py` - HubSpot CRM API integration
-- **Jira Connector**: `python_connectors/jira_connector.py` - Jira/Atlassian API integration
-- **Connector Manager**: `python_connectors/connector_manager.py` - Orchestrates multiple connectors
-- **API Service**: `python_connectors/api_service.py` - Flask HTTP API on port 5002
+Simplified Python-based data pipeline (no pandas dependencies):
+- **Base Connector**: `python_connectors/simple_base_connector.py` - Abstract base for all connectors
+- **Salesforce Connector**: `python_connectors/simple_salesforce_connector.py` - Salesforce REST API integration  
+- **Jira Connector**: `python_connectors/simple_jira_connector.py` - Jira/Atlassian API integration
+- **Connector Manager**: `python_connectors/simple_connector_manager.py` - Orchestrates multiple connectors
+- **API Service**: `python_connectors/simple_api_service.py` - Flask HTTP API on port 5002
 - **TypeScript Bridge**: `server/services/python-connector-service.ts` - Interfaces with Python API
+
+**Architecture Benefits**:
+- No pandas/numpy dependencies (Replit compatible)
+- Pure Python data structures for maximum compatibility
+- Real API data extraction from Jira, Salesforce, etc.
+- Lightweight and fast startup times
 
 ## Testing
 

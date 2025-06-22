@@ -2,7 +2,6 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { snowflakeService } from "./services/snowflake-stub";
-import { dataConnectorService } from "./services/data-connector-fixed";
 import { pythonConnectorService } from "./services/python-connector-service";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
@@ -25,21 +24,6 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
-// In-memory storage for connections (replace with database in production)
-interface StoredConnection {
-  id: number;
-  companyId: number;
-  name: string;
-  type: string;
-  status: string;
-  connectorId: string;
-  tableCount: number;
-  lastSyncAt: Date | null;
-  createdAt: Date;
-}
-
-const connectionsStore: StoredConnection[] = [];
-let connectionIdCounter = 1;
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
@@ -1484,7 +1468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Airbyte Connection Management
+  // Python Connector Management
   app.post("/api/airbyte/connections", async (req, res) => {
     try {
       const { sourceType, credentials, companyId } = req.body;
@@ -1506,26 +1490,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         service: sourceType,
         config: { ...credentials, companyId }
       });
-
-      // dataConnectorService.createConnector returns a ConnectorResponse, not a success/error object
-      // So if we get here, it was successful
-
-      // Store connection in memory
-      const connection: StoredConnection = {
-        id: connectionIdCounter++,
-        companyId,
-        name: result.name,
-        type: sourceType,
-        status: result.status,
-        connectorId: result.id,
-        tableCount: result.tableCount,
-        lastSyncAt: result.lastSyncAt,
-        createdAt: new Date()
-      };
-
-      connectionsStore.push(connection);
       
-      console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
+      console.log(`Created connection: ${sourceType} for company ${company.name}`);
       console.log(`Connection ID: ${result.id}`);
       
       res.json({
@@ -1545,53 +1511,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
     } catch (error: any) {
-      console.error("Airbyte connection creation error:", error);
+      console.error("Connection creation error:", error);
       res.status(500).json({ 
-        error: "Failed to create Airbyte connection",
+        error: "Failed to create connection",
         details: error.message 
       });
     }
   });
 
-  // Get Airbyte connections for a company
+  // Get Python connectors for a company
   app.get("/api/airbyte/connections/:companyId", async (req, res) => {
     try {
       const companyId = parseInt(req.params.companyId);
       
-      // Fetch connections from memory
-      const connections = connectionsStore.filter(conn => conn.companyId === companyId);
+      // Get all connectors from Python service and filter by company
+      const connectorsResult = await pythonConnectorService.listConnectors();
       
-      // Get real-time status from Airbyte for each connection
-      const connectionsWithStatus = await Promise.all(
-        connections.map(async (conn) => {
-          if (conn.connectorId) {
-            const statusResult = await pythonConnectorService.getConnectorStatusById(conn.connectorId);
-            return {
-              id: conn.connectorId, // Use the Python connector ID for sync operations
-              connectionId: conn.connectorId, // Also provide as connectionId for compatibility
-              sourceType: conn.type,
-              companyId: conn.companyId,
-              status: statusResult.success ? statusResult.data.status : conn.status,
-              createdAt: conn.createdAt,
-              lastSync: statusResult.success ? statusResult.data.lastSync : conn.lastSyncAt,
-              recordsSynced: statusResult.success ? statusResult.data.recordsSynced : 0
-            };
-          }
-          return {
-            id: conn.connectorId || conn.id, // Use connector ID if available, fallback to database ID
-            connectionId: conn.connectorId || conn.id,
-            sourceType: conn.type,
-            companyId: conn.companyId,
-            status: conn.status,
-            createdAt: conn.createdAt,
-            lastSync: conn.lastSyncAt
-          };
-        })
+      if (!connectorsResult.success) {
+        return res.status(500).json({ 
+          error: "Failed to fetch connectors",
+          details: connectorsResult.error 
+        });
+      }
+      
+      // Filter connectors by company ID
+      const companyConnectors = connectorsResult.data.filter((connector: any) => 
+        connector.config?.companyId === companyId
       );
+      
+      // Transform to expected format
+      const connectionsWithStatus = companyConnectors.map((connector: any) => ({
+        id: connector.id,
+        connectionId: connector.id,
+        sourceType: connector.service,
+        companyId: companyId,
+        status: connector.status,
+        createdAt: connector.createdAt,
+        lastSync: connector.lastSync,
+        recordsSynced: connector.recordsSynced || 0
+      }));
       
       res.json(connectionsWithStatus);
     } catch (error: any) {
-      console.error("Error fetching Airbyte connections:", error);
+      console.error("Error fetching connections:", error);
       res.status(500).json({ 
         error: "Failed to fetch connections",
         details: error.message 
@@ -1599,7 +1561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Trigger sync for a specific connection
+  // Trigger sync for a specific Python connector
   app.post("/api/airbyte/connections/:connectionId/sync", async (req, res) => {
     try {
       const { connectionId } = req.params;

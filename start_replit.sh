@@ -83,7 +83,7 @@ echo "📊 Visit your app and check /api/health for detailed status"
 echo ""
 echo "💡 If Python Connector Service isn't running:"
 echo "   - Open a new Shell tab in Replit"
-echo "   - Run: python start_connector_service.py"
+echo "   - Run: python start_simple_connector_service.py"
 echo ""
 
 # Keep main process running

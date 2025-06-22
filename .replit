@@ -46,7 +46,7 @@ waitForPort = 5000
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python start_connector_service.py"
+args = "python start_simple_connector_service.py"
 waitForPort = 5002
 
 [[workflows.workflow.tasks]]

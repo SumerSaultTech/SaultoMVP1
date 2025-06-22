@@ -39,7 +39,7 @@ start_service_with_retry() {
 
 # Start services with retry logic
 echo "🔌 Starting Python Connector Service (port 5002)..."
-start_service_with_retry "Python Connector Service" "python start_connector_service.py" "5002"
+start_service_with_retry "Python Connector Service" "python start_simple_connector_service.py" "5002"
 CONNECTOR_PID=$!
 
 echo "❄️  Starting Snowflake Python Service (port 5001)..."
