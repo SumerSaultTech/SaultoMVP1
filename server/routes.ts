@@ -129,6 +129,37 @@ const companiesArray: any[] = [
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Health check endpoint with service status
+  app.get("/api/health", async (req, res) => {
+    const health = {
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      services: {
+        main: "running",
+        snowflake: "unknown",
+        connectors: "unknown"
+      }
+    };
+
+    // Check Python connector service
+    try {
+      const connectorHealthy = await pythonConnectorService.isServiceHealthy();
+      health.services.connectors = connectorHealthy ? "running" : "offline";
+    } catch (error) {
+      health.services.connectors = "error";
+    }
+
+    // Check Snowflake service (if available)
+    try {
+      const response = await fetch("http://localhost:5001/health", { signal: AbortSignal.timeout(2000) });
+      health.services.snowflake = response.ok ? "running" : "error";
+    } catch (error) {
+      health.services.snowflake = "offline";
+    }
+
+    res.json(health);
+  });
+  
   // Companies
   app.get("/api/companies", async (req, res) => {
     try {

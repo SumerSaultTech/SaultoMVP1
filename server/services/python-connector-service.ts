@@ -353,9 +353,47 @@ class PythonConnectorService {
     const connectorType = config.service.toLowerCase();
     const companyId = config.config.companyId || 1; // Default company for now
     
+    // Check if service is healthy first
+    const isHealthy = await this.isServiceHealthy();
+    if (!isHealthy) {
+      // Return mock connector if Python service isn't available
+      console.warn(`Python connector service unavailable, returning mock ${connectorType} connector`);
+      
+      return {
+        id: `mock_${connectorType}_${companyId}`,
+        name: `${connectorType.charAt(0).toUpperCase() + connectorType.slice(1)} Connection (Mock)`,
+        status: 'mock',
+        tableCount: 0,
+        lastSyncAt: null,
+        config: {
+          service: connectorType,
+          type: 'mock_connector',
+          companyId,
+          authenticated: false,
+          note: 'Python connector service is offline. Start with: python start_connector_service.py'
+        }
+      };
+    }
+    
     // Extract credentials from config
     const credentials = { ...config.config };
     delete credentials.companyId;
+    
+    // Map credential field names for different connectors
+    if (connectorType === 'jira') {
+      // Map common Jira field variations
+      if (credentials.domain && !credentials.server_url) {
+        credentials.server_url = credentials.domain;
+        delete credentials.domain;
+      }
+      if (credentials.email && !credentials.username) {
+        credentials.username = credentials.email;
+        delete credentials.email;
+      }
+      // Remove extra fields that aren't needed
+      delete credentials.start_date;
+      delete credentials.start_datestart_date;
+    }
     
     const result = await this.createConnector(companyId, connectorType, credentials);
     

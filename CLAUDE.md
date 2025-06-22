@@ -22,11 +22,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `python test_jira_connector.py` - Test Jira connector specifically
 
 ### Replit Setup
-For Replit deployment, the app is configured to auto-start all services:
-1. **Automatic Startup**: The `.replit` file is configured to start all services in parallel
-2. **Manual Start**: Use `npm run start:all` or `./start_all_services.sh` 
-3. **Service Ports**: 5000 (main app), 5001 (Snowflake), 5002 (connectors)
-4. **Graceful Fallback**: If Python services aren't running, connectors fall back to mock mode
+The app is now fully configured for **automatic startup** in Replit:
+
+1. **🚀 Automatic Startup**: 
+   - The `.replit` file runs `npm run start:replit` which starts all services
+   - Node.js server auto-detects and starts Python services if needed
+   - **Just hit the "Run" button and everything starts automatically!**
+
+2. **📋 Manual Commands** (if needed):
+   - `npm run start:replit` - Replit-optimized startup (recommended)
+   - `npm run start:all` - General multi-service startup  
+   - `npm run start:connectors:quick` - Just the connector service
+
+3. **🔍 Service Monitoring**:
+   - **Service Ports**: 5000 (main app), 5001 (Snowflake), 5002 (connectors)
+   - **Health Check**: Visit `/api/health` to see real-time status of all services
+   - **Graceful Fallback**: If Python services fail, connectors work in mock mode
+
+4. **✅ What happens when you hit "Run"**:
+   - Installs Python dependencies automatically
+   - Starts Python Connector Service (port 5002) 
+   - Starts Snowflake Python Service (port 5001)
+   - Starts main Node.js app (port 5000)
+   - Shows status of each service
+
+### Troubleshooting Python Connectors
+If you see `ECONNREFUSED 127.0.0.1:5002` errors:
+
+1. **Start the connector service**:
+   ```bash
+   npm run start:connectors:quick
+   # OR
+   python quick_start_connectors.py
+   ```
+
+2. **Check service status**:
+   ```bash
+   curl http://localhost:5002/health
+   # OR visit /api/health in your browser
+   ```
+
+3. **Replit-specific steps**:
+   - Open a new Shell tab in Replit
+   - Run `npm run start:connectors:quick`
+   - Keep the shell tab open while using the app
 
 ## Architecture
 

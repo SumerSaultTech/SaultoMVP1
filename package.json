@@ -8,7 +8,9 @@
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "start:all": "./start_all_services.sh",
+    "start:replit": "./start_replit.sh",
     "start:connectors": "python start_connector_service.py",
+    "start:connectors:quick": "python quick_start_connectors.py",
     "start:snowflake": "python start_python_service.py",
     "check": "tsc",
     "db:push": "drizzle-kit push"

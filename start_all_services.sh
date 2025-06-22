@@ -5,19 +5,49 @@ echo "🚀 Starting SaultoMVP1 Services..."
 
 # Install Python dependencies if needed
 echo "📦 Installing Python dependencies..."
-pip install -r requirements_connectors.txt > /dev/null 2>&1
+pip install -r requirements_connectors.txt > /dev/null 2>&1 || echo "⚠️ Warning: Could not install Python dependencies"
 
-# Start services in background
+# Function to start service with retry
+start_service_with_retry() {
+    local name="$1"
+    local command="$2"
+    local port="$3"
+    local max_retries=3
+    local retry=0
+    
+    while [ $retry -lt $max_retries ]; do
+        echo "🔄 Starting $name (attempt $((retry + 1)))..."
+        $command &
+        local pid=$!
+        
+        # Wait a bit for service to start
+        sleep 2
+        
+        # Check if process is still running
+        if kill -0 $pid 2>/dev/null; then
+            echo "✅ $name started successfully (PID: $pid)"
+            return 0
+        else
+            echo "❌ $name failed to start, retrying..."
+            retry=$((retry + 1))
+        fi
+    done
+    
+    echo "⚠️ Failed to start $name after $max_retries attempts"
+    return 1
+}
+
+# Start services with retry logic
 echo "🔌 Starting Python Connector Service (port 5002)..."
-python start_connector_service.py &
+start_service_with_retry "Python Connector Service" "python start_connector_service.py" "5002"
 CONNECTOR_PID=$!
 
 echo "❄️  Starting Snowflake Python Service (port 5001)..."
-python start_python_service.py &
+start_service_with_retry "Snowflake Python Service" "python start_python_service.py" "5001"
 SNOWFLAKE_PID=$!
 
 echo "🌐 Starting Node.js Development Server (port 5000)..."
-npm run dev &
+start_service_with_retry "Node.js Development Server" "npm run dev" "5000"
 NODE_PID=$!
 
 # Wait for services to be ready
