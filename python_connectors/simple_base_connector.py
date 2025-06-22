@@ -14,14 +14,14 @@ from dataclasses import dataclass
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import Snowflake loader (optional - fallback if not available)
+# Import HTTP-based Snowflake loader (avoids libcrypto issues)
 try:
-    from .snowflake_loader import SnowflakeLoader
+    from .snowflake_http_loader import SnowflakeHTTPLoader
     SNOWFLAKE_AVAILABLE = True
-    logger.info("Snowflake loader available")
+    logger.info("Snowflake HTTP loader available")
 except ImportError as e:
     SNOWFLAKE_AVAILABLE = False
-    logger.info("Snowflake loader not available - data will only be logged")
+    logger.info("Snowflake HTTP loader not available - data will only be logged")
     logger.debug(f"Snowflake import error: {e}")
 
 @dataclass
@@ -53,8 +53,8 @@ class SimpleBaseConnector(ABC):
         self.credentials = credentials
         self.config = config or {}
         
-        # Initialize Snowflake loader if available
-        self.snowflake_loader = SnowflakeLoader() if SNOWFLAKE_AVAILABLE else None
+        # Initialize Snowflake HTTP loader if available
+        self.snowflake_loader = SnowflakeHTTPLoader() if SNOWFLAKE_AVAILABLE else None
         
     @property
     @abstractmethod
