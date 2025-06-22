@@ -11,13 +11,15 @@ from datetime import datetime, timedelta
 import os
 from dataclasses import dataclass
 
-# Import Snowflake loader
+# Import Snowflake loader (optional - fallback if not available)
 try:
     from .snowflake_loader import SnowflakeLoader
     SNOWFLAKE_AVAILABLE = True
-except ImportError:
+    logger.info("Snowflake loader available")
+except ImportError as e:
     SNOWFLAKE_AVAILABLE = False
-    logger.warning("Snowflake loader not available - data will only be logged")
+    logger.info("Snowflake loader not available - data will only be logged")
+    logger.debug(f"Snowflake import error: {e}")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
