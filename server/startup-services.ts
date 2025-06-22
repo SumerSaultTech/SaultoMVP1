@@ -35,7 +35,7 @@ async function startConnectorService(): Promise<boolean> {
     
     // Install dependencies first
     try {
-      await execAsync('pip install -q -r requirements_connectors.txt');
+      await execAsync('pip install -q -r requirements_simple_connectors.txt');
     } catch (error) {
       console.warn('⚠️ Warning: Could not install Python dependencies');
     }

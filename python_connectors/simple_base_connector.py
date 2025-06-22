@@ -11,6 +11,14 @@ from datetime import datetime, timedelta
 import os
 from dataclasses import dataclass
 
+# Import Snowflake loader
+try:
+    from .snowflake_loader import SnowflakeLoader
+    SNOWFLAKE_AVAILABLE = True
+except ImportError:
+    SNOWFLAKE_AVAILABLE = False
+    logger.warning("Snowflake loader not available - data will only be logged")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -42,6 +50,9 @@ class SimpleBaseConnector(ABC):
         self.company_id = company_id
         self.credentials = credentials
         self.config = config or {}
+        
+        # Initialize Snowflake loader if available
+        self.snowflake_loader = SnowflakeLoader() if SNOWFLAKE_AVAILABLE else None
         
     @property
     @abstractmethod
@@ -96,11 +107,34 @@ class SimpleBaseConnector(ABC):
                 logger.info(f"No new data for table {table_name}")
                 return True, 0
             
-            # For now, just log the data (no Snowflake dependency)
             logger.info(f"Extracted {len(data)} records from {table_name}")
-            logger.info(f"Sample record: {data[0] if data else 'No data'}")
             
-            return True, len(data)
+            # Load data into Snowflake if available
+            if self.snowflake_loader and SNOWFLAKE_AVAILABLE:
+                try:
+                    # Create table name with connector prefix
+                    snowflake_table_name = f"{self.connector_name.upper()}_{table_name.upper()}"
+                    
+                    records_loaded = self.snowflake_loader.load_data(
+                        table_name=snowflake_table_name,
+                        data=data,
+                        source_system=self.connector_name,
+                        company_id=self.company_id
+                    )
+                    
+                    logger.info(f"Successfully loaded {records_loaded} records into Snowflake table {snowflake_table_name}")
+                    return True, records_loaded
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load data into Snowflake: {e}")
+                    # Still return success if data was extracted, even if Snowflake load failed
+                    logger.info(f"Data extraction successful, but Snowflake load failed for {table_name}")
+                    return True, len(data)
+            else:
+                # Fallback: just log the data if Snowflake is not available
+                logger.info(f"Snowflake not available - logging data for {table_name}")
+                logger.info(f"Sample record: {data[0] if data else 'No data'}")
+                return True, len(data)
                 
         except Exception as e:
             logger.error(f"Error syncing table {table_name}: {str(e)}")
