@@ -11,6 +11,9 @@ from datetime import datetime, timedelta
 import os
 from dataclasses import dataclass
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Import Snowflake loader (optional - fallback if not available)
 try:
     from .snowflake_loader import SnowflakeLoader
@@ -20,9 +23,6 @@ except ImportError as e:
     SNOWFLAKE_AVAILABLE = False
     logger.info("Snowflake loader not available - data will only be logged")
     logger.debug(f"Snowflake import error: {e}")
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 @dataclass
 class SyncResult:
