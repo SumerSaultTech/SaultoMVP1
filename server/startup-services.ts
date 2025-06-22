@@ -40,8 +40,8 @@ async function startConnectorService(): Promise<boolean> {
       console.warn('⚠️ Warning: Could not install Python dependencies');
     }
 
-    // Start the connector service
-    const connectorProcess = spawn('python', ['start_connector_service.py'], {
+    // Start the simplified connector service (no pandas dependency)
+    const connectorProcess = spawn('python', ['start_simple_connector_service.py'], {
       detached: true,
       stdio: 'pipe'
     });
