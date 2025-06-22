@@ -15,7 +15,7 @@ def execute_snowflake_query(sql_query):
         
         conn = snowflake.connector.connect(
             account=account_format,
-            user=os.getenv("SNOWFLAKE_USERNAME"),
+            user=os.getenv("SNOWFLAKE_USER"),
             password=os.getenv("SNOWFLAKE_PASSWORD"),
             warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
             database='MIAS_DATA_DB',
