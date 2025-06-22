@@ -38,7 +38,7 @@ echo "📦 Installing Python dependencies..."
 pip install -q -r requirements_connectors.txt 2>/dev/null || echo "⚠️ Warning: Python dependencies install failed (may not be critical)"
 
 # Start Python Connector Service first (most important for your use case)
-start_if_not_running "Python Connector Service" "python start_connector_service.py" "5002"
+start_if_not_running "Python Connector Service" "python start_simple_connector_service.py" "5002"
 
 # Start Snowflake Python Service
 start_if_not_running "Snowflake Python Service" "python start_python_service.py" "5001"

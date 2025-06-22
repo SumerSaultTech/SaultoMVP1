@@ -30,8 +30,8 @@ def start_connector_service():
     print("🚀 Starting Python Connector Service on port 5002...")
     
     try:
-        # Start the service
-        process = subprocess.Popen([sys.executable, "start_connector_service.py"])
+        # Start the simplified service (no pandas dependency)
+        process = subprocess.Popen([sys.executable, "start_simple_connector_service.py"])
         
         # Wait a bit for service to start
         print("⏳ Waiting for service to start...")
@@ -98,8 +98,9 @@ def main():
         print("💡 Troubleshooting:")
         print("   1. Make sure port 5002 is not in use")
         print("   2. Check that Python dependencies are installed")
-        print("   3. Verify start_connector_service.py exists")
-        print("   4. Check console for error messages")
+        print("   3. Verify start_simple_connector_service.py exists")
+        print("   4. Try: python start_simple_connector_service.py")
+        print("   5. Check console for error messages")
         return 1
 
 if __name__ == '__main__':
