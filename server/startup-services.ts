@@ -120,7 +120,7 @@ export async function startPythonServices(): Promise<void> {
   } else {
     console.log('⚠️ Python services failed to start automatically');
     console.log('💡 You can start them manually:');
-    console.log('   - python start_connector_service.py');
+    console.log('   - python start_simple_connector_service.py');
     console.log('   - python start_python_service.py');
   }
 }
