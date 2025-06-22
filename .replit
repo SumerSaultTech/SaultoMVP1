@@ -1,5 +1,5 @@
 modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
-run = "bash -c 'python start_simple_connector_service.py & sleep 3 && npm run dev'"
+run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
@@ -21,6 +21,7 @@ externalPort = 3000
 [[ports]]
 localPort = 5002
 externalPort = 5002
+visible = true
 
 [workflows]
 runButton = "Project"

@@ -72,8 +72,8 @@ app.use((req, res, next) => {
   }, async () => {
     log(`serving on port ${port}`);
     
-    // Auto-start Python services in development mode (disabled - use Replit startup)
-    if (app.get("env") === "development" && false) {
+    // Auto-start Python services in development mode  
+    if (app.get("env") === "development") {
       log("🔧 Auto-starting Python services...");
       setTimeout(() => {
         startPythonServices().catch(error => {
