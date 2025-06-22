@@ -18,6 +18,10 @@ externalPort = 80
 localPort = 5001
 externalPort = 3000
 
+[[ports]]
+localPort = 5002
+externalPort = 5002
+
 [workflows]
 runButton = "Project"
 
@@ -38,3 +42,13 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_connector_service.py"
+waitForPort = 5002
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_python_service.py"
+waitForPort = 5001

@@ -29,6 +29,13 @@ export const dataSources = pgTable("data_sources", {
   tableCount: integer("table_count").default(0),
   lastSyncAt: timestamp("last_sync_at"),
   config: jsonb("config"),
+  credentials: jsonb("credentials"), // Encrypted API credentials
+  syncTables: text("sync_tables").array().default([]), // List of tables to sync
+  syncFrequency: text("sync_frequency").default("daily"), // 'hourly', 'daily', 'weekly'
+  lastSyncRecords: integer("last_sync_records").default(0),
+  lastSyncError: text("last_sync_error"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const sqlModels = pgTable("sql_models", {

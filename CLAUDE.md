@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Development
 - `npm run dev` - Start development server (frontend + backend on port 5000)
+- `npm run start:all` - Start all services (Node.js + Python connectors + Snowflake)
+- `npm run start:connectors` - Start Python connector service only (port 5002)
+- `npm run start:snowflake` - Start Snowflake Python service only (port 5001)
 - `npm run build` - Build for production  
 - `npm run start` - Start production server
 - `npm run check` - Run TypeScript type checking
@@ -13,7 +16,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Python Services
 - `python start_python_service.py` - Start Snowflake service on port 5001
+- `python start_connector_service.py` - Start Python connector API service on port 5002
 - `python test_snowflake_connection.py` - Test Snowflake connectivity
+- `python test_python_connectors.py` - Test Python connector system
+- `python test_jira_connector.py` - Test Jira connector specifically
+
+### Replit Setup
+For Replit deployment, the app is configured to auto-start all services:
+1. **Automatic Startup**: The `.replit` file is configured to start all services in parallel
+2. **Manual Start**: Use `npm run start:all` or `./start_all_services.sh` 
+3. **Service Ports**: 5000 (main app), 5001 (Snowflake), 5002 (connectors)
+4. **Graceful Fallback**: If Python services aren't running, connectors fall back to mock mode
 
 ## Architecture
 
@@ -127,10 +140,22 @@ Services in `server/services/` handle specific business logic:
 
 ## Multi-Language Architecture
 
-This codebase uses **TypeScript for application logic** and **Python for Snowflake operations**:
+This codebase uses **TypeScript for application logic** and **Python for data operations**:
 - TypeScript handles web server, API, frontend, and business logic
-- Python services (port 5001) handle Snowflake queries and data processing
+- Python services handle Snowflake queries and data processing:
+  - **Port 5001**: Snowflake query service
+  - **Port 5002**: API connector service (Salesforce, HubSpot, etc.)
 - Communication between services via HTTP APIs
+
+### Python Connector System
+Custom Python-based data pipeline replacing Airbyte:
+- **Base Connector Class**: `python_connectors/base_connector.py` - Abstract base for all connectors
+- **Salesforce Connector**: `python_connectors/salesforce_connector.py` - Salesforce REST API integration  
+- **HubSpot Connector**: `python_connectors/hubspot_connector.py` - HubSpot CRM API integration
+- **Jira Connector**: `python_connectors/jira_connector.py` - Jira/Atlassian API integration
+- **Connector Manager**: `python_connectors/connector_manager.py` - Orchestrates multiple connectors
+- **API Service**: `python_connectors/api_service.py` - Flask HTTP API on port 5002
+- **TypeScript Bridge**: `server/services/python-connector-service.ts` - Interfaces with Python API
 
 ## Testing
 

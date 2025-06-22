@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { snowflakeService } from "./services/snowflake-stub";
 import { dataConnectorService } from "./services/data-connector-fixed";
+import { pythonConnectorService } from "./services/python-connector-service";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
 import { metricsAIService } from "./services/metrics-ai";
@@ -249,8 +250,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Created company database: ${dbCreation.databaseName}`);
 
-      // Setup data connectors using Airbyte
-      const connectorsResult = await dataConnectorService.setupConnectors();
+      // Setup data connectors using Python connector service
+      const connectorsResult = await pythonConnectorService.setupConnectors();
       if (!connectorsResult.success) {
         throw new Error("Failed to setup data connectors");
       }
@@ -1469,11 +1470,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Company not found" });
       }
 
-      // Create real Airbyte connection
-      const result = await dataConnectorService.createConnector({
+      // Create Python connector
+      const result = await pythonConnectorService.createConnectorWithConfig({
         service: sourceType,
-        workspaceId: '', // Will be auto-detected
-        config: credentials
+        config: { ...credentials, companyId }
       });
 
       // dataConnectorService.createConnector returns a ConnectorResponse, not a success/error object
@@ -1534,7 +1534,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const connectionsWithStatus = await Promise.all(
         connections.map(async (conn) => {
           if (conn.connectorId) {
-            const statusResult = await dataConnectorService.getConnectorStatus(conn.connectorId);
+            const statusResult = await pythonConnectorService.getConnectorStatusById(conn.connectorId);
             return {
               id: conn.id,
               sourceType: conn.type,
@@ -1571,7 +1571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { connectionId } = req.params;
       
-      const result = await dataConnectorService.triggerSync(connectionId);
+      const result = await pythonConnectorService.triggerSyncById(connectionId);
       
       if (!result.success) {
         return res.status(500).json({ 
