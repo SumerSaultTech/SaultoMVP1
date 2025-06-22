@@ -1524,32 +1524,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const companyId = parseInt(req.params.companyId);
       
-      // Get all connectors from Python service and filter by company
-      const connectorsResult = await pythonConnectorService.listConnectors();
+      // Get available connector types from Python service
+      const availableResult = await pythonConnectorService.getAvailableConnectors();
       
-      if (!connectorsResult.success) {
+      if (!availableResult.success) {
         return res.status(500).json({ 
-          error: "Failed to fetch connectors",
-          details: connectorsResult.error 
+          error: "Failed to fetch available connectors",
+          details: availableResult.error 
         });
       }
       
-      // Filter connectors by company ID
-      const companyConnectors = connectorsResult.data.filter((connector: any) => 
-        connector.config?.companyId === companyId
-      );
+      // Check status for each connector type that might exist for this company
+      const connectionsWithStatus = [];
       
-      // Transform to expected format
-      const connectionsWithStatus = companyConnectors.map((connector: any) => ({
-        id: connector.id,
-        connectionId: connector.id,
-        sourceType: connector.service,
-        companyId: companyId,
-        status: connector.status,
-        createdAt: connector.createdAt,
-        lastSync: connector.lastSync,
-        recordsSynced: connector.recordsSynced || 0
-      }));
+      if (availableResult.connectors) {
+        for (const connector of availableResult.connectors) {
+          const status = await pythonConnectorService.getConnectorStatus(companyId, connector.name);
+          
+          // Only include connectors that exist (have been configured)
+          if (status.exists) {
+            connectionsWithStatus.push({
+              id: `python_${connector.name}_${companyId}`,
+              connectionId: `python_${connector.name}_${companyId}`,
+              sourceType: connector.name,
+              companyId: companyId,
+              status: status.status,
+              createdAt: new Date(), // We don't track creation time in the simple connector
+              lastSync: null, // We don't track last sync time in the simple connector
+              recordsSynced: 0
+            });
+          }
+        }
+      }
       
       res.json(connectionsWithStatus);
     } catch (error: any) {
