@@ -43,7 +43,16 @@ async function startConnectorService(): Promise<boolean> {
     // Start the simplified connector service (no pandas dependency)
     const connectorProcess = spawn('python', ['start_simple_connector_service.py'], {
       detached: true,
-      stdio: 'pipe'
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    // Log output for debugging
+    connectorProcess.stdout?.on('data', (data) => {
+      console.log(`[Connector] ${data.toString().trim()}`);
+    });
+    
+    connectorProcess.stderr?.on('data', (data) => {
+      console.log(`[Connector Error] ${data.toString().trim()}`);
     });
 
     // Wait a bit and check if it started
