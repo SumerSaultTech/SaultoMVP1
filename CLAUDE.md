@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Python Services
 - `python start_python_service.py` - Start Snowflake service on port 5001
 - `python test_snowflake_connection.py` - Test Snowflake connectivity
+- `python snowflake_service.py` - Direct Snowflake service (called by start_python_service.py)
 
 ## Architecture
 
@@ -54,12 +55,15 @@ sql/                     # SQL transformations (core/int/stg)
 
 ### Database Schema (PostgreSQL)
 Key tables in `shared/schema.ts`:
-- `companies` - Multi-tenant company management
-- `users` - Authentication and roles  
-- `kpiMetrics` - Core KPI definitions and calculations
-- `metricHistory` - Historical metric values
+- `companies` - Multi-tenant company management with Snowflake database mapping
+- `users` - Authentication and roles (admin, user, viewer)
+- `kpiMetrics` - Core KPI definitions with goals, categories, and formatting
+- `metricHistory` - Time-series metric values with period tracking
 - `chatMessages` - AI chat conversation storage
-- `dataSources` - External data connector configurations
+- `dataSources` - External data connector configurations and sync status
+- `sqlModels` - SQL model definitions with layer organization (stg/int/core)
+- `pipelineActivities` - System activity logs and monitoring
+- `setupStatus` - Application setup and configuration tracking
 
 ### Snowflake Data Warehouse
 - Database: MIAS_DATA_DB
@@ -94,8 +98,9 @@ AZURE_OPENAI_KEY=...
 AZURE_OPENAI_ENDPOINT=...  
 OPENAI_API_KEY=...
 SNOWFLAKE_ACCOUNT=...
-SNOWFLAKE_USER=...
+SNOWFLAKE_USERNAME=...
 SNOWFLAKE_PASSWORD=...
+SNOWFLAKE_WAREHOUSE=...
 SESSION_SECRET=...
 ```
 
@@ -142,3 +147,11 @@ No specific test framework is configured. Check for test patterns in the codebas
 - **OpenAI GPT-4**: Business insights and KPI suggestions
 - **Context-aware**: AI understands company data schema and business model
 - **Fallback handling**: Graceful degradation when AI services unavailable
+
+## File Upload System
+
+The application supports file uploads through multer with the following specifications:
+- **Upload Directory**: `uploads/`
+- **File Size Limit**: 16MB
+- **Allowed Extensions**: txt, pdf, png, jpg, jpeg, gif, doc, docx, xls, xlsx, ppt, pptx, csv, json, zip, py, js, html, css, c, cpp, h, java, rb, php, xml, md
+- **File Processing**: Text files are read and included in chat context, binary files are referenced by name
