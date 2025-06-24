@@ -31,15 +31,15 @@ interface SchemaInfo {
 export class MetricsAIService {
   async getSchemaInfo(): Promise<SchemaInfo> {
     try {
-      // Increase timeout to 30 seconds for Snowflake connection
+      // 15 second timeout for CORE schema query
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Schema query timeout')), 30000)
+        setTimeout(() => reject(new Error('Schema query timeout')), 15000)
       );
       
       const queryPromise = snowflakeService.executeQuery(`
         SELECT table_name, column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema IN (CURRENT_SCHEMA(), 'CORE', 'STG', 'INT', 'RAW')
+        FROM MIAS_DATA_DB.information_schema.columns
+        WHERE table_schema = 'CORE'
         ORDER BY table_name, ordinal_position
       `);
 
