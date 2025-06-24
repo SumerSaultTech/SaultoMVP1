@@ -31,7 +31,28 @@ interface SchemaInfo {
 export class MetricsAIService {
   async getSchemaInfo(): Promise<SchemaInfo> {
     try {
-      // 15 second timeout for CORE schema query
+      console.log('🔄 Starting schema query with detailed logging...');
+      const startTime = Date.now();
+      
+      // First try a simple test query
+      console.log('🧪 Testing basic Snowflake connection...');
+      const testQuery = snowflakeService.executeQuery('SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_USER()');
+      const testTimeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Test query timeout')), 5000)
+      );
+      
+      try {
+        const testResult = await Promise.race([testQuery, testTimeoutPromise]) as any;
+        console.log('✅ Basic connection test result:', testResult);
+        console.log(`⏱️ Basic test took ${Date.now() - startTime}ms`);
+      } catch (testError) {
+        console.error('❌ Basic connection test failed:', testError);
+        throw new Error(`Basic connection failed: ${testError instanceof Error ? testError.message : String(testError)}`);
+      }
+      
+      // Now try the schema query
+      console.log('🔍 Attempting schema query...');
+      const schemaStartTime = Date.now();
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Schema query timeout')), 15000)
       );
@@ -41,9 +62,11 @@ export class MetricsAIService {
         FROM MIAS_DATA_DB.information_schema.columns
         WHERE table_schema = 'CORE'
         ORDER BY table_name, ordinal_position
+        LIMIT 100
       `);
 
       const result = await Promise.race([queryPromise, timeoutPromise]) as any;
+      console.log(`⏱️ Schema query took ${Date.now() - schemaStartTime}ms`);
 
       if (!result.success || !result.data) {
         return { tables: [] };
