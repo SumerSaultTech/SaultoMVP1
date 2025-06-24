@@ -1,0 +1,43 @@
+bject 'EXPENSE_DATA' does not exist or not authorized.
+Query failed for metric 3, using fallback data
+Dashboard data for metric Monthly Expenses: 57000 from dashboard calculation (Monthly View)
+8:53:21 PM [express] GET /api/dashboard/metrics-data 200 in 1722ms :: [{"metricId":1,"currentValue":…
+🔄 Executing Snowflake query: 
+        SELECT table_name, column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = CURRENT_SCHEMA()
+        ORDER BY table_name, ordinal_position
+      ...
+🔄 Creating Snowflake connection...
+Account: LFQSQQP-VBC22871
+Username: 
+Warehouse: SNOWFLAKE_LEARNING_WH
+Role: SYSADMIN
+Error getting schema info: Error: Schema query timeout
+    at Timeout._onTimeout (/home/runner/workspace/server/services/metrics-ai.ts:36:33)
+    at listOnTimeout (node:internal/timers:581:17)
+    at process.processTimers (node:internal/timers:519:7)
+8:53:47 PM [express] POST /api/metrics/ai/define 200 in 8179ms :: {"name":"Annual Recurring Revenue"…
+=== Dashboard metrics data request ===
+Time period filter: Monthly View
+Found 3 metrics for dashboard
+Processing metric: Annual Revenue (ID: 1) for period: Monthly View
+Calculating dashboard data for metric 1, period Monthly View
+No SQL template found for metric: Annual Revenue, using fallback data
+Dashboard data for metric Annual Revenue: 100000 from dashboard calculation (Monthly View)
+Processing metric: Monthly Deal Value (ID: 2) for period: Monthly View
+Calculating dashboard data for metric 2, period Monthly View
+No SQL template found for metric: Monthly Deal Value, using fallback data
+Dashboard data for metric Monthly Deal Value: 100000 from dashboard calculation (Monthly View)
+Processing metric: Monthly Expenses (ID: 3) for period: Monthly View
+Calculating dashboard data for metric 3, period Monthly View
+Executing SQL query: 
+        SELECT SUM(amount) as value
+        FROM expense_data 
+        WHERE date_trunc('month', expense_date) = date_trunc('month', current_date())
+      
+Query failed: 002003 (42S02): SQL compilation error:
+Object 'EXPENSE_DATA' does not exist or not authorized.
+Query failed for metric 3, using fallback data
+Dashboard data for metric Monthly Expenses: 57000 from dashboard calculation (Monthly View)
+8:53:52 PM [express] GET /api/dashboard/metrics-data 200 in 1457ms :: [{"metricId":1,"currentValue":…
