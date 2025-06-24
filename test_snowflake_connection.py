@@ -4,7 +4,7 @@ import sys
 
 def test_connection():
     account = os.getenv("SNOWFLAKE_ACCOUNT", "")
-    username = os.getenv("SNOWFLAKE_USERNAME", "")
+    username = os.getenv("SNOWFLAKE_USER", "")
     password = os.getenv("SNOWFLAKE_PASSWORD", "")
     warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "MIAS_DATA_DB")
     
