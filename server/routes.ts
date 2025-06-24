@@ -1594,6 +1594,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Debug endpoint for Snowflake schema issues
+  app.post("/api/debug/snowflake-schema", async (req, res) => {
+    try {
+      console.log("🔧 Debug: Testing Snowflake schema access...");
+      
+      // Test basic Snowflake connection
+      const basicTest = await snowflakeService.executeQuery('SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_USER()');
+      console.log("Basic test result:", basicTest);
+      
+      // Test SHOW TABLES (faster than information_schema)
+      const tablesTest = await snowflakeService.executeQuery('SHOW TABLES IN SCHEMA MIAS_DATA_DB.CORE');
+      console.log("Tables test result:", tablesTest);
+      
+      // Test simple schema query
+      const schemaTest = await snowflakeService.executeQuery(`
+        SELECT table_name, column_name, data_type
+        FROM MIAS_DATA_DB.information_schema.columns
+        WHERE table_schema = 'CORE'
+        LIMIT 5
+      `);
+      console.log("Schema test result:", schemaTest);
+      
+      res.json({
+        basicTest,
+        tablesTest,
+        schemaTest,
+        message: "Check server logs for detailed output"
+      });
+    } catch (error) {
+      console.error("Debug error:", error);
+      res.status(500).json({ error: `Debug failed: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
