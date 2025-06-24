@@ -1,0 +1,59 @@
+AI metric suggestions error: Error: Failed to suggest metrics: 401 Incorrect API key provided: 4rHHdzZJ************************************************************************7ViO. You can find your API key at https://platform.openai.com/account/api-keys.
+    at MetricsAIService.suggestMetrics (/home/runner/workspace/server/services/metrics-ai.ts:197:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1321:27)
+8:17:15 PM [express] POST /api/metrics/ai/suggest 500 in 138ms :: {"error":"Failed to suggest metric…
+8:37:50 PM [vite] hmr update /src/pages/metrics-management.tsx, /src/index.css?v=5WLQuzuejo-RoBGaJ2b96
+8:37:50 PM [vite] hmr update /src/pages/setup.tsx, /src/index.css?v=5WLQuzuejo-RoBGaJ2b96
+Error suggesting metrics: AuthenticationError: 401 Incorrect API key provided: 4rHHdzZJ************************************************************************7ViO. You can find your API key at https://platform.openai.com/account/api-keys.
+    at Function.generate (/home/runner/workspace/node_modules/openai/src/error.ts:76:14)
+    at OpenAI.makeStatusError (/home/runner/workspace/node_modules/openai/src/core.ts:462:21)
+    at OpenAI.makeRequest (/home/runner/workspace/node_modules/openai/src/core.ts:526:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async MetricsAIService.suggestMetrics (/home/runner/workspace/server/services/metrics-ai.ts:178:24)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1321:27) {
+  status: 401,
+  headers: {
+    'alt-svc': 'h3=":443"; ma=86400',
+    'cf-cache-status': 'DYNAMIC',
+    'cf-ray': '954f07a32ea9c01f-ATL',
+    connection: 'keep-alive',
+    'content-length': '334',
+    'content-type': 'application/json; charset=utf-8',
+    date: 'Tue, 24 Jun 2025 20:38:37 GMT',
+    server: 'cloudflare',
+    'set-cookie': '__cf_bm=y0.fNXOLnSIc3NoKPoLifLaPFA0pj8QNjPDDkw1IBUI-1750797517-1.0.1.1-9uWPRZKG.1HNwDfMlf.G.7_J.Y9rmipH5tb0egpdxgOjIwFWlhXXFBH7oYp7ttGWQ7cn6uHkWlPOuP_6zxYypiaLrIhtmdrHvPQhxy0GZN4; path=/; expires=Tue, 24-Jun-25 21:08:37 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None, _cfuvid=FCVtTvfu5_x8dXbN.h4J9.DTwbMuzBG8Aln2BAi7S6k-1750797517371-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    vary: 'Origin',
+    'x-content-type-options': 'nosniff',
+    'x-request-id': 'req_123c0d4bdbec7cf96c6c0b4a4d392fc2'
+  },
+  request_id: 'req_123c0d4bdbec7cf96c6c0b4a4d392fc2',
+  error: {
+    message: 'Incorrect API key provided: 4rHHdzZJ************************************************************************7ViO. You can find your API key at https://platform.openai.com/account/api-keys.',
+    type: 'invalid_request_error',
+    param: null,
+    code: 'invalid_api_key'
+  },
+  code: 'invalid_api_key',
+  param: null,
+  type: 'invalid_request_error'
+}
+AI metric suggestions error: Error: Failed to suggest metrics: 401 Incorrect API key provided: 4rHHdzZJ************************************************************************7ViO. You can find your API key at https://platform.openai.com/account/api-keys.
+    at MetricsAIService.suggestMetrics (/home/runner/workspace/server/services/metrics-ai.ts:197:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1321:27)
+8:38:37 PM [express] POST /api/metrics/ai/suggest 500 in 105ms :: {"error":"Failed to suggest metric…
+
+
+
+
+
+
+
+
+
+
+
+
+
