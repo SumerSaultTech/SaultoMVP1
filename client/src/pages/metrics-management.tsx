@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Calculator, Play, Code } from "lucide-react";
+import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Calculator, Play, Code, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
@@ -54,6 +54,7 @@ export default function MetricsManagement() {
   const [sqlResult, setSqlResult] = useState<any>(null);
   const [isRunningSQL, setIsRunningSQL] = useState(false);
   const [isCortexAnalyzing, setIsCortexAnalyzing] = useState(false);
+  const [isGeneratingSQL, setIsGeneratingSQL] = useState(false);
   const [formData, setFormData] = useState<MetricFormData>({
     name: "",
     description: "",
@@ -169,6 +170,50 @@ export default function MetricsManagement() {
       });
     } finally {
       setIsRunningSQL(false);
+    }
+  };
+
+  const generateSQLWithAI = async () => {
+    if (!formData.name || !formData.description) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide metric name and description for AI SQL generation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingSQL(true);
+    try {
+      const response = await fetch("/api/metrics/ai/define", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          metricName: formData.name,
+          businessContext: formData.description,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to generate SQL");
+
+      const aiDefinition = await response.json();
+      
+      // Update the form state with generated SQL
+      setFormData(prev => ({ ...prev, sqlQuery: aiDefinition.sqlQuery }));
+      setSqlQuery(aiDefinition.sqlQuery);
+      
+      toast({
+        title: "SQL Generated",
+        description: "AI has generated a SQL query for your metric. Review and edit as needed.",
+      });
+    } catch (error) {
+      toast({
+        title: "SQL Generation Error",
+        description: "Failed to generate SQL. Please try again or write it manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingSQL(false);
     }
   };
 
@@ -553,14 +598,27 @@ export default function MetricsManagement() {
                   {/* SQL Query Section */}
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">SQL Query (Optional)</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">SQL Query (Optional)</label>
+                        <Button
+                          type="button"
+                          onClick={generateSQLWithAI}
+                          disabled={isGeneratingSQL || !formData.name || !formData.description}
+                          variant="outline"
+                          size="sm"
+                          className="border-purple-600 text-purple-600 hover:bg-purple-50"
+                        >
+                          <Sparkles className="w-4 h-4 mr-1" />
+                          {isGeneratingSQL ? "Generating..." : "Generate with AI"}
+                        </Button>
+                      </div>
                       <Textarea
                         value={formData.sqlQuery || ""}
                         onChange={(e) => {
                           setFormData({ ...formData, sqlQuery: e.target.value });
                           setSqlQuery(e.target.value);
                         }}
-                        placeholder="Enter custom SQL query to calculate current value (leave blank for AI generation)"
+                        placeholder="Enter custom SQL query to calculate current value, or click 'Generate with AI' button"
                         rows={4}
                         className="font-mono text-sm"
                       />
@@ -586,7 +644,7 @@ export default function MetricsManagement() {
                         className="border-green-600 text-green-600 hover:bg-green-50"
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        {isRunningSQL ? "Running..." : "Calculate with Custom SQL"}
+                        {isRunningSQL ? "Running..." : "Test SQL Query"}
                       </Button>
                     </div>
                   </div>
