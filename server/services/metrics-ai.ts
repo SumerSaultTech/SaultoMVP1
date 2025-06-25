@@ -31,72 +31,31 @@ interface SchemaInfo {
 export class MetricsAIService {
   async getSchemaInfo(): Promise<SchemaInfo> {
     try {
-      console.log('🔄 Starting schema query with detailed logging...');
-      const startTime = Date.now();
+      console.log('🔄 Starting comprehensive schema discovery...');
+      const { SnowflakeSchemaDiscovery } = await import('./snowflake-schema-discovery.js');
+      const schemaDiscovery = new SnowflakeSchemaDiscovery();
       
-      // First try a simple test query
-      console.log('🧪 Testing basic Snowflake connection...');
-      const testQuery = snowflakeService.executeQuery('SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_USER()');
-      const testTimeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Test query timeout')), 5000)
+      // Use the improved schema discovery with longer timeout
+      const timeoutPromise = new Promise<SchemaInfo>((_, reject) => 
+        setTimeout(() => reject(new Error('Schema discovery timeout')), 30000)
       );
       
-      try {
-        const testResult = await Promise.race([testQuery, testTimeoutPromise]) as any;
-        console.log('✅ Basic connection test result:', testResult);
-        console.log(`⏱️ Basic test took ${Date.now() - startTime}ms`);
-      } catch (testError) {
-        console.error('❌ Basic connection test failed:', testError);
-        throw new Error(`Basic connection failed: ${testError instanceof Error ? testError.message : String(testError)}`);
-      }
+      const discoveryPromise = schemaDiscovery.discoverSchema();
       
-      // Now try the schema query
-      console.log('🔍 Attempting schema query...');
-      const schemaStartTime = Date.now();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Schema query timeout')), 15000)
-      );
+      const result = await Promise.race([discoveryPromise, timeoutPromise]);
       
-      const queryPromise = snowflakeService.executeQuery(`
-        SELECT table_name, column_name, data_type
-        FROM MIAS_DATA_DB.information_schema.columns
-        WHERE table_schema = 'CORE'
-        ORDER BY table_name, ordinal_position
-        LIMIT 100
-      `);
-
-      const result = await Promise.race([queryPromise, timeoutPromise]) as any;
-      console.log(`⏱️ Schema query took ${Date.now() - schemaStartTime}ms`);
-
-      if (!result.success || !result.data) {
-        return { tables: [] };
-      }
-
-      const schemaMap = new Map<string, Array<{ name: string; type: string }>>();
-      
-      result.data.forEach((row: any) => {
-        const tableName = row.TABLE_NAME || row[0];
-        const columnName = row.COLUMN_NAME || row[1];
-        const dataType = row.DATA_TYPE || row[2];
-        
-        if (!schemaMap.has(tableName)) {
-          schemaMap.set(tableName, []);
-        }
-        schemaMap.get(tableName)!.push({
-          name: columnName,
-          type: dataType
+      if (result.tables.length > 0) {
+        console.log(`✅ Successfully discovered ${result.tables.length} tables`);
+        result.tables.forEach(table => {
+          console.log(`📋 Table: ${table.name} (${table.columns.length} columns${table.rowCount ? `, ${table.rowCount} rows` : ''})`);
         });
-      });
-
-      return {
-        tables: Array.from(schemaMap.entries()).map(([name, columns]) => ({
-          name,
-          columns
-        }))
-      };
+        return result;
+      }
+      
+      throw new Error('No tables discovered');
     } catch (error) {
-      console.error('Error getting schema info:', error);
-      console.log('Falling back to static schema information...');
+      console.error('❌ Schema discovery failed:', error);
+      console.log('🔄 Falling back to static schema information...');
       return this.getStaticSchemaInfo();
     }
   }
