@@ -35,9 +35,9 @@ export class MetricsAIService {
       const { SnowflakeSchemaDiscovery } = await import('./snowflake-schema-discovery.js');
       const schemaDiscovery = new SnowflakeSchemaDiscovery();
       
-      // Use the improved schema discovery with longer timeout
+      // Use the improved schema discovery with shorter timeout
       const timeoutPromise = new Promise<SchemaInfo>((_, reject) => 
-        setTimeout(() => reject(new Error('Schema discovery timeout')), 30000)
+        setTimeout(() => reject(new Error('Schema discovery timeout')), 15000)
       );
       
       const discoveryPromise = schemaDiscovery.discoverSchema();
