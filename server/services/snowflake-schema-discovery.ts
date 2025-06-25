@@ -1,5 +1,5 @@
 import snowflake from 'snowflake-sdk';
-import { SnowflakeService } from './snowflake.ts';
+import { snowflakeService } from './snowflake.ts';
 
 export interface TableSchema {
   name: string;
@@ -12,10 +12,10 @@ export interface SchemaInfo {
 }
 
 export class SnowflakeSchemaDiscovery {
-  private snowflakeService: SnowflakeService;
+  private snowflakeService: typeof snowflakeService;
 
   constructor() {
-    this.snowflakeService = new SnowflakeService();
+    this.snowflakeService = snowflakeService;
   }
 
   async discoverSchema(): Promise<SchemaInfo> {
