@@ -32,17 +32,9 @@ export class MetricsAIService {
   async getSchemaInfo(): Promise<SchemaInfo> {
     try {
       console.log('🔄 Starting comprehensive schema discovery...');
-      const { SnowflakeSchemaDiscovery } = await import('./snowflake-schema-discovery.js');
-      const schemaDiscovery = new SnowflakeSchemaDiscovery();
+      const { snowflakeSchemaDiscovery } = await import('./snowflake-schema-discovery.js');
       
-      // Use the improved schema discovery with shorter timeout
-      const timeoutPromise = new Promise<SchemaInfo>((_, reject) => 
-        setTimeout(() => reject(new Error('Schema discovery timeout')), 15000)
-      );
-      
-      const discoveryPromise = schemaDiscovery.discoverSchema();
-      
-      const result = await Promise.race([discoveryPromise, timeoutPromise]);
+      const result = await snowflakeSchemaDiscovery.discoverSchema();
       
       if (result.tables.length > 0) {
         console.log(`✅ Successfully discovered ${result.tables.length} tables`);

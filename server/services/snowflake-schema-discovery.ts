@@ -1,4 +1,3 @@
-
 import { spawn } from 'child_process';
 
 export interface TableSchema {
@@ -16,18 +15,18 @@ export class SnowflakeSchemaDiscovery {
 
   async discoverSchema(): Promise<SchemaInfo> {
     try {
-      console.log('🔍 Starting Python-based schema discovery...');
-      
+      console.log('🔍 Starting comprehensive schema discovery...');
+
       // Use Python script for faster, more reliable discovery
       const schemaData = await this.executeSchemaDiscoveryScript();
-      
+
       if (schemaData && schemaData.tables && schemaData.tables.length > 0) {
         console.log(`✅ Successfully discovered ${schemaData.tables.length} tables via Python`);
         return schemaData;
       }
-      
+
       throw new Error('No tables found via Python discovery');
-      
+
     } catch (error) {
       console.error('❌ Python schema discovery failed:', error);
       console.log('🔄 Using static fallback schema...');
@@ -39,12 +38,13 @@ export class SnowflakeSchemaDiscovery {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Schema discovery script timeout'));
-      }, 15000); // Reduced timeout to 15 seconds
+      }, 15000);
 
       const pythonScript = `
 import snowflake.connector
 import os
 import json
+import sys
 
 def discover_schema():
     try:
@@ -54,7 +54,7 @@ def discover_schema():
         warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH")
         database = "MIAS_DATA_DB"
         schema = "CORE"
-        
+
         conn = snowflake.connector.connect(
             account=account,
             user=username,
@@ -64,55 +64,59 @@ def discover_schema():
             schema=schema,
             timeout=10
         )
-        
+
         cursor = conn.cursor()
-        
-        # Get tables
+
+        # Get tables using the same approach as test_quick_schema.py
         cursor.execute("SHOW TABLES")
         tables_result = cursor.fetchall()
-        
+
         tables = []
-        for table_row in tables_result[:5]:  # Limit to first 5 tables for speed
+        for table_row in tables_result:
             table_name = table_row[1]  # Table name is typically in column 1
-            
+
             # Get columns for each table
             try:
                 cursor.execute(f"DESCRIBE TABLE {table_name}")
                 columns_result = cursor.fetchall()
-                
+
                 columns = []
                 for col_row in columns_result:
                     columns.append({
                         "name": col_row[0],  # Column name
                         "type": col_row[1]   # Column type
                     })
-                
-                # Try to get row count (with timeout)
+
+                # Try to get row count (with timeout protection)
                 try:
                     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-                    count_result = cursor.fetchone()
-                    row_count = count_result[0] if count_result else 0
+                    row_count = cursor.fetchone()[0]
                 except:
                     row_count = 0
-                
+
                 tables.append({
                     "name": f"{database}.{schema}.{table_name}",
                     "columns": columns,
                     "rowCount": row_count
                 })
-                
+
             except Exception as e:
-                print(f"Error getting columns for {table_name}: {e}")
-        
+                # If we can't get columns, still include the table
+                tables.append({
+                    "name": f"{database}.{schema}.{table_name}",
+                    "columns": [],
+                    "rowCount": 0
+                })
+
         cursor.close()
         conn.close()
-        
+
         result = {
             "tables": tables
         }
-        
+
         print(json.dumps(result))
-        
+
     except Exception as e:
         error_result = {
             "error": str(e),
@@ -124,95 +128,87 @@ if __name__ == "__main__":
     discover_schema()
 `;
 
-      const pythonProcess = spawn('python3', ['-c', pythonScript], {
-        env: { ...process.env },
+      const child = spawn('python3', ['-c', pythonScript], {
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
-      let output = '';
-      let errorOutput = '';
+      let stdout = '';
+      let stderr = '';
 
-      pythonProcess.stdout.on('data', (data) => {
-        output += data.toString();
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
       });
 
-      pythonProcess.stderr.on('data', (data) => {
-        errorOutput += data.toString();
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
       });
 
-      pythonProcess.on('close', (code) => {
+      child.on('close', (code) => {
         clearTimeout(timeout);
-        
-        if (code === 0 && output.trim()) {
+
+        if (code === 0) {
           try {
-            const result = JSON.parse(output.trim());
+            const result = JSON.parse(stdout.trim());
             if (result.error) {
               reject(new Error(result.error));
             } else {
               resolve(result);
             }
           } catch (parseError) {
+            console.error('Failed to parse Python output:', stdout);
             reject(new Error(`Failed to parse schema discovery output: ${parseError}`));
           }
         } else {
-          reject(new Error(`Schema discovery failed with code ${code}: ${errorOutput}`));
+          reject(new Error(`Python script failed with code ${code}: ${stderr}`));
         }
       });
 
-      pythonProcess.on('error', (error) => {
+      child.on('error', (error) => {
         clearTimeout(timeout);
-        reject(new Error(`Failed to start schema discovery: ${error.message}`));
+        reject(new Error(`Failed to spawn Python process: ${error.message}`));
       });
     });
   }
 
   private getStaticFallbackSchema(): SchemaInfo {
-    console.log('📋 Using static fallback schema...');
+    // Based on the successful test_quick_schema.py output
     return {
       tables: [
         {
-          name: 'MIAS_DATA_DB.CORE.CORE_REVENUE_ANALYTICS',
+          name: "MIAS_DATA_DB.CORE.CORE_HUBSPOT_CALLS",
           columns: [
-            { name: 'CURRENT_MRR', type: 'NUMBER' },
-            { name: 'CURRENT_ARR', type: 'NUMBER' },
-            { name: 'CURRENT_ACTIVE_CUSTOMERS', type: 'NUMBER' },
-            { name: 'MRR_GROWTH_RATE', type: 'NUMBER' },
-            { name: 'ARPU', type: 'NUMBER' },
-            { name: 'AVG_MONTHLY_CHURN_RATE', type: 'NUMBER' },
-            { name: 'AVG_CUSTOMER_LTV', type: 'NUMBER' },
-            { name: 'CALCULATED_AT', type: 'TIMESTAMP' }
+            { name: "CALL_ID", type: "VARCHAR(16777216)" },
+            { name: "CONTACT_NAME", type: "VARCHAR(16777216)" },
+            { name: "COMPANY", type: "VARCHAR(16777216)" },
+            { name: "CALL_DATE", type: "TIMESTAMP" },
+            { name: "DURATION", type: "NUMBER" },
+            { name: "OUTCOME", type: "VARCHAR(16777216)" }
           ],
-          rowCount: 12
+          rowCount: 0
         },
         {
-          name: 'MIAS_DATA_DB.CORE.STG_QUICKBOOKS_TRANSACTIONS',
+          name: "MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS",
           columns: [
-            { name: 'TRANSACTION_ID', type: 'STRING' },
-            { name: 'TRANSACTION_DATE', type: 'DATE' },
-            { name: 'TOTAL_AMOUNT', type: 'NUMBER' },
-            { name: 'TRANSACTION_TYPE', type: 'STRING' },
-            { name: 'CUSTOMER_ID', type: 'STRING' },
-            { name: 'CUSTOMER_NAME', type: 'STRING' },
-            { name: 'RECOGNIZED_REVENUE', type: 'NUMBER' },
-            { name: 'RECOGNIZED_EXPENSE', type: 'NUMBER' },
-            { name: 'TRANSACTION_CATEGORY', type: 'STRING' },
-            { name: 'FISCAL_YEAR', type: 'NUMBER' },
-            { name: 'FISCAL_MONTH', type: 'NUMBER' }
+            { name: "DEAL_ID", type: "VARCHAR(16777216)" },
+            { name: "DEAL_NAME", type: "VARCHAR(16777216)" },
+            { name: "DEAL_STAGE", type: "VARCHAR(16777216)" },
+            { name: "AMOUNT", type: "NUMBER" },
+            { name: "CLOSE_DATE", type: "TIMESTAMP" },
+            { name: "COMPANY_ID", type: "VARCHAR(16777216)" }
           ],
-          rowCount: 1547
+          rowCount: 0
         },
         {
-          name: 'MIAS_DATA_DB.CORE.STG_HUBSPOT_DEALS',
+          name: "MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES",
           columns: [
-            { name: 'DEAL_ID', type: 'STRING' },
-            { name: 'DEAL_NAME', type: 'STRING' },
-            { name: 'AMOUNT', type: 'NUMBER' },
-            { name: 'CLOSE_DATE', type: 'DATE' },
-            { name: 'STAGE', type: 'STRING' },
-            { name: 'CUSTOMER_ID', type: 'STRING' },
-            { name: 'CREATED_DATE', type: 'TIMESTAMP' }
+            { name: "EXPENSE_ID", type: "VARCHAR(16777216)" },
+            { name: "DESCRIPTION", type: "VARCHAR(16777216)" },
+            { name: "AMOUNT", type: "NUMBER" },
+            { name: "EXPENSE_DATE", type: "TIMESTAMP" },
+            { name: "CATEGORY", type: "VARCHAR(16777216)" },
+            { name: "VENDOR", type: "VARCHAR(16777216)" }
           ],
-          rowCount: 423
+          rowCount: 0
         }
       ]
     };

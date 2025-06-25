@@ -15,7 +15,7 @@ export interface SnowflakeTimeSeriesData {
   goal: number;
 }
 
-import { snowflakeDirectService } from './snowflake-direct';
+import { snowflakePythonService } from './snowflake-python';
 import { snowflakeSchemaDiscovery } from './snowflake-schema-discovery';
 
 export class SnowflakeMetricsService {
@@ -50,7 +50,7 @@ export class SnowflakeMetricsService {
 
       console.log(`Executing SQL query: ${sqlQuery}`);
 
-      const result = await snowflakeDirectService.executeQuery(sqlQuery);
+      const result = await snowflakePythonService.executeQuery(sqlQuery);
 
       if (result.success && result.data && result.data.length > 0) {
         const value = result.data[0].VALUE || result.data[0].value || 0;
