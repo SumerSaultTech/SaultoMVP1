@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Calculator, Play, Code, Sparkles } from "lucide-react";
+import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Play, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
@@ -32,6 +32,7 @@ interface MetricFormData {
   sqlQuery?: string;
 }
 
+
 const METRIC_CATEGORIES = [
   { value: "revenue", label: "Revenue", icon: DollarSign, color: "bg-green-100 text-green-800" },
   { value: "growth", label: "Growth", icon: TrendingUp, color: "bg-blue-100 text-blue-800" },
@@ -50,10 +51,8 @@ export default function MetricsManagement() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingMetric, setEditingMetric] = useState<KpiMetric | null>(null);
-  const [sqlQuery, setSqlQuery] = useState("");
   const [sqlResult, setSqlResult] = useState<any>(null);
   const [isRunningSQL, setIsRunningSQL] = useState(false);
-  const [isCortexAnalyzing, setIsCortexAnalyzing] = useState(false);
   const [isGeneratingSQL, setIsGeneratingSQL] = useState(false);
   const [formData, setFormData] = useState<MetricFormData>({
     name: "",
@@ -136,7 +135,7 @@ export default function MetricsManagement() {
   });
 
   const runSQLQuery = async () => {
-    if (!sqlQuery.trim()) {
+    if (!formData.sqlQuery?.trim()) {
       toast({
         title: "Empty Query",
         description: "Please enter a SQL query to execute.",
@@ -150,7 +149,7 @@ export default function MetricsManagement() {
       const response = await fetch("/api/snowflake/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql: sqlQuery }),
+        body: JSON.stringify({ sql: formData.sqlQuery }),
       });
       
       if (!response.ok) throw new Error("Failed to execute query");
@@ -200,7 +199,6 @@ export default function MetricsManagement() {
       
       // Update the form state with generated SQL
       setFormData(prev => ({ ...prev, sqlQuery: aiDefinition.sqlQuery }));
-      setSqlQuery(aiDefinition.sqlQuery);
       
       toast({
         title: "SQL Generated",
@@ -217,62 +215,6 @@ export default function MetricsManagement() {
     }
   };
 
-  const calculateWithCortex = async () => {
-    if (!formData.name || !formData.description) {
-      toast({
-        title: "Missing Information",
-        description: "Please provide metric name and description for Cortex analysis.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsCortexAnalyzing(true);
-    try {
-      const response = await fetch("/api/cortex/analyze-metric", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          metricName: formData.name,
-          sqlQuery: formData.sqlQuery || `-- Cortex will generate SQL for: ${formData.name}`,
-          description: formData.description,
-          category: formData.category,
-          format: formData.format,
-        }),
-      });
-      
-      if (!response.ok) throw new Error("Failed to analyze with Cortex");
-      
-      const analysis = await response.json();
-      
-      // Update both the current value calculation and suggested goal
-      setFormData(prev => ({
-        ...prev,
-        sqlQuery: analysis.suggestedSQL || prev.sqlQuery,
-        yearlyGoal: analysis.suggestedGoal?.toString() || prev.yearlyGoal
-      }));
-      
-      setSqlResult({
-        currentValue: analysis.currentValue,
-        suggestedGoal: analysis.suggestedGoal,
-        confidence: analysis.confidence,
-        reasoning: analysis.reasoning
-      });
-      
-      toast({
-        title: "Cortex Analysis Complete",
-        description: `Current value: ${analysis.currentValue.toLocaleString()}. Suggested goal: ${analysis.suggestedGoal?.toLocaleString() || 'N/A'}`,
-      });
-    } catch (error) {
-      toast({
-        title: "Analysis Error",
-        description: "Failed to analyze with Cortex. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsCortexAnalyzing(false);
-    }
-  };
 
   const resetForm = () => {
     setFormData({
@@ -292,7 +234,6 @@ export default function MetricsManagement() {
       sqlQuery: "",
     });
     setEditingMetric(null);
-    setSqlQuery("");
     setSqlResult(null);
   };
 
@@ -302,50 +243,55 @@ export default function MetricsManagement() {
       name: metric.name || "",
       description: metric.description || "",
       yearlyGoal: metric.yearlyGoal || "",
-      goalType: (metric as any).goalType || "yearly",
-      quarterlyGoals: (metric as any).quarterlyGoals || { Q1: "", Q2: "", Q3: "", Q4: "" },
-      monthlyGoals: (metric as any).monthlyGoals || { 
+      goalType: "yearly", // Default to yearly for existing metrics
+      quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
+      monthlyGoals: { 
         Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
         Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
       },
       category: metric.category || "revenue",
       format: metric.format || "currency",
       isIncreasing: metric.isIncreasing ?? true,
-      isNorthStar: (metric as any).isNorthStar ?? false,
+      isNorthStar: false, // Default to false for existing metrics
+      sqlQuery: metric.sqlQuery || "",
     });
     setIsDialogOpen(true);
+  };
+
+  const validateForm = (): { isValid: boolean; errorMessage: string } => {
+    if (!formData.name) {
+      return { isValid: false, errorMessage: "Please fill in all required fields." };
+    }
+    
+    if (formData.goalType === "yearly" && !formData.yearlyGoal) {
+      return { isValid: false, errorMessage: "Please enter a yearly goal." };
+    }
+    
+    if (formData.goalType === "quarterly") {
+      const hasAllQuarterlyGoals = Object.values(formData.quarterlyGoals).every(goal => goal.trim() !== "");
+      if (!hasAllQuarterlyGoals) {
+        return { isValid: false, errorMessage: "Please enter goals for all quarters." };
+      }
+    }
+    
+    if (formData.goalType === "monthly") {
+      const hasAllMonthlyGoals = Object.values(formData.monthlyGoals).every(goal => goal.trim() !== "");
+      if (!hasAllMonthlyGoals) {
+        return { isValid: false, errorMessage: "Please enter goals for all months." };
+      }
+    }
+    
+    return { isValid: true, errorMessage: "" };
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate required fields based on goal type
-    let isValid = true;
-    let errorMessage = "Please fill in all required fields.";
-
-    if (!formData.name) {
-      isValid = false;
-    } else if (formData.goalType === "yearly" && !formData.yearlyGoal) {
-      isValid = false;
-      errorMessage = "Please enter a yearly goal.";
-    } else if (formData.goalType === "quarterly") {
-      const hasAllQuarterlyGoals = Object.values(formData.quarterlyGoals).every(goal => goal.trim() !== "");
-      if (!hasAllQuarterlyGoals) {
-        isValid = false;
-        errorMessage = "Please enter goals for all quarters.";
-      }
-    } else if (formData.goalType === "monthly") {
-      const hasAllMonthlyGoals = Object.values(formData.monthlyGoals).every(goal => goal.trim() !== "");
-      if (!hasAllMonthlyGoals) {
-        isValid = false;
-        errorMessage = "Please enter goals for all months.";
-      }
-    }
-
-    if (!isValid) {
+    const validation = validateForm();
+    if (!validation.isValid) {
       toast({
         title: "Validation Error",
-        description: errorMessage,
+        description: validation.errorMessage,
         variant: "destructive",
       });
       return;
@@ -614,28 +560,15 @@ export default function MetricsManagement() {
                       </div>
                       <Textarea
                         value={formData.sqlQuery || ""}
-                        onChange={(e) => {
-                          setFormData({ ...formData, sqlQuery: e.target.value });
-                          setSqlQuery(e.target.value);
-                        }}
+                        onChange={(e) => setFormData({ ...formData, sqlQuery: e.target.value })}
                         placeholder="Enter custom SQL query to calculate current value, or click 'Generate with AI' button"
                         rows={4}
                         className="font-mono text-sm"
                       />
                     </div>
                     
-                    {/* Calculation Buttons */}
+                    {/* Test SQL Button */}
                     <div className="flex space-x-2">
-                      <Button
-                        type="button"
-                        onClick={calculateWithCortex}
-                        disabled={isCortexAnalyzing || !formData.name || !formData.description}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Calculator className="w-4 h-4 mr-2" />
-                        {isCortexAnalyzing ? "Analyzing..." : "Calculate with Cortex Analyst"}
-                      </Button>
-                      
                       <Button
                         type="button"
                         onClick={runSQLQuery}
@@ -749,7 +682,7 @@ export default function MetricsManagement() {
                     </TableHeader>
                     <TableBody>
                       {metricsArray
-                        .map((metric: any) => {
+                        .map((metric: KpiMetric) => {
                           const categoryInfo = getCategoryInfo(metric.category);
                           return (
                             <TableRow key={metric.id}>
@@ -772,7 +705,7 @@ export default function MetricsManagement() {
                                 {metric.yearlyGoal}
                               </TableCell>
                               <TableCell>
-                                {getFormatLabel(metric.format)}
+                                {getFormatLabel(metric.format || "currency")}
                               </TableCell>
                               <TableCell>
                                 <span className={`text-sm ${
