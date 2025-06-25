@@ -16,7 +16,7 @@ export interface SnowflakeTimeSeriesData {
 }
 
 import { snowflakeDirectService } from './snowflake-direct';
-import { snowflakeSchemaService } from './snowflake-schema-discovery';
+import { snowflakeSchemaDiscovery } from './snowflake-schema-discovery';
 
 export class SnowflakeMetricsService {
   private readonly fallbackData = {
@@ -34,7 +34,7 @@ export class SnowflakeMetricsService {
       console.log(`Calculating dashboard data for metric ${metricName}, period ${timePeriod}`);
 
       // First try to generate SQL based on actual schema
-      const generatedSQL = await snowflakeSchemaService.generateSQLForMetric(metricName, '', timePeriod);
+      const generatedSQL = await snowflakeSchemaDiscovery.generateSQLForMetric(metricName, '', timePeriod);
 
       let sqlQuery = generatedSQL;
 
