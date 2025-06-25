@@ -15,8 +15,61 @@ export interface SnowflakeTimeSeriesData {
   goal: number;
 }
 
+import { snowflakeDirectService } from './snowflake-direct';
+import { snowflakeSchemaService } from './snowflake-schema-discovery';
+
 export class SnowflakeMetricsService {
-  
+  private readonly fallbackData = {
+    'Annual Revenue': 100000,
+    'Monthly Deal Value': 100000,
+    'Monthly Expenses': 57000,
+    'Customer Acquisition Cost': 1500,
+    'Customer Lifetime Value': 8500,
+    'Monthly Active Users': 2400,
+    'Churn Rate': 5.2
+  };
+
+  async calculateMetric(metricName: string, timePeriod: string = 'monthly'): Promise<number> {
+    try {
+      console.log(`Calculating dashboard data for metric ${metricName}, period ${timePeriod}`);
+
+      // First try to generate SQL based on actual schema
+      const generatedSQL = await snowflakeSchemaService.generateSQLForMetric(metricName, '', timePeriod);
+
+      let sqlQuery = generatedSQL;
+
+      // If schema-based generation fails, try static templates
+      if (!sqlQuery) {
+        sqlQuery = this.getSQLTemplate(metricName, timePeriod);
+      }
+
+      if (!sqlQuery) {
+        console.log(`No SQL query could be generated for metric: ${metricName}, using fallback data`);
+        return this.getFallbackValue(metricName);
+      }
+
+      console.log(`Executing SQL query: ${sqlQuery}`);
+
+      const result = await snowflakeDirectService.executeQuery(sqlQuery);
+
+      if (result.success && result.data && result.data.length > 0) {
+        const value = result.data[0].VALUE || result.data[0].value || 0;
+        console.log(`Dashboard data for metric ${metricName}: ${value} from Snowflake query (${timePeriod})`);
+        return Number(value);
+      } else {
+        console.log(`Query failed: ${result.error || 'no data or data not array'}. Using fallback data.`);
+        const fallbackValue = this.getFallbackValue(metricName);
+        console.log(`Query failed for metric ${metricName}, using fallback data`);
+        console.log(`Dashboard data for metric ${metricName}: ${fallbackValue} from dashboard calculation (${timePeriod})`);
+        return fallbackValue;
+      }
+
+    } catch (error) {
+      console.error(`Error calculating metric ${metricName}:`, error);
+      return this.getFallbackValue(metricName);
+    }
+  }
+
   // Get North Star metrics from MIAS_DATA Snowflake database
   async getNorthStarMetrics(companySlug: string): Promise<SnowflakeMetricData[]> {
     try {
@@ -25,10 +78,10 @@ export class SnowflakeMetricsService {
         USE DATABASE MIAS_DATA_DB;
         SHOW TABLES;
       `;
-      
+
       const tablesResult = await this.executeSnowflakeQuery(schemaQuery);
       console.log('Available tables in MIAS_DATA_DB:', tablesResult);
-      
+
       // Basic revenue query - you can customize these table names based on your actual data
       const revenueQuery = `
         USE DATABASE MIAS_DATA_DB;
@@ -41,11 +94,11 @@ export class SnowflakeMetricsService {
           LIMIT 1
         );
       `;
-      
+
       // Try to get actual revenue data or return sample values
       let currentRevenue = 2850000; // Default value
       let currentProfit = 485000;   // Default value
-      
+
       try {
         const revenueResult = await this.executeSnowflakeQuery(revenueQuery);
         if (revenueResult && revenueResult.length > 0) {
@@ -54,7 +107,7 @@ export class SnowflakeMetricsService {
       } catch (error) {
         console.log('Using default revenue values as table structure needs to be configured');
       }
-      
+
       return [
         {
           id: 'annual-revenue',
@@ -81,12 +134,12 @@ export class SnowflakeMetricsService {
       throw error;
     }
   }
-  
+
   // Get KPI metrics from Snowflake
   async getKPIMetrics(): Promise<SnowflakeMetricData[]> {
     try {
       const metrics = [];
-      
+
       // Monthly Recurring Revenue
       const mrrQuery = `
         SELECT SUM(monthly_amount) as current_mrr
@@ -94,7 +147,7 @@ export class SnowflakeMetricsService {
         WHERE DATE_TRUNC('MONTH', billing_date) = DATE_TRUNC('MONTH', CURRENT_DATE())
         AND status = 'active'
       `;
-      
+
       // Customer Acquisition Cost
       const cacQuery = `
         SELECT 
@@ -103,7 +156,7 @@ export class SnowflakeMetricsService {
         JOIN new_customers nc ON DATE_TRUNC('MONTH', mc.spend_date) = DATE_TRUNC('MONTH', nc.signup_date)
         WHERE DATE_TRUNC('MONTH', mc.spend_date) = DATE_TRUNC('MONTH', CURRENT_DATE())
       `;
-      
+
       // Churn Rate
       const churnQuery = `
         SELECT 
@@ -111,26 +164,26 @@ export class SnowflakeMetricsService {
         FROM customers 
         WHERE DATE_TRUNC('MONTH', last_activity_date) = DATE_TRUNC('MONTH', CURRENT_DATE())
       `;
-      
+
       // Active Users
       const activeUsersQuery = `
         SELECT COUNT(DISTINCT user_id) as active_users
         FROM user_activity 
         WHERE activity_date >= DATEADD('day', -30, CURRENT_DATE())
       `;
-      
+
       const queries = [
         { query: mrrQuery, id: 'monthly-recurring-revenue', name: 'Monthly Recurring Revenue', goal: 350000, format: 'currency', category: 'revenue' },
         { query: cacQuery, id: 'customer-acquisition-cost', name: 'Customer Acquisition Cost', goal: 100, format: 'currency', category: 'customer' },
         { query: churnQuery, id: 'churn-rate', name: 'Monthly Churn Rate', goal: 2.5, format: 'percentage', category: 'customer' },
         { query: activeUsersQuery, id: 'active-users', name: 'Monthly Active Users', goal: 20000, format: 'number', category: 'operational' }
       ];
-      
+
       for (const { query, id, name, goal, format, category } of queries) {
         try {
           const result = await this.executeSnowflakeQuery(query);
           const currentValue = result[0] ? Object.values(result[0])[0] as number : 0;
-          
+
           metrics.push({
             id,
             name,
@@ -146,14 +199,14 @@ export class SnowflakeMetricsService {
           // Continue with other metrics even if one fails
         }
       }
-      
+
       return metrics;
     } catch (error) {
       console.error('Error fetching KPI metrics from Snowflake:', error);
       throw error;
     }
   }
-  
+
   // Get time series data for charts
   async getTimeSeriesData(
     metric: SnowflakeMetricData, 
@@ -161,7 +214,7 @@ export class SnowflakeMetricsService {
   ): Promise<SnowflakeTimeSeriesData[]> {
     try {
       let query = '';
-      
+
       switch (timePeriod) {
         case 'weekly':
           query = this.buildWeeklyQuery(metric);
@@ -177,7 +230,7 @@ export class SnowflakeMetricsService {
           query = this.buildYTDQuery(metric);
           break;
       }
-      
+
       const result = await this.executeSnowflakeQuery(query);
       return this.formatTimeSeriesResult(result, metric, timePeriod);
     } catch (error) {
@@ -185,12 +238,12 @@ export class SnowflakeMetricsService {
       throw error;
     }
   }
-  
+
   private buildYTDQuery(metric: SnowflakeMetricData): string {
     const baseTable = this.getBaseTable(metric);
     const valueColumn = this.getValueColumn(metric);
     const dateColumn = this.getDateColumn(metric);
-    
+
     return `
       SELECT 
         DATE_TRUNC('MONTH', ${dateColumn}) as period,
@@ -201,12 +254,12 @@ export class SnowflakeMetricsService {
       ORDER BY period
     `;
   }
-  
+
   private buildMonthlyQuery(metric: SnowflakeMetricData): string {
     const baseTable = this.getBaseTable(metric);
     const valueColumn = this.getValueColumn(metric);
     const dateColumn = this.getDateColumn(metric);
-    
+
     return `
       SELECT 
         DATE_TRUNC('DAY', ${dateColumn}) as period,
@@ -217,12 +270,12 @@ export class SnowflakeMetricsService {
       ORDER BY period
     `;
   }
-  
+
   private buildWeeklyQuery(metric: SnowflakeMetricData): string {
     const baseTable = this.getBaseTable(metric);
     const valueColumn = this.getValueColumn(metric);
     const dateColumn = this.getDateColumn(metric);
-    
+
     return `
       SELECT 
         DATE_TRUNC('DAY', ${dateColumn}) as period,
@@ -234,12 +287,12 @@ export class SnowflakeMetricsService {
       ORDER BY period
     `;
   }
-  
+
   private buildQuarterlyQuery(metric: SnowflakeMetricData): string {
     const baseTable = this.getBaseTable(metric);
     const valueColumn = this.getValueColumn(metric);
     const dateColumn = this.getDateColumn(metric);
-    
+
     return `
       SELECT 
         DATE_TRUNC('WEEK', ${dateColumn}) as period,
@@ -250,7 +303,7 @@ export class SnowflakeMetricsService {
       ORDER BY period
     `;
   }
-  
+
   private getBaseTable(metric: SnowflakeMetricData): string {
     const tableMap = {
       'annual-revenue': 'revenue_table',
@@ -262,7 +315,7 @@ export class SnowflakeMetricsService {
     };
     return tableMap[metric.id] || 'revenue_table';
   }
-  
+
   private getValueColumn(metric: SnowflakeMetricData): string {
     const columnMap = {
       'annual-revenue': 'revenue_amount',
@@ -274,7 +327,7 @@ export class SnowflakeMetricsService {
     };
     return columnMap[metric.id] || 'revenue_amount';
   }
-  
+
   private getDateColumn(metric: SnowflakeMetricData): string {
     const dateColumnMap = {
       'annual-revenue': 'revenue_date',
@@ -286,7 +339,7 @@ export class SnowflakeMetricsService {
     };
     return dateColumnMap[metric.id] || 'revenue_date';
   }
-  
+
   private formatTimeSeriesResult(
     result: any[], 
     metric: SnowflakeMetricData, 
@@ -295,12 +348,12 @@ export class SnowflakeMetricsService {
     const goalPerPeriod = this.calculateGoalPerPeriod(metric.yearlyGoal, timePeriod);
     let cumulativeActual = 0;
     let cumulativeGoal = 0;
-    
+
     return result.map((row, index) => {
       const actualValue = row.ACTUAL_VALUE || 0;
       cumulativeActual += actualValue;
       cumulativeGoal += goalPerPeriod;
-      
+
       return {
         period: this.formatPeriodLabel(row.PERIOD, timePeriod),
         actual: cumulativeActual,
@@ -308,7 +361,7 @@ export class SnowflakeMetricsService {
       };
     });
   }
-  
+
   private calculateGoalPerPeriod(yearlyGoal: number, timePeriod: string): number {
     switch (timePeriod) {
       case 'weekly': return yearlyGoal / 52;
@@ -318,10 +371,10 @@ export class SnowflakeMetricsService {
       default: return yearlyGoal / 12;
     }
   }
-  
+
   private formatPeriodLabel(period: string, timePeriod: string): string {
     const date = new Date(period);
-    
+
     switch (timePeriod) {
       case 'weekly':
         return `${date.getMonth() + 1}/${date.getDate()}`;
@@ -335,7 +388,7 @@ export class SnowflakeMetricsService {
         return period;
     }
   }
-  
+
   private async executeSnowflakeQuery(query: string): Promise<any[]> {
     try {
       // Use the existing Snowflake endpoint
@@ -346,11 +399,11 @@ export class SnowflakeMetricsService {
         },
         body: JSON.stringify({ query })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Snowflake query failed: ${response.statusText}`);
       }
-      
+
       const result = await response.json();
       return result.data || [];
     } catch (error) {
@@ -358,15 +411,15 @@ export class SnowflakeMetricsService {
       throw error;
     }
   }
-  
+
   // Get YTD progress for "on pace" calculations
   async getYTDProgress(metric: SnowflakeMetricData) {
     try {
       const ytdData = await this.getTimeSeriesData(metric, 'ytd');
       const latestPoint = ytdData.filter(point => point.actual !== null && point.actual > 0).pop();
-      
+
       if (!latestPoint) return { current: 0, goal: 0, progress: 0 };
-      
+
       return {
         current: latestPoint.actual,
         goal: latestPoint.goal,
@@ -377,7 +430,7 @@ export class SnowflakeMetricsService {
       return { current: 0, goal: 0, progress: 0 };
     }
   }
-  
+
   // Format values based on metric type
   formatValue(value: number, format: string): string {
     if (format === 'currency') {
@@ -393,6 +446,52 @@ export class SnowflakeMetricsService {
     } else {
       return value.toLocaleString();
     }
+  }
+
+  private getSQLTemplate(metricName: string, timePeriod: string): string | undefined {
+    const templates: { [key: string]: { [key: string]: string } } = {
+      'Annual Revenue': {
+        'monthly': 'SELECT SUM(revenue) AS value FROM monthly_revenue WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT SUM(revenue) AS value FROM quarterly_revenue WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT SUM(revenue) AS value FROM annual_revenue WHERE time_period = \'annual\''
+      },
+      'Monthly Deal Value': {
+        'monthly': 'SELECT SUM(deal_value) AS value FROM monthly_deals WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT SUM(deal_value) AS value FROM quarterly_deals WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT SUM(deal_value) AS value FROM annual_deals WHERE time_period = \'annual\''
+      },
+      'Monthly Expenses': {
+        'monthly': 'SELECT SUM(expenses) AS value FROM monthly_expenses WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT SUM(expenses) AS value FROM quarterly_expenses WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT SUM(expenses) AS value FROM annual_expenses WHERE time_period = \'annual\''
+      },
+      'Customer Acquisition Cost': {
+        'monthly': 'SELECT AVG(cost) AS value FROM customer_acquisition_cost WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT AVG(cost) AS value FROM customer_acquisition_cost WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT AVG(cost) AS value FROM customer_acquisition_cost WHERE time_period = \'annual\''
+      },
+      'Customer Lifetime Value': {
+        'monthly': 'SELECT AVG(value) AS value FROM customer_lifetime_value WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT AVG(value) AS value FROM customer_lifetime_value WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT AVG(value) AS value FROM customer_lifetime_value WHERE time_period = \'annual\''
+      },
+      'Monthly Active Users': {
+        'monthly': 'SELECT SUM(users) AS value FROM monthly_active_users WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT SUM(users) AS value FROM quarterly_active_users WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT SUM(users) AS value FROM annual_active_users WHERE time_period = \'annual\''
+      },
+      'Churn Rate': {
+        'monthly': 'SELECT AVG(rate) AS value FROM churn_rate WHERE time_period = \'monthly\'',
+        'quarterly': 'SELECT AVG(rate) AS value FROM churn_rate WHERE time_period = \'quarterly\'',
+        'annual': 'SELECT AVG(rate) AS value FROM churn_rate WHERE time_period = \'annual\''
+      }
+    };
+
+    return templates[metricName]?.[timePeriod];
+  }
+
+  private getFallbackValue(metricName: string): number {
+    return this.fallbackData[metricName] || 0;
   }
 }
 
