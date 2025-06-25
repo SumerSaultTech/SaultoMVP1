@@ -44,7 +44,7 @@ export class SnowflakeMetricsService {
       }
 
       if (!sqlQuery) {
-        console.log(`No SQL query could be generated for metric: ${metricName}, using fallback data`);
+        console.log(`No SQL template found for metric: ${metricName}, using fallback data`);
         return this.getFallbackValue(metricName);
       }
 
@@ -481,9 +481,9 @@ export class SnowflakeMetricsService {
         'annual': 'USE DATABASE MIAS_DATA_DB; SELECT COALESCE(COUNT(DISTINCT CUSTOMER_ID), 0) AS value FROM CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= DATE_TRUNC(\'YEAR\', CURRENT_DATE())'
       },
       'Churn Rate': {
-        'monthly': 'USE DATABASE MIAS_DATA_DB; SELECT COALESCE(5.2, 0) AS value', // Placeholder - would need customer status tracking
-        'quarterly': 'USE DATABASE MIAS_DATA_DB; SELECT COALESCE(5.2, 0) AS value',
-        'annual': 'USE DATABASE MIAS_DATA_DB; SELECT COALESCE(5.2, 0) AS value'
+        'monthly': 'USE DATABASE MIAS_DATA_DB; SELECT 5.2 AS value', // Placeholder - would need customer status tracking
+        'quarterly': 'USE DATABASE MIAS_DATA_DB; SELECT 5.2 AS value',
+        'annual': 'USE DATABASE MIAS_DATA_DB; SELECT 5.2 AS value'
       }
     };
 
