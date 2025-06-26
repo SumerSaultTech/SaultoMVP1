@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { snowflakeSimpleService as snowflakeService } from "./services/snowflake-simple";
+import { snowflakePythonService as snowflakeService } from "./services/snowflake-python";
 import { dataConnectorService } from "./services/data-connector-fixed";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
@@ -1385,18 +1385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "SQL query is required" });
       }
 
-      // Use Python service for Snowflake execution
-      const response = await fetch("http://localhost:5001/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Python service error: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = await snowflakeService.executeQuery(sql);
       res.json(result);
     } catch (error: any) {
       console.error("SQL execution error:", error);
