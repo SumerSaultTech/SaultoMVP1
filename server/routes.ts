@@ -1385,7 +1385,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "SQL query is required" });
       }
 
-      const result = await snowflakeService.executeQuery(sql);
+      // Use Python service for Snowflake execution
+      const response = await fetch("http://localhost:5001/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Python service error: ${response.status}`);
+      }
+
+      const result = await response.json();
       res.json(result);
     } catch (error: any) {
       console.error("SQL execution error:", error);
