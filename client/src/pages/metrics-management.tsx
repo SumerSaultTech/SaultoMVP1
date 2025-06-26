@@ -585,8 +585,23 @@ export default function MetricsManagement() {
                   {/* Calculation Results */}
                   {sqlResult && (
                     <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
-                      <h4 className="font-medium mb-3 text-blue-900 dark:text-blue-100">Calculation Result</h4>
+                      <h4 className="font-medium mb-3 text-blue-900 dark:text-blue-100">
+                        {sqlResult.data ? "Query Results" : "Calculation Result"}
+                      </h4>
                       <div className="space-y-2 text-sm">
+                        {/* Raw SQL Query Results */}
+                        {sqlResult.data && sqlResult.data.length > 0 && (
+                          <div>
+                            <div className="font-medium mb-2">Results ({sqlResult.data.length} rows):</div>
+                            <div className="max-h-48 overflow-y-auto bg-white dark:bg-gray-800 p-3 rounded border">
+                              <pre className="text-xs">
+                                {JSON.stringify(sqlResult.data, null, 2)}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* AI Analysis Results */}
                         {sqlResult.currentValue !== undefined && (
                           <div>
                             <span className="font-medium">Current Value: </span>
@@ -608,6 +623,16 @@ export default function MetricsManagement() {
                             <span className="font-medium">Analysis: </span>
                             <span className="text-gray-600 dark:text-gray-300">
                               {sqlResult.reasoning}
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Error Messages */}
+                        {sqlResult.error && (
+                          <div>
+                            <span className="font-medium text-red-600">Error: </span>
+                            <span className="text-red-500">
+                              {sqlResult.error}
                             </span>
                           </div>
                         )}
