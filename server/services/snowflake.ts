@@ -26,7 +26,7 @@ class SnowflakeService {
   constructor() {
     this.config = {
       account: process.env.SNOWFLAKE_ACCOUNT || "",
-      username: process.env.SNOWFLAKE_USERNAME || "",
+      username: process.env.SNOWFLAKE_USER || "",
       password: process.env.SNOWFLAKE_PASSWORD || "",
       warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
       role: "SYSADMIN",

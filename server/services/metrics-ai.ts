@@ -31,50 +31,92 @@ interface SchemaInfo {
 export class MetricsAIService {
   async getSchemaInfo(): Promise<SchemaInfo> {
     try {
-      // Add timeout for Snowflake connection
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Schema query timeout')), 5000)
-      );
+      console.log('🔄 Starting comprehensive schema discovery...');
+      const { snowflakeSchemaDiscovery } = await import('./snowflake-schema-discovery.js');
       
-      const queryPromise = snowflakeService.executeQuery(`
-        SELECT table_name, column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = CURRENT_SCHEMA()
-        ORDER BY table_name, ordinal_position
-      `);
-
-      const result = await Promise.race([queryPromise, timeoutPromise]) as any;
-
-      if (!result.success || !result.data) {
-        return { tables: [] };
-      }
-
-      const schemaMap = new Map<string, Array<{ name: string; type: string }>>();
+      const result = await snowflakeSchemaDiscovery.discoverSchema();
       
-      result.data.forEach((row: any) => {
-        const tableName = row.TABLE_NAME || row[0];
-        const columnName = row.COLUMN_NAME || row[1];
-        const dataType = row.DATA_TYPE || row[2];
-        
-        if (!schemaMap.has(tableName)) {
-          schemaMap.set(tableName, []);
-        }
-        schemaMap.get(tableName)!.push({
-          name: columnName,
-          type: dataType
+      if (result.tables.length > 0) {
+        console.log(`✅ Successfully discovered ${result.tables.length} tables`);
+        result.tables.forEach(table => {
+          console.log(`📋 Table: ${table.name} (${table.columns.length} columns${table.rowCount ? `, ${table.rowCount} rows` : ''})`);
         });
-      });
-
-      return {
-        tables: Array.from(schemaMap.entries()).map(([name, columns]) => ({
-          name,
-          columns
-        }))
-      };
+        return result;
+      }
+      
+      throw new Error('No tables discovered');
     } catch (error) {
-      console.error('Error getting schema info:', error);
-      return { tables: [] };
+      console.error('❌ Schema discovery failed:', error);
+      console.log('🔄 Falling back to static schema information...');
+      return this.getStaticSchemaInfo();
     }
+  }
+
+  private getStaticSchemaInfo(): SchemaInfo {
+    // Fallback schema based on your dbt models
+    return {
+      tables: [
+        {
+          name: 'core_revenue_analytics',
+          columns: [
+            { name: 'current_mrr', type: 'NUMBER' },
+            { name: 'current_arr', type: 'NUMBER' },
+            { name: 'current_active_customers', type: 'NUMBER' },
+            { name: 'mrr_growth_rate', type: 'NUMBER' },
+            { name: 'arpu', type: 'NUMBER' },
+            { name: 'avg_monthly_churn_rate', type: 'NUMBER' },
+            { name: 'avg_customer_ltv', type: 'NUMBER' },
+            { name: 'calculated_at', type: 'TIMESTAMP' }
+          ]
+        },
+        {
+          name: 'core_customer_metrics',
+          columns: [
+            { name: 'customer_identifier', type: 'STRING' },
+            { name: 'first_purchase_date', type: 'DATE' },
+            { name: 'total_revenue', type: 'NUMBER' },
+            { name: 'customer_status', type: 'STRING' },
+            { name: 'customer_lifetime_value', type: 'NUMBER' }
+          ]
+        },
+        {
+          name: 'stg_quickbooks_transactions',
+          columns: [
+            { name: 'transaction_id', type: 'STRING' },
+            { name: 'transaction_date', type: 'DATE' },
+            { name: 'total_amount', type: 'NUMBER' },
+            { name: 'transaction_type', type: 'STRING' },
+            { name: 'customer_id', type: 'STRING' },
+            { name: 'customer_name', type: 'STRING' },
+            { name: 'recognized_revenue', type: 'NUMBER' },
+            { name: 'recognized_expense', type: 'NUMBER' },
+            { name: 'transaction_category', type: 'STRING' },
+            { name: 'fiscal_year', type: 'NUMBER' },
+            { name: 'fiscal_month', type: 'NUMBER' }
+          ]
+        },
+        {
+          name: 'stg_salesforce_accounts',
+          columns: [
+            { name: 'account_id', type: 'STRING' },
+            { name: 'account_name', type: 'STRING' },
+            { name: 'annual_revenue', type: 'NUMBER' },
+            { name: 'industry', type: 'STRING' },
+            { name: 'created_date', type: 'DATE' }
+          ]
+        },
+        {
+          name: 'int_subscription_events',
+          columns: [
+            { name: 'customer_identifier', type: 'STRING' },
+            { name: 'event_date', type: 'DATE' },
+            { name: 'event_type', type: 'STRING' },
+            { name: 'amount', type: 'NUMBER' },
+            { name: 'subscription_id', type: 'STRING' }
+          ]
+        }
+      ]
+    };
   }
 
   async defineMetric(metricName: string, businessContext?: string): Promise<MetricDefinition> {
@@ -95,11 +137,15 @@ Your response must be a valid JSON object with this exact structure:
 }
 
 Rules:
-- SQL must be valid and executable
-- Use appropriate aggregation functions
+- SQL must be valid and executable using ONLY the tables provided in the schema
+- Use appropriate aggregation functions (SUM, COUNT, AVG, etc.)
 - Include proper date filtering for current period calculations
-- Focus on actionable business metrics
-- Ensure queries are optimized and meaningful`;
+- For revenue metrics, prefer core_revenue_analytics or stg_quickbooks_transactions
+- For customer metrics, use core_customer_metrics or int_subscription_events
+- Always include DATE filtering (e.g., WHERE event_date >= DATEADD('month', -1, CURRENT_DATE))
+- Focus on actionable business metrics that executives care about
+- Ensure queries are optimized and meaningful
+- Do NOT use tables that aren't listed in the provided schema`;
 
     const userPrompt = `Database Schema:
 ${formattedSchema}
@@ -256,11 +302,11 @@ Keep responses concise, actionable, and business-focused. Focus on metric concep
     return schema.tables
       .map(table => {
         const columns = table.columns
-          .map(col => `${col.name} ${col.type}`)
-          .join(', ');
-        return `- ${table.name}(${columns})`;
+          .map(col => `  - ${col.name} (${col.type})`)
+          .join('\n');
+        return `Table: ${table.name}\n${columns}`;
       })
-      .join('\n');
+      .join('\n\n');
   }
 }
 
