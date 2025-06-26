@@ -49,11 +49,14 @@ import snowflake.connector
 import os
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, date
+from decimal import Decimal
 
 def json_serial(obj):
-    if isinstance(obj, datetime):
+    if isinstance(obj, (datetime, date)):
         return obj.isoformat()
+    elif isinstance(obj, Decimal):
+        return float(obj)
     raise TypeError(f"Type {type(obj)} not serializable")
 
 def execute_query():
