@@ -15,10 +15,13 @@ def json_serial(obj):
 sql_query = sys.argv[1] if len(sys.argv) > 1 else "SELECT 1"
 
 try:
+    password = os.getenv("SNOWFLAKE_PASSWORD")
+    if not password:
+        raise ValueError("Environment variable SNOWFLAKE_PASSWORD is not set.")
     conn = snowflake.connector.connect(
         account="LFQSQQP-VBC22871",
         user="mpatrikios",
-        password="Kefalonia2004!",
+        password=os.getenv("SNOWFLAKE_PASSWORD"),
         warehouse="SNOWFLAKE_LEARNING_WH",
         database="MIAS_DATA_DB",
         schema="CORE",
