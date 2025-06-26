@@ -4,7 +4,7 @@ import json
 
 def explore_snowflake():
     account = os.getenv("SNOWFLAKE_ACCOUNT", "").replace(".snowflakecomputing.com", "")
-    username = os.getenv("SNOWFLAKE_USERNAME", "")
+    username = os.getenv("SNOWFLAKE_USER", "")
     password = os.getenv("SNOWFLAKE_PASSWORD", "")
     warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH")
     
