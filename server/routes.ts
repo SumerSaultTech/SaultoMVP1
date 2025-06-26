@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { snowflakeService } from "./services/snowflake-stub";
+import { snowflakeSimpleService as snowflakeService } from "./services/snowflake-simple";
 import { dataConnectorService } from "./services/data-connector-fixed";
 import { openaiService } from "./services/openai";
 import { sqlRunner } from "./services/sqlRunner";
