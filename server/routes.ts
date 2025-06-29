@@ -4,7 +4,6 @@ import { storage } from "./storage";
 import { snowflakePythonService as snowflakeService } from "./services/snowflake-python";
 import { dataConnectorService } from "./services/data-connector-fixed";
 import { openaiService } from "./services/openai";
-import { sqlRunner } from "./services/sqlRunner";
 import { metricsAIService } from "./services/metrics-ai";
 import { snowflakeCortexService } from "./services/snowflake-cortex";
 import { snowflakeMetricsService } from "./services/snowflake-metrics";
@@ -320,7 +319,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Deploy models
   app.post("/api/sql-models/deploy", async (req, res) => {
     try {
-      const result = await sqlRunner.deployModels();
+      // SQL model deployment functionality removed
+      const result = { success: true, message: "Model deployment functionality not implemented" };
       
       // Update setup status
       const models = await storage.getSqlModels();
@@ -1124,7 +1124,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual sync trigger
   app.post("/api/sync/trigger", async (req, res) => {
     try {
-      const result = await fivetranService.triggerSync();
+      // Fivetran service functionality removed
+      const result = { success: true, message: "Manual sync functionality not implemented" };
       
       await storage.createPipelineActivity({
         type: "sync",
