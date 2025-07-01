@@ -185,7 +185,7 @@ This codebase uses **TypeScript for application logic** and **Python for data op
   - **Port 5002**: API connector service (Salesforce, HubSpot, etc.)
 - Communication between services via HTTP APIs
 
-### Python Connector System
+### Custom Python Connector System (Replaces Airbyte)
 Simplified Python-based data pipeline (no pandas dependencies):
 - **Base Connector**: `python_connectors/simple_base_connector.py` - Abstract base for all connectors
 - **Salesforce Connector**: `python_connectors/simple_salesforce_connector.py` - Salesforce REST API integration  
@@ -194,10 +194,18 @@ Simplified Python-based data pipeline (no pandas dependencies):
 - **API Service**: `python_connectors/simple_api_service.py` - Flask HTTP API on port 5002
 - **TypeScript Bridge**: `server/services/python-connector-service.ts` - Interfaces with Python API
 
+**Custom Connector Workflow**:
+1. Setup page uses `/api/connectors/create` to configure new connectors
+2. Python service validates credentials and stores connector configuration
+3. Sync process calls `/api/connectors/{companyId}/{connectorType}/sync` 
+4. Data flows directly from APIs to Snowflake via Python connectors
+
 **Architecture Benefits**:
-- No pandas/numpy dependencies (Replit compatible)
+- **No Airbyte dependency** - fully custom solution
+- No pandas/numpy dependencies (Replit compatible)  
 - Pure Python data structures for maximum compatibility
 - Real API data extraction from Jira, Salesforce, etc.
+- Direct control over data pipeline and transformations
 - Lightweight and fast startup times
 
 ## Testing
