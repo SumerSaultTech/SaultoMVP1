@@ -1469,13 +1469,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Python Connector Management
-  app.post("/api/airbyte/connections", async (req, res) => {
+  app.post("/api/connectors/create", async (req, res) => {
     try {
-      const { sourceType, credentials, companyId } = req.body;
+      const { connectorType, credentials, companyId } = req.body;
       
-      if (!sourceType || !credentials || !companyId) {
+      if (!connectorType || !credentials || !companyId) {
         return res.status(400).json({ 
-          error: "Missing required fields: sourceType, credentials, and companyId" 
+          error: "Missing required fields: connectorType, credentials, and companyId" 
         });
       }
 
@@ -1487,20 +1487,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create Python connector
       const result = await pythonConnectorService.createConnectorWithConfig({
-        service: sourceType,
+        service: connectorType,
         config: { ...credentials, companyId }
       });
       
-      console.log(`Created connection: ${sourceType} for company ${company.name}`);
+      console.log(`Created connection: ${connectorType} for company ${company.name}`);
       console.log(`Connection ID: ${result.id}`);
       
       res.json({
         success: true,
         connectionId: result.id,
-        sourceType,
+        connectorType,
         companyId,
         status: result.status,
-        message: `Successfully created ${sourceType} connection for ${company.name}`,
+        message: `Successfully created ${connectorType} connection for ${company.name}`,
         data: {
           name: result.name,
           status: result.status,
@@ -1520,7 +1520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get Python connectors for a company
-  app.get("/api/airbyte/connections/:companyId", async (req, res) => {
+  app.get("/api/connectors/:companyId", async (req, res) => {
     try {
       const companyId = parseInt(req.params.companyId);
       
@@ -1568,7 +1568,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Trigger sync for a specific Python connector
-  app.post("/api/airbyte/connections/:connectionId/sync", async (req, res) => {
+  app.post("/api/connectors/:connectionId/sync", async (req, res) => {
     try {
       const { connectionId } = req.params;
       
@@ -1590,6 +1590,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error triggering sync:", error);
       res.status(500).json({ 
         error: "Failed to trigger sync",
+        details: error.message
+      });
+    }
+  });
+
+  // Direct connector sync route for setup page
+  app.post("/api/connectors/:companyId/:connectorType/sync", async (req, res) => {
+    try {
+      const { companyId, connectorType } = req.params;
+      const { tables } = req.body; // Optional: specific tables to sync
+      
+      const result = await pythonConnectorService.syncConnector(
+        parseInt(companyId), 
+        connectorType, 
+        tables
+      );
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error syncing connector:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync connector",
         details: error.message
       });
     }
