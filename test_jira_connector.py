@@ -11,8 +11,8 @@ import json
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from python_connectors.jira_connector import JiraConnector
-from python_connectors.connector_manager import connector_manager
+from python_connectors.simple_jira_connector import SimpleJiraConnector
+from python_connectors.simple_connector_manager import simple_connector_manager
 
 def test_jira_connector_creation():
     """Test creating a Jira connector with example credentials"""
@@ -27,7 +27,7 @@ def test_jira_connector_creation():
     
     try:
         # Create connector instance
-        jira_connector = JiraConnector(
+        jira_connector = SimpleJiraConnector(
             company_id=1,
             credentials=example_credentials
         )
@@ -53,7 +53,7 @@ def test_jira_connector_manager():
     
     try:
         # Check if Jira is in available connectors
-        available = connector_manager.get_available_connectors()
+        available = simple_connector_manager.get_available_connectors()
         if "jira" not in available:
             print("✗ Jira not found in available connectors")
             return False
@@ -61,7 +61,7 @@ def test_jira_connector_manager():
         print("✓ Jira found in available connectors")
         
         # Get requirements
-        requirements = connector_manager.get_connector_requirements("jira")
+        requirements = simple_connector_manager.get_connector_requirements("jira")
         print(f"✓ Jira requirements: {requirements}")
         
         # Test with mock credentials (will fail validation but shows flow)
@@ -71,7 +71,7 @@ def test_jira_connector_manager():
             "api_token": "mock_token"
         }
         
-        success, message = connector_manager.create_connector(
+        success, message = simple_connector_manager.create_connector(
             "jira", 
             company_id=999,  # Test company
             credentials=mock_credentials
