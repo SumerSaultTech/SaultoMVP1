@@ -13,14 +13,14 @@ export class SnowflakeSimpleService {
   async executeQuery(sql: string): Promise<SnowflakeResult> {
     const account = process.env.SNOWFLAKE_ACCOUNT;
     const user = process.env.SNOWFLAKE_USER;
-    const password = process.env.SNOWFLAKE_PASSWORD;
+    const token = process.env.SNOWFLAKE_ACCESS_TOKEN;
     const warehouse = process.env.SNOWFLAKE_WAREHOUSE;
     const database = process.env.SNOWFLAKE_DATABASE;
 
-    if (!account || !user || !password || !warehouse || !database) {
+    if (!account || !user || !token || !warehouse || !database) {
       return {
         success: false,
-        error: 'Missing Snowflake credentials'
+        error: 'Missing Snowflake credentials (account, user, token, warehouse, database required)'
       };
     }
 
