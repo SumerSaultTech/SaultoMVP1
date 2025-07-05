@@ -37,15 +37,40 @@ interface DashboardMetricData {
   timeSeriesData: TimeSeriesStructure;
 }
 
+interface SnowflakeConfig {
+  account: string;
+  username: string;
+  warehouse: string;
+  role: string;
+  database: string;
+  schema: string;
+}
+
 export class SnowflakeCalculatorService {
   private lastCalculated: Map<number, Date> = new Map();
   private readonly CACHE_DURATION_HOURS = 1;
   private dashboardCache: Map<string, { data: DashboardMetricData; timestamp: Date }> = new Map();
   private readonly DASHBOARD_CACHE_DURATION_HOURS = 1;
 
+  constructor() {
+    this.config = {
+      account: process.env.SNOWFLAKE_ACCOUNT || "",
+      username: process.env.SNOWFLAKE_USER || "",
+      warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
+      role: "SYSADMIN",
+      database: process.env.SNOWFLAKE_DATABASE || "MIAS_DATA_DB",
+      schema: process.env.SNOWFLAKE_SCHEMA || "CORE",
+    };
+  }
+
   private async executeQuery(sql: string): Promise<SnowflakeQueryResult> {
     try {
       console.log('Executing SQL query:', sql);
+
+      const token = process.env.SNOWFLAKE_ACCESS_TOKEN;
+      if (!token) {
+        throw new Error("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues");
+      }
       const result = await snowflakeSimpleService.executeQuery(sql);
 
       if (result.success && result.data) {
