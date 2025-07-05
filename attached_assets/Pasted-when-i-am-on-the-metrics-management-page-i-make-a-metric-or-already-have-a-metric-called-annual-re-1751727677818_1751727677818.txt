@@ -1,0 +1,29 @@
+when i am on the metrics management page, i make a metric or already have a metric called 'annual revenue' and i set it as a north star metric on my dashboard. i generate sql using ai and then check
+   the sql using the check sql button. it returns a certain number based on the tables queried from snowflake and the ai generted sql. however the 'annual revenue' number displayed on the dashboard is
+   different than the number generated using the 'check sql' button on the metrics management page. are the way they are calculating or querying data different?
+
+⏺ I'll investigate the difference between the SQL check and dashboard display calculations for your "annual revenue" metric.
+
+⏺ Task(Find metric calculation differences)
+  ⎿  Done (18 tool uses · 68.1k tokens · 1m 28.5s)                                                                                                                                                      
+
+⏺ Yes, they calculate data differently. The "check sql" button uses direct SQL execution while the dashboard uses processed calculations with business logic.
+
+  Key differences:
+
+  1. Check SQL: Executes your exact SQL directly against Snowflake via Python service
+  2. Dashboard: Uses predefined SQL templates through TypeScript service with 1-hour caching, time series generation, and fallback data
+
+  Why numbers differ:
+  - Dashboard may use cached data (up to 1 hour old)
+  - Dashboard applies additional business logic and formatting
+  - Dashboard might use SQL templates instead of your exact SQL
+  - Dashboard has fallback to sample data if queries fail
+
+  Files involved:
+  - Check SQL: client/src/pages/metrics-management.tsx:137-173
+  - Dashboard: client/src/components/dashboard/north-star-metrics.tsx:206-216
+
+  The dashboard system prioritizes consistent user experience over real-time accuracy, while the SQL checker provides immediate validation of your exact query.
+
+> the dashboard numbers show $2 instead of the actual annual revenue from snowflake. why?
