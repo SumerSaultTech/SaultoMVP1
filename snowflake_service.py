@@ -31,11 +31,17 @@ class SnowflakeService:
                 if token:
                     # Use token authentication
                     connection_params['token'] = token
+                    # Remove any password when using token
+                    connection_params.pop('password', None)
                     logging.info("Using token authentication for Snowflake")
                 else:
                     # Fall back to password authentication
-                    connection_params['password'] = os.environ.get('SNOWFLAKE_PASSWORD')
-                    logging.info("Using password authentication for Snowflake")
+                    password = os.environ.get('SNOWFLAKE_PASSWORD')
+                    if password:
+                        connection_params['password'] = password
+                        logging.info("Using password authentication for Snowflake")
+                    else:
+                        raise ValueError("No authentication method available - need either SNOWFLAKE_ACCESS_TOKEN or SNOWFLAKE_PASSWORD")
                 
                 self.connection = snowflake.connector.connect(**connection_params)
                 self.cursor = self.connection.cursor()
