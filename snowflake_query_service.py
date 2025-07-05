@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 import os
 import sys
@@ -5,6 +6,13 @@ import json
 import snowflake.connector
 from decimal import Decimal
 from datetime import datetime, date
+
+def json_serial(obj):
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 def execute_snowflake_query(sql_query):
     try:
@@ -43,31 +51,23 @@ def execute_snowflake_query(sql_query):
         data = []
         for row in results:
             row_dict = {}
-            for i, col in enumerate(columns):
-                value = row[i]
-                # Handle different data types
-                if isinstance(value, (datetime, date)):
-                    value = value.isoformat()
-                elif isinstance(value, Decimal):
-                    value = str(value)
-                else:
-                    value = str(value) if value is not None else None
-                row_dict[col] = value
+            for i, value in enumerate(row):
+                row_dict[columns[i]] = value
             data.append(row_dict)
+        
+        result = {
+            "success": True,
+            "data": data,
+            "columns": columns,
+            "row_count": len(data)
+        }
+        
+        print(json.dumps(result, default=json_serial))
         
         cursor.close()
         conn.close()
         
-        # Return success result
-        result = {
-            "success": True,
-            "data": data,
-            "columns": columns
-        }
-        print(json.dumps(result))
-        
     except Exception as e:
-        # Return error result
         error_result = {
             "success": False,
             "error": str(e)
