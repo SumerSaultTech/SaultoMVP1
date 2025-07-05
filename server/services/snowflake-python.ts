@@ -114,64 +114,7 @@ def execute_query():
         print(json.dumps(error_result))
 
 execute_query()
-`;lizable")
-
-def execute_query():
-    try:
-        account = os.getenv("SNOWFLAKE_ACCOUNT", "").replace(".snowflakecomputing.com", "")
-        username = os.getenv("SNOWFLAKE_USER", "")
-        token = os.getenv("SNOWFLAKE_ACCESS_TOKEN", "")
-        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH")
-        database = "MIAS_DATA_DB"
-        schema = "CORE"
-        
-        if not token:
-            raise ValueError("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues")
-        
-        conn = snowflake.connector.connect(
-            account=account,
-            user=username,
-            token=token,
-            warehouse=warehouse,
-            database=database,
-            schema=schema,
-            timeout=30
-        )
-        
-        cursor = conn.cursor()
-        cursor.execute("""${sqlQuery.replace(/"/g, '\\"')}""")
-        
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        rows = cursor.fetchall()
-        
-        data = []
-        for row in rows:
-            row_dict = {}
-            for i, value in enumerate(row):
-                row_dict[columns[i]] = value
-            data.append(row_dict)
-        
-        result = {
-            "success": True,
-            "data": data,
-            "columns": columns,
-            "row_count": len(data)
-        }
-        
-        cursor.close()
-        conn.close()
-        
-        print(json.dumps(result, default=json_serial))
-        
-    except Exception as e:
-        error_result = {
-            "success": False,
-            "error": str(e)
-        }
-        print(json.dumps(error_result))
-
-if __name__ == "__main__":
-    execute_query()
+execute_query()
 `;
 
       const child = spawn('python3', ['-c', pythonScript], {
