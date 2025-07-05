@@ -178,19 +178,23 @@ export class SnowflakeCalculatorService {
       const result = await snowflakePythonService.executeQuery(sqlQuery);
 
       if (result.success && result.data && result.data.length > 0) {
-        // Handle different possible column names from the result
-        const row = result.data[0];
-        const value = row.VALUE || row.value || row.CURRENT_REVENUE || row.AMOUNT || 
-                     Object.values(row)[0] || 0;
+        // The queries return daily/periodic data, we need to aggregate it
+        let totalValue = 0;
+        
+        // Sum up all the daily revenue values
+        result.data.forEach(row => {
+          const dailyValue = row.DAILY_REVENUE || row.daily_revenue || row.VALUE || row.value || row.AMOUNT || 0;
+          totalValue += Number(dailyValue) || 0;
+        });
 
-        console.log(`Dashboard data for metric ${metric.name}: ${value} from Snowflake query (${timePeriod})`);
+        console.log(`Dashboard data for metric ${metric.name}: ${totalValue} from Snowflake query (${timePeriod}) - aggregated from ${result.data.length} rows`);
 
         return {
           metricId,
-          currentValue: Number(value),
+          currentValue: totalValue,
           yearlyGoal: parseFloat(String(metric.yearlyGoal || "0").replace(/[$,]/g, '')) || 0,
           format: metric.format || "currency",
-          timeSeriesData: this.generateTimeSeriesForPeriods(Number(value), parseFloat(String(metric.yearlyGoal || "0").replace(/[$,]/g, '')) || 0)
+          timeSeriesData: this.generateTimeSeriesForPeriods(totalValue, parseFloat(String(metric.yearlyGoal || "0").replace(/[$,]/g, '')) || 0)
         };
       } else {
         console.log(`Query failed: ${result.error || 'no data or data not array'}. Using fallback data.`);

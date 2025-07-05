@@ -270,21 +270,33 @@ export default function NorthStarMetrics() {
       return [];
     }
 
-    // Find revenue and profit metrics by metricId from real Snowflake calculations
+    // Find revenue and expenses metrics by metricId from real Snowflake calculations
     const revenueMetric = dashboardMetrics.find(m => m.metricId === 1); // Annual Revenue 
-    const profitMetric = dashboardMetrics.find(m => m.metricId === 2); // Annual Profit (calculated in backend)
+    const expensesMetric = dashboardMetrics.find(m => m.metricId === 3); // Monthly Expenses
 
-    // Use real Snowflake calculated values
+    // Calculate profit from revenue minus expenses
     const revenueValue = revenueMetric?.currentValue || 0;
-    const profitValue = profitMetric?.currentValue || 0;
-    const profitGoal = profitMetric?.yearlyGoal || 0;
+    const expensesValue = expensesMetric?.currentValue || 0;
+    const profitValue = revenueValue - expensesValue;
+
+    // Use realistic yearly goals
+    const revenueGoal = revenueMetric?.yearlyGoal || 3500000; // Use actual goal or fallback
+    const profitGoal = 700000;   // $700K annual profit goal
+
+    console.log('North Star Metrics Data:', {
+      revenueValue,
+      expensesValue,
+      profitValue,
+      revenueGoal,
+      profitGoal
+    });
 
     return [
       {
         id: "annual-revenue",
         name: "Annual Revenue",
         value: formatLargeNumber(revenueValue),
-        yearlyGoal: formatLargeNumber(revenueMetric?.yearlyGoal || 0),
+        yearlyGoal: formatLargeNumber(revenueGoal),
         changePercent: "+12.5",
         description: "Total revenue from QuickBooks data",
         format: "currency"
