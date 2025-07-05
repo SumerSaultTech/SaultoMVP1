@@ -23,20 +23,13 @@ def execute_snowflake_query(sql_query):
             'timeout': 30
         }
         
-        # Use token if available, otherwise fall back to password
+        # Use token authentication only
         token = os.getenv("SNOWFLAKE_ACCESS_TOKEN")
         if token:
             connection_params['token'] = token
-            # Remove any password when using token
-            connection_params.pop('password', None)
             print("Using token authentication for Snowflake")
         else:
-            password = os.getenv("SNOWFLAKE_PASSWORD")
-            if password:
-                connection_params['password'] = password
-                print("Using password authentication for Snowflake")
-            else:
-                raise ValueError("No authentication method available - need either SNOWFLAKE_ACCESS_TOKEN or SNOWFLAKE_PASSWORD")
+            raise ValueError("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues")
         
         conn = snowflake.connector.connect(**connection_params)
         

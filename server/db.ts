@@ -9,32 +9,29 @@ const requiredSnowflakeVars = [
   'SNOWFLAKE_DATABASE'
 ];
 
-// Check if we have either password or token authentication
-const hasPassword = !!process.env.SNOWFLAKE_PASSWORD;
+// Check if we have token authentication (password authentication disabled to avoid MFA)
 const hasToken = !!process.env.SNOWFLAKE_ACCESS_TOKEN;
 
 const missingVars = requiredSnowflakeVars.filter(varName => !process.env[varName]);
 
-if (missingVars.length > 0 || (!hasPassword && !hasToken)) {
+if (missingVars.length > 0 || !hasToken) {
   console.warn(`Snowflake credentials not fully configured. Missing: ${missingVars.join(', ')}`);
-  if (!hasPassword && !hasToken) {
-    console.warn('Missing authentication: need either SNOWFLAKE_PASSWORD or SNOWFLAKE_ACCESS_TOKEN');
+  if (!hasToken) {
+    console.warn('Missing authentication: SNOWFLAKE_ACCESS_TOKEN is required (password auth disabled to avoid MFA)');
   }
   console.warn('Using in-memory storage for development');
 } else {
-  const authMethod = hasToken ? 'access token' : 'password';
-  console.log(`Snowflake credentials configured successfully using ${authMethod}`);
+  console.log('Snowflake credentials configured successfully using access token');
 }
 
 // Export a simple connection status for the application
 export const snowflakeConfig = {
   account: process.env.SNOWFLAKE_ACCOUNT,
   user: process.env.SNOWFLAKE_USER,
-  password: process.env.SNOWFLAKE_PASSWORD,
   token: process.env.SNOWFLAKE_ACCESS_TOKEN,
   warehouse: process.env.SNOWFLAKE_WAREHOUSE,
   database: process.env.SNOWFLAKE_DATABASE,
   schema: process.env.SNOWFLAKE_SCHEMA || 'PUBLIC',
-  isConfigured: missingVars.length === 0 && (hasPassword || hasToken),
-  authMethod: hasToken ? 'token' : 'password'
+  isConfigured: missingVars.length === 0 && hasToken,
+  authMethod: 'token'
 };
