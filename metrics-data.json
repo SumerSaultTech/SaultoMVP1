@@ -29,7 +29,7 @@
       "format": "currency",
       "isIncreasing": true,
       "isNorthStar": true,
-      "sqlQuery": "SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;",
+      "sqlQuery": "SELECT SUM(AMOUNT) AS annual_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= DATEADD('year', -1, CURRENT_DATE)",
       "companyId": 1,
       "id": 1,
       "value": null,
