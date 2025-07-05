@@ -47,6 +47,7 @@ interface SnowflakeConfig {
 }
 
 export class SnowflakeCalculatorService {
+  private config: SnowflakeConfig;
   private lastCalculated: Map<number, Date> = new Map();
   private readonly CACHE_DURATION_HOURS = 1;
   private dashboardCache: Map<string, { data: DashboardMetricData; timestamp: Date }> = new Map();

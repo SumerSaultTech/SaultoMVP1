@@ -28,6 +28,7 @@ export class SnowflakeSimpleService {
     const scriptContent = `import snowflake.connector
 import json
 import sys
+import os
 from decimal import Decimal
 from datetime import date, datetime
 
