@@ -19,14 +19,16 @@ interface NorthStarMetric {
 
 // Format large numbers as millions for display
 const formatLargeNumber = (value: number): string => {
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
-  } else {
-    return `$${Math.round(value).toLocaleString()}`;
-  }
-};
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(1)}M`;
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(0)}K`;
+    } else if (value > 0) {
+      return `$${value.toLocaleString()}`;
+    } else {
+      return "$0";
+    }
+  };
 
 // Generate progress data for North Star metrics based on time period
 function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
