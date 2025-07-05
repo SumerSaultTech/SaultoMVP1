@@ -74,6 +74,7 @@ def execute_query():
         conn = snowflake.connector.connect(
             account=account,
             user=username,
+            authenticator='oauth',
             token=token,
             warehouse=warehouse,
             database=database,
