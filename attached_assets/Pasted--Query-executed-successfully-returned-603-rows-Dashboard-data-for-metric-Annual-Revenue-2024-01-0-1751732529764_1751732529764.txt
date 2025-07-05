@@ -1,0 +1,43 @@
+✅ Query executed successfully, returned 603 rows
+Dashboard data for metric Annual Revenue: 2024-01-01 from Snowflake query (Monthly View)
+Dashboard data for metric Annual Revenue: NaN from dashboard calculation (Monthly View)
+Processing metric: Monthly Deal Value (ID: 2) for period: Monthly View
+Calculating dashboard data for metric 2, period Monthly View
+Executing SQL query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;
+🔄 Executing Snowflake query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WH...
+✅ Query executed successfully, returned 221 rows
+Dashboard data for metric Monthly Deal Value: 2024-01-01 from Snowflake query (Monthly View)
+Dashboard data for metric Monthly Deal Value: NaN from dashboard calculation (Monthly View)
+Processing metric: Monthly Expenses (ID: 3) for period: Monthly View
+Calculating dashboard data for metric 3, period Monthly View
+Executing SQL query: SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= '2024-01-01' AND AMOUNT > 0 GROUP BY EXPENSE_DATE ORDER BY EXPENSE_DATE;
+🔄 Executing Snowflake query: SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXP...
+✅ Query executed successfully, returned 54 rows
+Dashboard data for metric Monthly Expenses: 2024-01-16 from Snowflake query (Monthly View)
+Dashboard data for metric Monthly Expenses: NaN from dashboard calculation (Monthly View)
+4:21:40 PM [express] GET /api/dashboard/metrics-data 304 in 3921ms :: [{"metricId":1,"currentValue":…
+=== Dashboard metrics data request ===
+Time period filter: Yearly View
+Found 3 metrics for dashboard
+Processing metric: Annual Revenue (ID: 1) for period: Yearly View
+Calculating dashboard data for metric 1, period Yearly View
+Executing SQL query: SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;
+🔄 Executing Snowflake query: SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKB...
+✅ Query executed successfully, returned 603 rows
+Dashboard data for metric Annual Revenue: 2024-01-01 from Snowflake query (Yearly View)
+Dashboard data for metric Annual Revenue: NaN from dashboard calculation (Yearly View)
+Processing metric: Monthly Deal Value (ID: 2) for period: Yearly View
+Calculating dashboard data for metric 2, period Yearly View
+Executing SQL query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;
+🔄 Executing Snowflake query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WH...
+✅ Query executed successfully, returned 221 rows
+Dashboard data for metric Monthly Deal Value: 2024-01-01 from Snowflake query (Yearly View)
+Dashboard data for metric Monthly Deal Value: NaN from dashboard calculation (Yearly View)
+Processing metric: Monthly Expenses (ID: 3) for period: Yearly View
+Calculating dashboard data for metric 3, period Yearly View
+Executing SQL query: SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= '2024-01-01' AND AMOUNT > 0 GROUP BY EXPENSE_DATE ORDER BY EXPENSE_DATE;
+🔄 Executing Snowflake query: SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXP...
+✅ Query executed successfully, returned 54 rows
+Dashboard data for metric Monthly Expenses: 2024-01-16 from Snowflake query (Yearly View)
+Dashboard data for metric Monthly Expenses: NaN from dashboard calculation (Yearly View)
+4:21:49 PM [express] GET /api/dashboard/metrics-data 200 in 3799ms :: [{"metricId":1,"currentValue":…
