@@ -74,7 +74,7 @@ export class SnowflakeMetricsService {
   async getNorthStarMetrics(companySlug: string): Promise<SnowflakeMetricData[]> {
     try {
       console.log('Fetching North Star metrics from Snowflake...');
-      
+
       // Use the same query patterns as the actual metrics
       const revenueQuery = `
         USE DATABASE MIAS_DATA_DB;
@@ -405,7 +405,7 @@ export class SnowflakeMetricsService {
     try {
       const { snowflakePythonService } = await import('./snowflake-python');
       const result = await snowflakePythonService.executeQuery(query);
-      
+
       if (result.success && result.data) {
         return result.data;
       } else {

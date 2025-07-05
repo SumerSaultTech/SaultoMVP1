@@ -5,7 +5,6 @@ type ConnectionOptions = any;
 interface SnowflakeConfig {
   account: string;
   username: string;
-  password: string;
   warehouse: string;
   role: string;
   database?: string;
@@ -27,7 +26,6 @@ class SnowflakeService {
     this.config = {
       account: process.env.SNOWFLAKE_ACCOUNT || "",
       username: process.env.SNOWFLAKE_USER || "",
-      password: process.env.SNOWFLAKE_PASSWORD || "",
       warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
       role: "SYSADMIN",
       database: process.env.SNOWFLAKE_DATABASE,
@@ -43,10 +41,15 @@ class SnowflakeService {
       console.log('Warehouse:', this.config.warehouse);
       console.log('Role:', this.config.role);
       
+      const token = process.env.SNOWFLAKE_ACCESS_TOKEN;
+      if (!token) {
+        throw new Error("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues");
+      }
+      
       const connectionOptions: ConnectionOptions = {
         account: this.config.account,
         username: this.config.username,
-        password: this.config.password,
+        token: token,
         warehouse: this.config.warehouse,
         role: this.config.role
       };
@@ -69,8 +72,8 @@ class SnowflakeService {
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.config.account || !this.config.username || !this.config.password) {
-        throw new Error("Missing Snowflake credentials in environment variables");
+      if (!this.config.account || !this.config.username || !process.env.SNOWFLAKE_ACCESS_TOKEN) {
+        throw new Error("Missing Snowflake credentials in environment variables (need SNOWFLAKE_ACCESS_TOKEN)");
       }
 
       console.log("Testing Snowflake connection...");
