@@ -57,7 +57,7 @@ try:
     if token:
         connection_params["token"] = token
     else:
-        connection_params["password"] = "${password}"
+        raise ValueError("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues")
     
     conn = snowflake.connector.connect(**connection_params)
     

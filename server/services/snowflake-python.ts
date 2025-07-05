@@ -63,15 +63,18 @@ def execute_query():
     try:
         account = os.getenv("SNOWFLAKE_ACCOUNT", "").replace(".snowflakecomputing.com", "")
         username = os.getenv("SNOWFLAKE_USER", "")
-        password = os.getenv("SNOWFLAKE_PASSWORD", "")
+        token = os.getenv("SNOWFLAKE_ACCESS_TOKEN", "")
         warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH")
         database = "MIAS_DATA_DB"
         schema = "CORE"
         
+        if not token:
+            raise ValueError("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues")
+        
         conn = snowflake.connector.connect(
             account=account,
             user=username,
-            password=password,
+            token=token,
             warehouse=warehouse,
             database=database,
             schema=schema,

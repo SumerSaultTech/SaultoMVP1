@@ -42,10 +42,14 @@ def json_serial(obj):
 sql_query = sys.argv[1] if len(sys.argv) > 1 else "SELECT 1"
 
 try:
+    token = os.getenv("SNOWFLAKE_ACCESS_TOKEN", "")
+    if not token:
+        raise ValueError("SNOWFLAKE_ACCESS_TOKEN is required - password authentication disabled to avoid MFA issues")
+    
     conn = snowflake.connector.connect(
         account="${account}",
         user="${user}",
-        password="${password}",
+        token=token,
         warehouse="${warehouse}",
         database="${database}",
         schema="CORE",
