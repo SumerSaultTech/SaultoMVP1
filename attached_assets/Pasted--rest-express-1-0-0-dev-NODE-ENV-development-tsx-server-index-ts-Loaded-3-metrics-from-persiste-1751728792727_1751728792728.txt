@@ -1,0 +1,42 @@
+ rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+✓ Loaded 3 metrics from persistent storage
+Airbyte config: {
+  serverUrl: 'https://api.airbyte.com/v1',
+  clientId: '***6d30c13f***',
+  clientSecret: '***set***',
+  workspaceId: 'bc926a02-3f86-446a-84cb-740d9a13caef',
+  hasCredentials: true
+}
+Azure OpenAI credentials not found. Chatbot will use fallback responses.
+3:19:36 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+=== Dashboard metrics data request ===
+Time period filter: Monthly View
+Found 3 metrics for dashboard
+Processing metric: Annual Revenue (ID: 1) for period: Monthly View
+Calculating dashboard data for metric 1, period Monthly View
+Executing SQL query: SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;
+3:19:40 PM [express] GET /api/setup-status 200 in 2ms :: {"id":1,"snowflakeConnected":false,"fivetra…
+🔄 Executing Snowflake query: SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKB...
+3:19:40 PM [express] GET /api/pipeline-activities 304 in 1ms :: []
+3:19:40 PM [express] GET /api/kpi-metrics 304 in 1ms :: [{"name":"Annual Revenue","description":"Tot…
+❌ Query failed: 250001 (08001): Failed to connect to DB: LFQSQQP-VBC22871.snowflakecomputing.com:443. Failed to authenticate: MFA authentication is required, but none of your current MFA methods are supported for programmatic authentication.
+Query failed: 250001 (08001): Failed to connect to DB: LFQSQQP-VBC22871.snowflakecomputing.com:443. Failed to authenticate: MFA authentication is required, but none of your current MFA methods are supported for programmatic authentication.. Using fallback data.
+Query failed for metric Annual Revenue, using fallback data
+Dashboard data for metric Annual Revenue: 100000 from dashboard calculation (Monthly View)
+Dashboard data for metric Annual Revenue: 100000 from dashboard calculation (Monthly View)
+Processing metric: Monthly Deal Value (ID: 2) for period: Monthly View
+Calculating dashboard data for metric 2, period Monthly View
+Executing SQL query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;
+🔄 Executing Snowflake query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WH...
+❌ Query failed: 250001 (08001): Failed to connect to DB: LFQSQQP-VBC22871.snowflakecomputing.com:443. Failed to authenticate: MFA authentication is required, but none of your current MFA methods are supported for programmatic authentication.
+Query failed: 250001 (08001): Failed to connect to DB: LFQSQQP-VBC22871.snowflakecomputing.com:443. Failed to authenticate: MFA authentication is required, but none of your current MFA methods are supported for programmatic authentication.. Using fallback data.
+Query failed for metric Monthly Deal Value, using fallback data
+Dashboard data for metric Monthly Deal Value: 100000 from dashboard calculation (Monthly View)
+Dashboard data for metric Monthly Deal Value: 100000 from dashboard calculation (Monthly View)
+Processing metric: Monthly Expenses (ID: 3) for period: Monthly View
+Calculating dashboard data for metr
