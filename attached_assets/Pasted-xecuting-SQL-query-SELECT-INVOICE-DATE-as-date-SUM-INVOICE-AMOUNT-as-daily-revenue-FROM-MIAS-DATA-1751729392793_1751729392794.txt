@@ -1,0 +1,23 @@
+xecuting SQL query: SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;
+🔄 Executing Snowflake query: SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKB...
+3:29:46 PM [express] GET /api/kpi-metrics 304 in 0ms :: [{"name":"Annual Revenue","description":"Tot…
+3:29:46 PM [express] GET /api/pipeline-activities 304 in 1ms :: []
+❌ Query failed: 251006: Password is empty
+Query failed: 251006: Password is empty. Using fallback data.
+Query failed for metric Annual Revenue, using fallback data
+Dashboard data for metric Annual Revenue: 100000 from dashboard calculation (Monthly View)
+Dashboard data for metric Annual Revenue: 100000 from dashboard calculation (Monthly View)
+Processing metric: Monthly Deal Value (ID: 2) for period: Monthly View
+Calculating dashboard data for metric 2, period Monthly View
+Executing SQL query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;
+🔄 Executing Snowflake query: SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WH...
+❌ Query failed: 251006: Password is empty
+Query failed: 251006: Password is empty. Using fallback data.
+Query failed for metric Monthly Deal Value, using fallback data
+Dashboard data for metric Monthly Deal Value: 100000 from dashboard calculation (Monthly View)
+Dashboard data for metric Monthly Deal Value: 100000 from dashboard calculation (Monthly View)
+Processing metric: Monthly Expenses (ID: 3) for period: Monthly View
+Calculating dashboard data for metric 3, period Monthly View
+Executing SQL query: SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= '2024-01-01' AND AMOUNT > 0 GROUP BY EXPENSE_DATE ORDER BY EXPENSE_DATE;
+🔄 Executing Snowflake query: SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXP...
+❌ Query failed: 251006: Password is empty
