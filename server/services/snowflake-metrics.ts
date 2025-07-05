@@ -73,39 +73,50 @@ export class SnowflakeMetricsService {
   // Get North Star metrics from MIAS_DATA Snowflake database
   async getNorthStarMetrics(companySlug: string): Promise<SnowflakeMetricData[]> {
     try {
-      // First, let's check what tables exist in your MIAS_DATA database
-      const schemaQuery = `
-        USE DATABASE MIAS_DATA_DB;
-        SHOW TABLES;
-      `;
-
-      const tablesResult = await this.executeSnowflakeQuery(schemaQuery);
-      console.log('Available tables in MIAS_DATA_DB:', tablesResult);
-
-      // Basic revenue query - you can customize these table names based on your actual data
+      console.log('Fetching North Star metrics from Snowflake...');
+      
+      // Use the same query patterns as the actual metrics
       const revenueQuery = `
         USE DATABASE MIAS_DATA_DB;
-        SELECT 
-          COALESCE(SUM(AMOUNT), 0) as current_revenue
-        FROM (
-          SELECT * FROM INFORMATION_SCHEMA.TABLES 
-          WHERE TABLE_SCHEMA = 'PUBLIC' 
-          AND (TABLE_NAME ILIKE '%REVENUE%' OR TABLE_NAME ILIKE '%SALES%' OR TABLE_NAME ILIKE '%INCOME%')
-          LIMIT 1
-        );
+        SELECT COALESCE(SUM(AMOUNT), 0) AS current_revenue 
+        FROM CORE.CORE_HUBSPOT_DEALS 
+        WHERE CLOSE_DATE >= DATE_TRUNC('YEAR', CURRENT_DATE()) 
+        AND STAGE = 'Closed Won'
       `;
 
-      // Try to get actual revenue data or return sample values
-      let currentRevenue = 2850000; // Default value
-      let currentProfit = 485000;   // Default value
+      const profitQuery = `
+        USE DATABASE MIAS_DATA_DB;
+        SELECT 
+          COALESCE(
+            (SELECT SUM(AMOUNT) FROM CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND STAGE = 'Closed Won') -
+            (SELECT SUM(AMOUNT) FROM CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= DATE_TRUNC('YEAR', CURRENT_DATE())), 
+            0
+          ) AS current_profit
+      `;
+
+      let currentRevenue = 0;
+      let currentProfit = 0;
 
       try {
+        console.log('Executing revenue query for North Star metrics...');
         const revenueResult = await this.executeSnowflakeQuery(revenueQuery);
         if (revenueResult && revenueResult.length > 0) {
-          currentRevenue = revenueResult[0]?.CURRENT_REVENUE || currentRevenue;
+          currentRevenue = revenueResult[0]?.CURRENT_REVENUE || 0;
+          console.log('North Star revenue from Snowflake:', currentRevenue);
+        }
+
+        console.log('Executing profit query for North Star metrics...');
+        const profitResult = await this.executeSnowflakeQuery(profitQuery);
+        if (profitResult && profitResult.length > 0) {
+          currentProfit = profitResult[0]?.CURRENT_PROFIT || 0;
+          console.log('North Star profit from Snowflake:', currentProfit);
         }
       } catch (error) {
-        console.log('Using default revenue values as table structure needs to be configured');
+        console.error('Snowflake query failed for North Star metrics:', error);
+        // Use fallback values when Snowflake is unavailable
+        currentRevenue = 2850000;
+        currentProfit = 485000;
+        console.log('Using fallback values for North Star metrics');
       }
 
       return [
@@ -126,7 +137,8 @@ export class SnowflakeMetricsService {
           yearlyGoal: 700000,
           format: 'currency',
           description: 'Net profit after all expenses for the current fiscal year from MIAS_DATA',
-          category: 'profit'
+          category: 'profit',
+          sql_query: profitQuery
         }
       ];
     } catch (error) {
@@ -391,21 +403,14 @@ export class SnowflakeMetricsService {
 
   private async executeSnowflakeQuery(query: string): Promise<any[]> {
     try {
-      // Use the existing Snowflake endpoint
-      const response = await fetch('http://localhost:5000/api/snowflake/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Snowflake query failed: ${response.statusText}`);
+      const { snowflakePythonService } = await import('./snowflake-python');
+      const result = await snowflakePythonService.executeQuery(query);
+      
+      if (result.success && result.data) {
+        return result.data;
+      } else {
+        throw new Error(result.error || 'Query failed');
       }
-
-      const result = await response.json();
-      return result.data || [];
     } catch (error) {
       console.error('Error executing Snowflake query:', error);
       throw error;

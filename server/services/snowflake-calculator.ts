@@ -47,7 +47,7 @@ export class SnowflakeCalculatorService {
     try {
       console.log('Executing SQL query:', sql);
       const result = await snowflakeSimpleService.executeQuery(sql);
-      
+
       if (result.success && result.data) {
         console.log(`Query successful, ${result.data.length} rows returned`);
         return { success: true, data: result.data };
@@ -106,7 +106,7 @@ export class SnowflakeCalculatorService {
   private needsRecalculation(metricId: number): boolean {
     const lastCalc = this.lastCalculated.get(metricId);
     if (!lastCalc) return true;
-    
+
     const now = new Date();
     const hoursSinceLastCalc = (now.getTime() - lastCalc.getTime()) / (1000 * 60 * 60);
     return hoursSinceLastCalc >= this.CACHE_DURATION_HOURS;
@@ -115,78 +115,69 @@ export class SnowflakeCalculatorService {
   private isCacheValid(cacheKey: string): boolean {
     const cached = this.dashboardCache.get(cacheKey);
     if (!cached) return false;
-    
+
     const now = new Date();
     const hoursSinceCached = (now.getTime() - cached.timestamp.getTime()) / (1000 * 60 * 60);
     return hoursSinceCached < this.DASHBOARD_CACHE_DURATION_HOURS;
   }
 
-  async calculateDashboardData(metricId: number, timePeriod: string = 'ytd'): Promise<DashboardMetricData | null> {
+  async calculateDashboardData(metricId: number, timePeriod: string = 'monthly'): Promise<DashboardMetricData | null> {
     try {
-      const cacheKey = `${metricId}-${timePeriod}`;
-      
-      if (this.isCacheValid(cacheKey)) {
-        console.log(`Using cached dashboard data for metric ${metricId}, period ${timePeriod}`);
-        return this.dashboardCache.get(cacheKey)!.data;
-      }
-
       console.log(`Calculating dashboard data for metric ${metricId}, period ${timePeriod}`);
+
+      // Get the metric configuration
       const metric = await storage.getKpiMetricById(metricId);
-      
       if (!metric) {
-        console.error(`Metric ${metricId} not found`);
+        console.log(`Metric ${metricId} not found`);
         return null;
       }
 
-      // Get SQL template for the metric
-      const sqlTemplate = this.getSQLTemplate(metric.name, metric.category || 'general');
-      
-      if (!sqlTemplate) {
+      // Use the SQL query from the metric if available
+      let sqlQuery = metric.sqlQuery;
+
+      if (!sqlQuery) {
+        console.log(`No SQL query found for metric ${metricId}, using template`);
+        sqlQuery = this.getSQLTemplate(metric.name, metric.category || 'general');
+      }
+
+      if (!sqlQuery) {
         console.log(`No SQL template found for metric: ${metric.name}, using fallback data`);
         return this.getFallbackDashboardData(metricId, metric);
       }
 
-      const result = await this.executeQuery(sqlTemplate);
-      
-      if (!result.success || !result.data || result.data.length === 0) {
-        console.log(`Query failed for metric ${metricId}, using fallback data`);
-        return this.getFallbackDashboardData(metricId, metric);
+      console.log(`Executing SQL query: ${sqlQuery}`);
+
+      // Use the Python service directly to match the "Check SQL" functionality
+      const { snowflakePythonService } = await import('./snowflake-python');
+      const result = await snowflakePythonService.executeQuery(sqlQuery);
+
+      if (result.success && result.data && result.data.length > 0) {
+        // Handle different possible column names from the result
+        const row = result.data[0];
+        const value = row.VALUE || row.value || row.CURRENT_REVENUE || row.AMOUNT || 
+                     Object.values(row)[0] || 0;
+
+        console.log(`Dashboard data for metric ${metric.name}: ${value} from Snowflake query (${timePeriod})`);
+
+        return {
+          metricId,
+          currentValue: Number(value),
+          yearlyGoal: parseFloat(String(metric.yearlyGoal || "0").replace(/[$,]/g, '')) || 0,
+          format: metric.format || "currency",
+          timeSeriesData: this.generateTimeSeriesForPeriods(Number(value), parseFloat(String(metric.yearlyGoal || "0").replace(/[$,]/g, '')) || 0)
+        };
+      } else {
+        console.log(`Query failed: ${result.error || 'no data or data not array'}. Using fallback data.`);
+        const fallbackResult = this.getFallbackDashboardData(metricId, metric);
+        console.log(`Query failed for metric ${metric.name}, using fallback data`);
+        console.log(`Dashboard data for metric ${metric.name}: ${fallbackResult?.currentValue} from dashboard calculation (${timePeriod})`);
+        return fallbackResult;
       }
 
-      // Calculate current value from query result
-      let currentValue = 0;
-      for (const row of result.data) {
-        const rawValue = row.VALUE || row.value || 0;
-        const parsedValue = parseFloat(String(rawValue).replace(/[$,]/g, '')) || 0;
-        currentValue += parsedValue;
-      }
-
-      console.log(`Calculated value for ${metric.name}: ${currentValue}`);
-
-      // Parse yearly goal
-      const yearlyGoal = parseFloat(String(metric.yearlyGoal || '0').replace(/[$,]/g, '')) || 0;
-
-      // Generate time series data
-      const timeSeriesData = this.generateTimeSeriesForPeriods(currentValue, yearlyGoal);
-
-      const dashboardData: DashboardMetricData = {
-        metricId,
-        currentValue,
-        yearlyGoal,
-        format: metric.format || 'currency',
-        timeSeriesData
-      };
-
-      // Cache the result
-      this.dashboardCache.set(cacheKey, {
-        data: dashboardData,
-        timestamp: new Date()
-      });
-
-      return dashboardData;
     } catch (error) {
-      console.error("Error calculating dashboard data:", error);
-      return null;
+      console.error(`Error calculating dashboard data for metric ${metricId}:`, error);
+      const metric = await storage.getKpiMetricById(metricId);
+      return metric ? this.getFallbackDashboardData(metricId, metric) : null;
     }
   }
 
@@ -202,7 +193,7 @@ export class SnowflakeCalculatorService {
 
     const currentValue = fallbackValues[metric.name] || 100000;
     const yearlyGoal = parseFloat(String(metric.yearlyGoal || '0').replace(/[$,]/g, '')) || currentValue * 1.2;
-    
+
     return {
       metricId,
       currentValue,
@@ -216,7 +207,7 @@ export class SnowflakeCalculatorService {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
-    
+
     // Weekly data - last 8 weeks with progression
     const weekly = [];
     for (let i = 7; i >= 0; i--) {
@@ -224,7 +215,7 @@ export class SnowflakeCalculatorService {
       weekDate.setDate(weekDate.getDate() - (i * 7));
       const weeklyGoal = yearlyGoal / 52;
       const weeklyActual = currentValue * (0.8 + Math.random() * 0.4) / 52;
-      
+
       weekly.push({
         period: this.formatWeekPeriod(weekDate),
         actual: Math.round(weeklyActual),
@@ -238,7 +229,7 @@ export class SnowflakeCalculatorService {
       const monthDate = new Date(currentYear, currentMonth - i, 1);
       const monthlyGoal = yearlyGoal / 12;
       const monthlyActual = currentValue * (0.7 + Math.random() * 0.6) / 12;
-      
+
       monthly.push({
         period: this.formatMonthPeriod(`${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`),
         actual: Math.round(monthlyActual),
@@ -253,7 +244,7 @@ export class SnowflakeCalculatorService {
       const quarter = Math.floor(quarterDate.getMonth() / 3) + 1;
       const quarterlyGoal = yearlyGoal / 4;
       const quarterlyActual = currentValue * (0.6 + Math.random() * 0.8) / 4;
-      
+
       quarterly.push({
         period: `${quarterDate.getFullYear()}-Q${quarter}`,
         actual: Math.round(quarterlyActual),
@@ -265,12 +256,12 @@ export class SnowflakeCalculatorService {
     const ytd = [];
     const dayOfYear = this.getDayOfYear(now);
     const dailyGoalTarget = yearlyGoal / 365;
-    
+
     for (let day = 1; day <= dayOfYear; day += 30) { // Monthly snapshots
       const ytdDate = new Date(currentYear, 0, day);
       const ytdActual = (currentValue * day) / dayOfYear;
       const ytdGoal = dailyGoalTarget * day;
-      
+
       ytd.push({
         period: ytdDate.toISOString().split('T')[0],
         actual: Math.round(ytdActual),
@@ -285,7 +276,7 @@ export class SnowflakeCalculatorService {
     const weekStart = this.getWeekStart(date);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
-    
+
     return `${weekStart.getMonth() + 1}/${weekStart.getDate()}-${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
   }
 

@@ -32,7 +32,7 @@ const formatLargeNumber = (value: number): string => {
 function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
   const currentValue = parseFloat(metric.value.replace(/[$,]/g, ''));
   const yearlyGoal = parseFloat(metric.yearlyGoal.replace(/[$,]/g, ''));
-  
+
   // Performance patterns for different metrics
   const revenuePattern = [0.75, 0.82, 0.88, 0.95, 1.02, 1.08, 1.15, 1.22, 1.18, 1.25, 1.32, 1.40];
   const profitPattern = [0.65, 0.72, 0.79, 0.86, 0.93, 1.00, 1.07, 1.14, 1.10, 1.17, 1.24, 1.31];
@@ -56,14 +56,14 @@ function generateWeeklyNorthStarData(yearlyGoal: number, pattern: number[]) {
   const currentDay = today.getDay();
   const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
-  
+
   const dailyGoal = yearlyGoal / 365;
-  
+
   return weekdays.map((day, index) => {
     const dayProgress = dailyGoal * (index + 1);
     const performanceMultiplier = pattern[index % 7] || 1.0;
     const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
-    
+
     return {
       period: day,
       goal: Math.round(dayProgress),
@@ -77,15 +77,15 @@ function generateMonthlyNorthStarData(yearlyGoal: number, pattern: number[]) {
   const today = new Date();
   const currentDay = today.getDate();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  
+
   const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const dailyGoal = yearlyGoal / 365;
-  
+
   return allDays.map((day, index) => {
     const dayProgress = dailyGoal * day;
     const performanceMultiplier = pattern[index % 30] || 1.0;
     const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
-    
+
     return {
       period: day.toString(),
       goal: Math.round(dayProgress),
@@ -101,26 +101,26 @@ function generateQuarterlyNorthStarData(yearlyGoal: number, pattern: number[]) {
   const quarterStartMonth = (currentQuarter - 1) * 3;
   const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
   const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
-  
+
   const weeks: Date[] = [];
   const currentWeekStart = new Date(quarterStart);
   const dayOfWeek = currentWeekStart.getDay();
   currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  
+
   while (currentWeekStart <= quarterEnd) {
     weeks.push(new Date(currentWeekStart));
     currentWeekStart.setDate(currentWeekStart.getDate() + 7);
   }
-  
+
   const weeklyGoal = yearlyGoal / 52;
-  
+
   return weeks.map((weekStart, index) => {
     const weekProgress = weeklyGoal * (index + 1);
     const performanceMultiplier = pattern[index % 12] || 1.0;
     const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
-    
+
     const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-    
+
     return {
       period: weekLabel,
       goal: Math.round(weekProgress),
@@ -134,24 +134,24 @@ function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
   const today = new Date();
   const yearStart = new Date(today.getFullYear(), 0, 1);
   const yearEnd = new Date(today.getFullYear(), 11, 31);
-  
+
   const months = [];
   const currentMonth = new Date(yearStart);
-  
+
   while (currentMonth <= yearEnd) {
     months.push(new Date(currentMonth));
     currentMonth.setMonth(currentMonth.getMonth() + 1);
   }
-  
+
   const monthlyGoal = yearlyGoal / 12;
-  
+
   return months.map((month, index) => {
     const goalProgress = monthlyGoal * (index + 1);
     const performanceMultiplier = pattern[index] || 1.0;
     const actualValue = month <= today ? goalProgress * performanceMultiplier : null;
-    
+
     const monthLabel = month.toLocaleDateString('en-US', { month: 'short' });
-    
+
     return {
       period: monthLabel,
       goal: Math.round(goalProgress),
@@ -163,9 +163,9 @@ function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
 
 function formatValue(value: string | number, format: string): string {
   if (!value && value !== 0) return '0';
-  
+
   const valueStr = typeof value === 'number' ? value.toString() : value;
-  
+
   if (format === 'currency') {
     const numValue = parseFloat(valueStr.replace(/[$,]/g, '')) || 0;
     if (numValue >= 1000000) {
@@ -182,13 +182,13 @@ function formatValue(value: string | number, format: string): string {
 function calculateProgress(currentValue: string | number, goalValue: string | number): number {
   if (!currentValue && currentValue !== 0) return 0;
   if (!goalValue && goalValue !== 0) return 0;
-  
+
   const currentStr = typeof currentValue === 'number' ? currentValue.toString() : currentValue;
   const goalStr = typeof goalValue === 'number' ? goalValue.toString() : goalValue;
-  
+
   const current = parseFloat(currentStr.replace(/[$,]/g, '')) || 0;
   const goal = parseFloat(goalStr.replace(/[$,]/g, '')) || 1;
-  
+
   return goal > 0 ? Math.round((current / goal) * 100) : 0;
 }
 
@@ -240,7 +240,7 @@ export default function NorthStarMetrics() {
 
     const metricKey = metricName.toLowerCase().includes('revenue') ? 'revenue' :
                      metricName.toLowerCase().includes('profit') ? 'profit' : null;
-    
+
     if (metricKey && sources[metricKey]) {
       return sources[metricKey];
     }
@@ -301,6 +301,33 @@ export default function NorthStarMetrics() {
     ];
   })();
 
+  // Default metrics for fallback
+  const defaultMetrics = [
+    {
+      id: 'annual-revenue',
+      name: 'Annual Revenue',
+      currentValue: 2850000,
+      yearlyGoal: 3500000,
+      format: 'currency',
+      description: 'Total revenue for the current fiscal year',
+      category: 'revenue'
+    },
+    {
+      id: 'annual-profit',
+      name: 'Annual Profit',
+      currentValue: 485000,
+      yearlyGoal: 700000,
+      format: 'currency',
+      description: 'Net profit after all expenses for the current fiscal year',
+      category: 'profit'
+    }
+  ];
+
+  // Use North Star metrics if available, otherwise use defaults
+  const metrics = northStarMetrics && Array.isArray(northStarMetrics) && northStarMetrics.length > 0 
+    ? northStarMetrics
+    : defaultMetrics;
+
   const getTimePeriodLabel = (period: string) => {
     const option = northStarTimePeriodOptions.find(opt => opt.value === period);
     return option?.label || "Year to Date";
@@ -309,7 +336,7 @@ export default function NorthStarMetrics() {
   // Calculate adaptive goal based on time period
   const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
     const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
-    
+
     switch (timePeriod) {
       case "weekly":
         return (yearlyValue / 52).toFixed(0);
@@ -326,14 +353,14 @@ export default function NorthStarMetrics() {
   // Get the EXACT same values that are displayed in the chart
   const getChartDisplayValues = (metric: NorthStarMetric, timePeriod: string) => {
     const chartData = generateNorthStarData(metric, timePeriod);
-    
+
     // Find the most recent actual data point from the chart
     const actualDataPoints = chartData.filter(point => point.actual !== null);
     const currentActual = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].actual : 0;
-    
+
     // Get the corresponding goal for that same data point
     const currentGoal = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].goal : chartData[chartData.length - 1]?.goal || 0;
-    
+
     return {
       current: currentActual || 0,
       goal: currentGoal || 0
@@ -343,16 +370,16 @@ export default function NorthStarMetrics() {
   // Calculate YTD progress vs YTD goal for "on pace" indicator
   const getYTDProgress = (metric: NorthStarMetric) => {
     const ytdChartData = generateNorthStarData(metric, "ytd");
-    
+
     // Find the most recent actual data point from YTD chart
     const actualDataPoints = ytdChartData.filter(point => point.actual !== null);
     if (actualDataPoints.length === 0) return { current: 0, goal: 0, progress: 0 };
-    
+
     // Get the latest actual value and corresponding goal
     const latestPoint = actualDataPoints[actualDataPoints.length - 1];
     const currentYTD = latestPoint.actual || 0;
     const goalYTD = latestPoint.goal || 1;
-    
+
     return {
       current: currentYTD,
       goal: goalYTD,
@@ -368,7 +395,7 @@ export default function NorthStarMetrics() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
           <div className="h-px bg-gradient-to-r from-purple-300 to-transparent flex-1 ml-4"></div>
         </div>
-        
+
         <div className="flex items-center space-x-2">
           <Calendar className="h-4 w-4 text-purple-600" />
           <Select value={northStarTimePeriod} onValueChange={setNorthStarTimePeriod}>
@@ -385,7 +412,7 @@ export default function NorthStarMetrics() {
           </Select>
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {isLoading ? (
           <>
@@ -414,11 +441,11 @@ export default function NorthStarMetrics() {
           const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
           const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
           const progressStatus = getProgressStatus(progress);
-          
+
           // Use YTD progress for "on pace" indicator regardless of selected time period
           const ytdProgress = getYTDProgress(metric);
           const onPaceProgressStatus = getProgressStatus(ytdProgress.progress);
-          
+
           const changeValue = parseFloat(metric.changePercent);
           const isPositive = changeValue >= 0;
           const chartData = generateNorthStarData(metric, northStarTimePeriod);
@@ -426,7 +453,7 @@ export default function NorthStarMetrics() {
           return (
             <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-blue-500"></div>
-              
+
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2 flex-1">
@@ -445,33 +472,33 @@ export default function NorthStarMetrics() {
                           <div className="font-semibold text-sm text-gray-900 dark:text-white">
                             Data Source Information
                           </div>
-                          
+
                           <div className="space-y-2 text-xs">
                             <div className="flex items-center gap-2">
                               <div className="h-3 w-3 bg-orange-500 rounded-full" />
                               <span className="font-medium">Original Source:</span>
                               <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).source}</span>
                             </div>
-                            
+
                             <div className="flex items-center gap-2">
                               <Database className="h-3 w-3 text-blue-500" />
                               <span className="font-medium">Data Warehouse:</span>
                               <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).warehouse}</span>
                             </div>
-                            
+
                             <div className="flex items-center gap-2">
                               <Table className="h-3 w-3 text-green-500" />
                               <span className="font-medium">Table:</span>
                               <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).table}</span>
                             </div>
-                            
+
                             <div className="flex items-center gap-2">
                               <Columns className="h-3 w-3 text-purple-500" />
                               <span className="font-medium">Column:</span>
                               <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).column}</span>
                             </div>
                           </div>
-                          
+
                           <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                             <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
                               Description:
@@ -525,7 +552,7 @@ export default function NorthStarMetrics() {
                   <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300">
                     {getTimePeriodLabel(northStarTimePeriod)} Progress
                   </h4>
-                  
+
                   <ResponsiveContainer width="100%" height={140}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
