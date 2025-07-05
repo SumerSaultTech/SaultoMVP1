@@ -145,7 +145,7 @@ export class MemStorage implements IStorage {
   async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> {
     const existing = this.dataSources.get(id);
     if (!existing) return undefined;
-    
+
     const updated: DataSource = { ...existing, ...updates };
     this.dataSources.set(id, updated);
     return updated;
@@ -178,7 +178,7 @@ export class MemStorage implements IStorage {
   async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> {
     const existing = this.sqlModels.get(id);
     if (!existing) return undefined;
-    
+
     const updated: SqlModel = { ...existing, ...updates };
     this.sqlModels.set(id, updated);
     return updated;
@@ -207,7 +207,7 @@ export class MemStorage implements IStorage {
   async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> {
     const existing = this.kpiMetrics.get(id);
     if (!existing) return undefined;
-    
+
     const updated: KpiMetric = { ...existing, ...updates };
     this.kpiMetrics.set(id, updated);
     return updated;
@@ -274,7 +274,7 @@ import { snowflakeConfig } from "./db";
 export class DatabaseStorage implements IStorage {
   // DatabaseStorage is disabled since we removed PostgreSQL dependency
   // Using PersistentMemStorage with Snowflake integration instead
-  
+
   private throwError(): never {
     throw new Error("DatabaseStorage is disabled. Using PersistentMemStorage with Snowflake integration.");
   }
@@ -340,7 +340,7 @@ class PersistentMemStorage extends MemStorage {
     try {
       if (fs.existsSync(METRICS_FILE)) {
         const data = JSON.parse(fs.readFileSync(METRICS_FILE, 'utf8'));
-        
+
         // Restore metrics
         if (data.kpiMetrics) {
           for (const [id, metric] of Object.entries(data.kpiMetrics as Record<string, any>)) {
@@ -351,7 +351,7 @@ class PersistentMemStorage extends MemStorage {
           }
           this.currentId = Math.max(this.currentId, ...Array.from(this.kpiMetrics.keys())) + 1;
         }
-        
+
         console.log(`✓ Loaded ${this.kpiMetrics.size} metrics from persistent storage`);
       } else {
         this.initializeDefaultMetrics();
