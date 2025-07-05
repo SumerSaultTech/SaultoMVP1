@@ -1,0 +1,142 @@
+Privileges required for programmatic access tokens
+To create and manage a programmatic access token, you need to use a role that has been granted the following privileges:
+
+For human users (with TYPE=PERSON), you do not need any special privileges to generate, modify, drop, or display a programmatic access token for yourself.
+
+If you’re generating, modifying, dropping, or displaying a programmatic access token for a different user or a service user (with TYPE=SERVICE), you must use a role that has the OWNERSHIP or MODIFY PROGRAMMATIC AUTHENTICATION METHODS privilege on that user.
+
+For example, suppose that you want to grant users with the my_service_owner_role custom role the ability to generate and manage programmatic access tokens for the service user my_service_user. You can grant the MODIFY PROGRAMMATIC AUTHENTICATION METHODS privilege on the my_service_user user to the role my_service_owner_role:
+
+GRANT MODIFY PROGRAMMATIC AUTHENTICATION METHODS ON USER my_service_user
+  TO ROLE my_service_owner_role;
+Generating a programmatic access token
+You can generate a programmatic access token in Snowsight or by executing SQL commands.
+
+Snowsight
+SQL
+Sign in to Snowsight.
+
+Select Admin » Users & Roles.
+
+Select the user that you want to generate the programmatic access token for.
+
+Under Programmatic access tokens, select Generate new token.
+
+In the New programmatic access token dialog, enter the following information:
+
+In the Name field, enter a name for the token.
+
+In the name, you can only use letters, numbers, and underscores. The name must start with a letter or underscore. Letters in the name are stored and resolved as uppercase characters.
+
+In the Comment field, enter a descriptive comment about the token.
+
+After you create the token, this comment is displayed under the token in the Programmatic access tokens section.
+
+From Expires in, choose the number of days after which the token should expire.
+
+If you’re generating the token on behalf of a user for a service (if the USER object has TYPE=SERVICE), or if you want to restrict the scope of the operations that can be performed, select One specific role (recommended), and select the role that should be used for privilege evaluation and object creation.
+
+When you use this token for authentication, any objects that you create are owned by this role, and this role is used for privilege evaluation.
+
+Note
+
+Secondary roles are not used, even if DEFAULT_SECONDARY_ROLES is set to (‘ALL’) for the user.
+
+If you select Any of my roles instead, any objects that you create owned by your primary role, and privileges are evaluated against your active roles.
+
+Select Generate.
+
+Copy or download the generated programmatic access token so that you can use the token for authentication.
+
+Note
+
+After you close this message box, you will not be able to copy or download this token.
+
+The new token is listed in the Programmatic access tokens section.
+
+As noted earlier, to use a programmatic access token, the user associated with the token must be subject to a network policy, unless you set up an authentication policy to change this requirement.
+
+If a human user who is not subject to a network policy needs to use a programmatic access token for authentication, you can temporarily bypass the requirement of having a network policy by selecting More options » Bypass requirement for network policy.
+
+Note
+
+Bypass requirement for network policy does not allow users to bypass the network policy itself.
+
+After you create a programmatic access token, you cannot change the expiration date. You must revoke the token and generate a new token with the new expiration time.
+
+If you specified a role for the programmatic access token and that role is revoked from the user, the programmatic access token uses the system PUBLIC role.
+
+Using a programmatic access token
+The following sections explain how to use a programmatic access token as a password and for authentication to a Snowflake endpoint:
+
+Using a programmatic access token as a password
+
+Using a programmatic access token to authenticate to an endpoint
+
+Using a programmatic access token as a password
+To authenticate with a programmatic access token as the password, you can specify the token for the value of the password in the driver settings or in the call to connect to Snowflake.
+
+For example, if you’re using the Snowflake Connector for Python, you can specify the programmatic access token as the password argument when calling the snowflake.connector.connect method.
+
+conn = snowflake.connector.connect(
+    user=USER,
+    password=<programmatic_access_token>,
+    account=ACCOUNT,
+    warehouse=WAREHOUSE,
+    database=DATABASE,
+    schema=SCHEMA
+)
+In the same way, you can use programmatic access tokens in place of a password in third-party applications (such as Tableau or PowerBI). Paste the programmatic access token in the field for the password.
+
+Note
+
+By default, using programmatic access tokens requires a network policy to be activated for a user or for all users in the account. To use programmatic access tokens with a third-party application, you must create a network policy that allows requests from the IP address ranges of the third-party application.
+
+Using a programmatic access token to authenticate to an endpoint
+To authenticate with a programmatic access token, set the following HTTP headers in the request:
+
+Authorization: Bearer token_secret
+
+X-Snowflake-Authorization-Token-Type: PROGRAMMATIC_ACCESS_TOKEN (optional)
+
+For example, if you’re using cURL to send a request to a Snowflake REST API endpoint:
+
+curl --location "https://myorganization-myaccount.snowflakecomputing.com/api/v2/databases" \
+  --header "Authorization: Bearer <token_secret>"
+As another example, if you’re using cURL to send a request to the Snowflake SQL API endpoint:
+
+curl -si -X POST https://myorganization-myaccount.snowflakecomputing.com/api/v2/statements \
+  --header "Content-Type: application/json" \
+  --header "Accept: application/json" \
+  --header "Authorization: Bearer <token_secret>" \
+  --data '{"statement": "select 1"}'
+If the request fails with a PAT_INVALID error, the error might have occurred for one of the following reasons:
+
+The user associated with the programmatic access token was not found.
+
+Validation failed.
+
+The role associated with the programmatic access token was not found.
+
+The user is not associated with the specified programmatic access token.
+
+Managing programmatic access tokens
+The following sections explain how to use, modify, list, rotate, and revoke programmatic access tokens:
+
+Listing programmatic access tokens
+
+Renaming a programmatic access token
+
+Rotating a programmatic access token
+
+Revoking a programmatic access token
+
+Note
+
+You cannot modify, rename, rotate, or revoke a programmatic access token in a session where you used a programmatic access token for authentication.
+
+Listing programmatic access tokens
+You can list the programmatic access token for a user in Snowsight or by executing SQL commands.
+
+Snowsight
+SQL
