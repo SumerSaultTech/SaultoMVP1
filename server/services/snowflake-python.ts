@@ -114,7 +114,6 @@ def execute_query():
         print(json.dumps(error_result))
 
 execute_query()
-execute_query()
 `;
 
       const child = spawn('python3', ['-c', pythonScript], {
