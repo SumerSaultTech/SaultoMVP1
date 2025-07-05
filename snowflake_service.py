@@ -17,14 +17,27 @@ class SnowflakeService:
         """Create and return Snowflake connection"""
         if not self.connection:
             try:
-                self.connection = snowflake.connector.connect(
-                    account=os.environ.get('SNOWFLAKE_ACCOUNT'),
-                    user=os.environ.get('SNOWFLAKE_USER'),
-                    password=os.environ.get('SNOWFLAKE_PASSWORD'),
-                    warehouse=os.environ.get('SNOWFLAKE_WAREHOUSE'),
-                    database=os.environ.get('SNOWFLAKE_DATABASE'),
-                    schema=os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')
-                )
+                # Check for access token first
+                token = os.environ.get('SNOWFLAKE_ACCESS_TOKEN')
+                
+                connection_params = {
+                    'account': os.environ.get('SNOWFLAKE_ACCOUNT'),
+                    'user': os.environ.get('SNOWFLAKE_USER'),
+                    'warehouse': os.environ.get('SNOWFLAKE_WAREHOUSE'),
+                    'database': os.environ.get('SNOWFLAKE_DATABASE'),
+                    'schema': os.environ.get('SNOWFLAKE_SCHEMA', 'PUBLIC')
+                }
+                
+                if token:
+                    # Use token authentication
+                    connection_params['token'] = token
+                    logging.info("Using token authentication for Snowflake")
+                else:
+                    # Fall back to password authentication
+                    connection_params['password'] = os.environ.get('SNOWFLAKE_PASSWORD')
+                    logging.info("Using password authentication for Snowflake")
+                
+                self.connection = snowflake.connector.connect(**connection_params)
                 self.cursor = self.connection.cursor()
                 logging.info("Connected to Snowflake successfully")
             except Exception as e:

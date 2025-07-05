@@ -15,13 +15,14 @@ export class SnowflakeDirectService {
       const account = process.env.SNOWFLAKE_ACCOUNT;
       const user = process.env.SNOWFLAKE_USER;
       const password = process.env.SNOWFLAKE_PASSWORD;
+      const token = process.env.SNOWFLAKE_ACCESS_TOKEN;
       const warehouse = process.env.SNOWFLAKE_WAREHOUSE;
       const database = process.env.SNOWFLAKE_DATABASE;
 
-      if (!account || !user || !password || !warehouse || !database) {
+      if (!account || !user || (!password && !token) || !warehouse || !database) {
         return {
           success: false,
-          error: 'Missing Snowflake credentials'
+          error: 'Missing Snowflake credentials (need account, user, warehouse, database, and either password or access token)'
         };
       }
 
@@ -42,15 +43,23 @@ def json_serial(obj):
     raise TypeError(f"Type {type(obj)} not serializable")
 
 try:
-    conn = snowflake.connector.connect(
-        account="${account}",
-        user="${user}",
-        password="${password}",
-        warehouse="${warehouse}",
-        database="${database}",
-        schema="CORE",
-        timeout=30
-    )
+    # Use token if available, otherwise use password
+    token = "${token || ''}"
+    connection_params = {
+        "account": "${account}",
+        "user": "${user}",
+        "warehouse": "${warehouse}",
+        "database": "${database}",
+        "schema": "CORE",
+        "timeout": 30
+    }
+    
+    if token:
+        connection_params["token"] = token
+    else:
+        connection_params["password"] = "${password}"
+    
+    conn = snowflake.connector.connect(**connection_params)
     
     cursor = conn.cursor()
     cursor.execute("""${sql}""")

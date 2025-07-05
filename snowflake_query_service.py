@@ -13,15 +13,24 @@ def execute_snowflake_query(sql_query):
         # Use the account format that works: remove .snowflakecomputing.com if present
         account_format = account_id.replace(".snowflakecomputing.com", "") if ".snowflakecomputing.com" in account_id else account_id
         
-        conn = snowflake.connector.connect(
-            account=account_format,
-            user=os.getenv("SNOWFLAKE_USER"),
-            password=os.getenv("SNOWFLAKE_PASSWORD"),
-            warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
-            database='MIAS_DATA_DB',
-            schema='CORE',
-            timeout=30
-        )
+        # Prepare connection parameters
+        connection_params = {
+            'account': account_format,
+            'user': os.getenv("SNOWFLAKE_USER"),
+            'warehouse': os.getenv("SNOWFLAKE_WAREHOUSE", "SNOWFLAKE_LEARNING_WH"),
+            'database': 'MIAS_DATA_DB',
+            'schema': 'CORE',
+            'timeout': 30
+        }
+        
+        # Use token if available, otherwise fall back to password
+        token = os.getenv("SNOWFLAKE_ACCESS_TOKEN")
+        if token:
+            connection_params['token'] = token
+        else:
+            connection_params['password'] = os.getenv("SNOWFLAKE_PASSWORD")
+        
+        conn = snowflake.connector.connect(**connection_params)
         
         # Execute the query
         cursor = conn.cursor()
