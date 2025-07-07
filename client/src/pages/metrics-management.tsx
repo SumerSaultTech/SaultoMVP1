@@ -252,7 +252,7 @@ export default function MetricsManagement() {
       category: metric.category || "revenue",
       format: metric.format || "currency",
       isIncreasing: metric.isIncreasing ?? true,
-      isNorthStar: false, // Default to false for existing metrics
+      isNorthStar: metric.isNorthStar ?? false, // Use the metric's actual isNorthStar value
       sqlQuery: metric.sqlQuery || "",
     });
     setIsDialogOpen(true);
