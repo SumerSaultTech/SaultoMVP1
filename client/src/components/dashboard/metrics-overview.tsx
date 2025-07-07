@@ -17,12 +17,13 @@ interface MetricsOverviewProps {
 
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const [timePeriod, setTimePeriod] = useState("yearly");
+  const [periodOffset, setPeriodOffset] = useState(0); // 0 = current, -1 = previous, -2 = two periods ago, etc.
   
   // Fetch optimized dashboard data (same as North Star component)
   const { data: dashboardData, isLoading } = useQuery({
-    queryKey: ["/api/dashboard/metrics", timePeriod],
+    queryKey: ["/api/dashboard/metrics", timePeriod, periodOffset],
     queryFn: async () => {
-      const response = await fetch(`/api/dashboard/metrics?companyId=1&timePeriod=${timePeriod}`);
+      const response = await fetch(`/api/dashboard/metrics?companyId=1&timePeriod=${timePeriod}&periodOffset=${periodOffset}`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
@@ -202,6 +203,106 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return option?.label || "Yearly";
   };
 
+  // Helper function to get human-readable period description
+  const getPeriodDescription = () => {
+    const now = new Date();
+    
+    switch (timePeriod) {
+      case 'daily':
+        const targetDate = new Date(now);
+        targetDate.setDate(now.getDate() + periodOffset);
+        if (periodOffset === 0) return "Today";
+        if (periodOffset === -1) return "Yesterday";
+        return targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        
+      case 'weekly':
+        if (periodOffset === 0) return "This Week";
+        if (periodOffset === -1) return "Last Week";
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay() + 1 + (periodOffset * 7));
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        
+      case 'monthly':
+        const targetMonth = new Date(now.getFullYear(), now.getMonth() + periodOffset, 1);
+        if (periodOffset === 0) return "This Month";
+        if (periodOffset === -1) return "Last Month";
+        return targetMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        
+      case 'quarterly':
+        const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+        const targetQuarter = currentQuarter + periodOffset;
+        const targetYear = now.getFullYear() + Math.floor((targetQuarter - 1) / 4);
+        const normalizedQuarter = ((targetQuarter - 1) % 4) + 1;
+        if (periodOffset === 0) return `Q${currentQuarter} ${now.getFullYear()}`;
+        return `Q${normalizedQuarter} ${targetYear}`;
+        
+      case 'yearly':
+        const targetYear = now.getFullYear() + periodOffset;
+        if (periodOffset === 0) return `${targetYear} (YTD)`;
+        return `${targetYear}`;
+        
+      default:
+        return "Current Period";
+    }
+  };
+
+  // Helper function to generate period navigation options
+  const getPeriodNavigationOptions = () => {
+    const options = [];
+    for (let i = 2; i >= -2; i--) {
+      const tempOffset = i;
+      const now = new Date();
+      let label = "";
+      
+      switch (timePeriod) {
+        case 'daily':
+          const targetDate = new Date(now);
+          targetDate.setDate(now.getDate() + tempOffset);
+          if (tempOffset === 0) label = "Today";
+          else if (tempOffset === -1) label = "Yesterday";
+          else if (tempOffset === 1) label = "Tomorrow";
+          else label = targetDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          break;
+          
+        case 'weekly':
+          if (tempOffset === 0) label = "This Week";
+          else if (tempOffset === -1) label = "Last Week";
+          else if (tempOffset === 1) label = "Next Week";
+          else label = `${Math.abs(tempOffset)} weeks ${tempOffset > 0 ? 'ahead' : 'ago'}`;
+          break;
+          
+        case 'monthly':
+          const targetMonth = new Date(now.getFullYear(), now.getMonth() + tempOffset, 1);
+          if (tempOffset === 0) label = "This Month";
+          else if (tempOffset === -1) label = "Last Month";
+          else if (tempOffset === 1) label = "Next Month";
+          else label = targetMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          break;
+          
+        case 'quarterly':
+          const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+          const targetQuarter = currentQuarter + tempOffset;
+          const targetYear = now.getFullYear() + Math.floor((targetQuarter - 1) / 4);
+          const normalizedQuarter = ((targetQuarter - 1) % 4) + 1;
+          if (tempOffset === 0) label = "This Quarter";
+          else if (tempOffset === -1) label = "Last Quarter";
+          else label = `Q${normalizedQuarter} ${targetYear}`;
+          break;
+          
+        case 'yearly':
+          const targetYear = now.getFullYear() + tempOffset;
+          if (tempOffset === 0) label = "This Year";
+          else label = `${targetYear}`;
+          break;
+      }
+      
+      options.push({ value: tempOffset, label });
+    }
+    return options;
+  };
+
   const getTimePeriodLabelShort = (period: string) => {
     switch (period) {
       case "daily": return "daily";
@@ -258,21 +359,30 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   return (
     <div className="space-y-6">
       {/* North Star Metrics */}
-      <NorthStarMetrics dashboardData={dashboardData} timePeriod={timePeriod} setTimePeriod={setTimePeriod} />
+      <NorthStarMetrics 
+        dashboardData={dashboardData} 
+        timePeriod={timePeriod} 
+        setTimePeriod={setTimePeriod}
+        periodOffset={periodOffset}
+        setPeriodOffset={setPeriodOffset}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Business Metrics</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Overall performance: {overallProgress}% of goals achieved
+            {getPeriodDescription()} • Overall performance: {overallProgress}% of goals achieved
           </p>
         </div>
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
             <Calendar className="h-4 w-4 text-gray-600" />
-            <Select value={timePeriod} onValueChange={setTimePeriod}>
-              <SelectTrigger className="w-40">
+            <Select value={timePeriod} onValueChange={(value) => {
+              setTimePeriod(value);
+              setPeriodOffset(0); // Reset to current period when changing type
+            }}>
+              <SelectTrigger className="w-32">
                 <SelectValue placeholder="Select period" />
               </SelectTrigger>
               <SelectContent>
@@ -284,6 +394,39 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               </SelectContent>
             </Select>
           </div>
+          
+          {/* Period Navigation */}
+          <div className="flex items-center space-x-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPeriodOffset(periodOffset - 1)}
+              className="px-2"
+            >
+              ←
+            </Button>
+            <Select value={periodOffset.toString()} onValueChange={(value) => setPeriodOffset(parseInt(value))}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {getPeriodNavigationOptions().map((option) => (
+                  <SelectItem key={option.value} value={option.value.toString()}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPeriodOffset(periodOffset + 1)}
+              className="px-2"
+            >
+              →
+            </Button>
+          </div>
+          
           <Button onClick={onRefresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh

@@ -356,7 +356,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("=== Optimized dashboard metrics request ===");
       const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : 1;
       const timePeriod = req.query.timePeriod as string || 'yearly';
-      console.log(`Company ID: ${companyId}, Time period: ${timePeriod}`);
+      const periodOffset = req.query.periodOffset ? parseInt(req.query.periodOffset as string) : 0;
+      console.log(`Company ID: ${companyId}, Time period: ${timePeriod}, Period offset: ${periodOffset}`);
       
       // Get all metrics for the company
       const allMetrics = await storage.getKpiMetrics(companyId);
@@ -372,9 +373,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (metric.sqlQuery?.trim()) {
           try {
-            // Modify SQL query based on time period
-            const periodAdjustedQuery = adjustSQLForTimePeriod(metric.sqlQuery, timePeriod);
-            console.log(`Executing ${timePeriod} SQL query for metric ${metric.name}: ${periodAdjustedQuery}`);
+            // Modify SQL query based on time period and offset
+            const periodAdjustedQuery = adjustSQLForTimePeriod(metric.sqlQuery, timePeriod, periodOffset);
+            console.log(`Executing ${timePeriod} (offset: ${periodOffset}) SQL query for metric ${metric.name}: ${periodAdjustedQuery}`);
             
             const result = await snowflakeService.executeQuery(periodAdjustedQuery);
             
@@ -445,8 +446,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Helper function to adjust SQL queries based on time period
-  function adjustSQLForTimePeriod(originalSQL: string, timePeriod: string): string {
+  // Helper function to adjust SQL queries based on time period and offset
+  function adjustSQLForTimePeriod(originalSQL: string, timePeriod: string, periodOffset: number = 0): string {
     const now = new Date();
     const currentYear = now.getFullYear();
     
@@ -455,17 +456,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     switch (timePeriod) {
       case 'daily':
-        // Get today's data
-        const today = now.toISOString().split('T')[0];
+        // Get specific day's data
+        const targetDate = new Date(now);
+        targetDate.setDate(now.getDate() + periodOffset);
+        const dateStr = targetDate.toISOString().split('T')[0];
+        
         return baseSQL.replace(
           /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
-          `WHERE INVOICE_DATE = '${today}' AND INVOICE_AMOUNT > 0`
+          `WHERE INVOICE_DATE = '${dateStr}' AND INVOICE_AMOUNT > 0`
         );
         
       case 'weekly':
-        // Get this week's data (Monday to Sunday)
+        // Get specific week's data (Monday to Sunday)
         const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay() + 1);
+        startOfWeek.setDate(now.getDate() - now.getDay() + 1 + (periodOffset * 7));
         const endOfWeek = new Date(startOfWeek);
         endOfWeek.setDate(startOfWeek.getDate() + 6);
         
@@ -475,9 +479,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
         
       case 'monthly':
-        // Get this month's data
-        const startOfMonth = new Date(currentYear, now.getMonth(), 1);
-        const endOfMonth = new Date(currentYear, now.getMonth() + 1, 0);
+        // Get specific month's data
+        const targetMonth = new Date(currentYear, now.getMonth() + periodOffset, 1);
+        const startOfMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), 1);
+        const endOfMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0);
         
         return baseSQL.replace(
           /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
@@ -485,10 +490,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
         
       case 'quarterly':
-        // Get this quarter's data
-        const quarter = Math.floor(now.getMonth() / 3);
-        const startOfQuarter = new Date(currentYear, quarter * 3, 1);
-        const endOfQuarter = new Date(currentYear, (quarter + 1) * 3, 0);
+        // Get specific quarter's data
+        const currentQuarter = Math.floor(now.getMonth() / 3);
+        const targetQuarter = currentQuarter + periodOffset;
+        const targetYear = currentYear + Math.floor(targetQuarter / 4);
+        const normalizedQuarter = targetQuarter % 4;
+        
+        const startOfQuarter = new Date(targetYear, normalizedQuarter * 3, 1);
+        const endOfQuarter = new Date(targetYear, (normalizedQuarter + 1) * 3, 0);
         
         return baseSQL.replace(
           /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
@@ -497,10 +506,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
       case 'yearly':
       default:
-        // Get year-to-date data
+        // Get specific year's data
+        const targetYear = currentYear + periodOffset;
+        const yearStart = `${targetYear}-01-01`;
+        const yearEnd = periodOffset === 0 ? now.toISOString().split('T')[0] : `${targetYear}-12-31`;
+        
         return baseSQL.replace(
           /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
-          `WHERE INVOICE_DATE >= '${currentYear}-01-01' AND INVOICE_DATE <= '${now.toISOString().split('T')[0]}' AND INVOICE_AMOUNT > 0`
+          `WHERE INVOICE_DATE >= '${yearStart}' AND INVOICE_DATE <= '${yearEnd}' AND INVOICE_AMOUNT > 0`
         );
     }
   }

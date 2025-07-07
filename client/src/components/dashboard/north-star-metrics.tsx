@@ -72,9 +72,17 @@ interface NorthStarMetricsProps {
   dashboardData?: any;
   timePeriod: string;
   setTimePeriod: (period: string) => void;
+  periodOffset?: number;
+  setPeriodOffset?: (offset: number) => void;
 }
 
-export default function NorthStarMetrics({ dashboardData, timePeriod, setTimePeriod }: NorthStarMetricsProps) {
+export default function NorthStarMetrics({ 
+  dashboardData, 
+  timePeriod, 
+  setTimePeriod, 
+  periodOffset = 0, 
+  setPeriodOffset 
+}: NorthStarMetricsProps) {
   // No longer making API call - using props from parent component
   const isLoading = !dashboardData;
 
