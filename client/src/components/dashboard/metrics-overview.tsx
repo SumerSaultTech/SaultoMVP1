@@ -88,15 +88,23 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         metric.quarterlyGoals
       );
 
+      // Also adjust current value for the time period
+      const adjustedCurrentValue = calculateGoalForPeriod(
+        metric.currentValue, 
+        timePeriod, 
+        null, // No monthly breakdown for current values
+        null  // No quarterly breakdown for current values
+      );
+
       const currentProgress = currentGoal > 0 
-        ? Math.round((metric.currentValue / currentGoal) * 100) 
+        ? Math.round((adjustedCurrentValue / currentGoal) * 100) 
         : 0;
 
       return {
         id: metric.id,
         name: metric.name,
         description: metric.description,
-        value: formatMetricValue(metric.currentValue, metric.format),
+        value: formatMetricValue(adjustedCurrentValue, metric.format),
         yearlyGoal: formatMetricValue(currentGoal, metric.format),
         goalProgress: currentProgress.toString(),
         changePercent: metric.changePercent || "+0%",

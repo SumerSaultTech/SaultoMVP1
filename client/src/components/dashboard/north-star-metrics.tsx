@@ -170,10 +170,18 @@ export default function NorthStarMetrics({ dashboardData, timePeriod, setTimePer
         metric.quarterlyGoals
       );
 
+      // Also adjust current value for the time period
+      const adjustedCurrentValue = calculateGoalForPeriod(
+        metric.currentValue, 
+        timePeriod, 
+        null, // No monthly breakdown for current values
+        null  // No quarterly breakdown for current values
+      );
+
       return {
         id: metric.id.toString(),
         name: metric.name,
-        value: formatMetricValue(metric.currentValue, metric.format),
+        value: formatMetricValue(adjustedCurrentValue, metric.format),
         yearlyGoal: formatMetricValue(currentGoal, metric.format),
         changePercent: metric.changePercent || "+0%",
         description: metric.description || "",
