@@ -372,24 +372,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (metric.sqlQuery?.trim()) {
           try {
-            console.log(`Executing SQL query for metric ${metric.name}`);
-            const result = await snowflakeService.executeQuery(metric.sqlQuery);
+            // Modify SQL query based on time period
+            const periodAdjustedQuery = adjustSQLForTimePeriod(metric.sqlQuery, timePeriod);
+            console.log(`Executing ${timePeriod} SQL query for metric ${metric.name}: ${periodAdjustedQuery}`);
+            
+            const result = await snowflakeService.executeQuery(periodAdjustedQuery);
             
             if (result.success && result.data && result.data.length > 0) {
-              // Extract current value from the first row
-              const firstRow = result.data[0];
+              // For aggregated queries, sum all the numeric values
+              let totalValue = 0;
               
-              // Try to find a numeric value in the first row
-              const numericFields = Object.keys(firstRow).filter(key => {
-                const val = firstRow[key];
-                return !isNaN(parseFloat(val)) && isFinite(val);
-              });
-              
-              if (numericFields.length > 0) {
-                currentValue = parseFloat(firstRow[numericFields[0]]) || 0;
+              for (const row of result.data) {
+                const numericFields = Object.keys(row).filter(key => {
+                  const val = row[key];
+                  return !isNaN(parseFloat(val)) && isFinite(val);
+                });
+                
+                if (numericFields.length > 0) {
+                  totalValue += parseFloat(row[numericFields[0]]) || 0;
+                }
               }
               
-              console.log(`SQL query result for ${metric.name}: ${currentValue}`);
+              currentValue = totalValue;
+              console.log(`SQL query result for ${metric.name} (${timePeriod}): ${currentValue}`);
             } else {
               console.log(`No data returned for metric ${metric.name}`);
             }
@@ -439,6 +444,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to fetch dashboard metrics" });
     }
   });
+
+  // Helper function to adjust SQL queries based on time period
+  function adjustSQLForTimePeriod(originalSQL: string, timePeriod: string): string {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    
+    // Extract the base query without potential existing date filters
+    let baseSQL = originalSQL;
+    
+    switch (timePeriod) {
+      case 'daily':
+        // Get today's data
+        const today = now.toISOString().split('T')[0];
+        return baseSQL.replace(
+          /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
+          `WHERE INVOICE_DATE = '${today}' AND INVOICE_AMOUNT > 0`
+        );
+        
+      case 'weekly':
+        // Get this week's data (Monday to Sunday)
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay() + 1);
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        
+        return baseSQL.replace(
+          /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
+          `WHERE INVOICE_DATE >= '${startOfWeek.toISOString().split('T')[0]}' AND INVOICE_DATE <= '${endOfWeek.toISOString().split('T')[0]}' AND INVOICE_AMOUNT > 0`
+        );
+        
+      case 'monthly':
+        // Get this month's data
+        const startOfMonth = new Date(currentYear, now.getMonth(), 1);
+        const endOfMonth = new Date(currentYear, now.getMonth() + 1, 0);
+        
+        return baseSQL.replace(
+          /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
+          `WHERE INVOICE_DATE >= '${startOfMonth.toISOString().split('T')[0]}' AND INVOICE_DATE <= '${endOfMonth.toISOString().split('T')[0]}' AND INVOICE_AMOUNT > 0`
+        );
+        
+      case 'quarterly':
+        // Get this quarter's data
+        const quarter = Math.floor(now.getMonth() / 3);
+        const startOfQuarter = new Date(currentYear, quarter * 3, 1);
+        const endOfQuarter = new Date(currentYear, (quarter + 1) * 3, 0);
+        
+        return baseSQL.replace(
+          /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
+          `WHERE INVOICE_DATE >= '${startOfQuarter.toISOString().split('T')[0]}' AND INVOICE_DATE <= '${endOfQuarter.toISOString().split('T')[0]}' AND INVOICE_AMOUNT > 0`
+        );
+        
+      case 'yearly':
+      default:
+        // Get year-to-date data
+        return baseSQL.replace(
+          /WHERE\s+.*?AND\s+INVOICE_AMOUNT\s*>\s*0/i,
+          `WHERE INVOICE_DATE >= '${currentYear}-01-01' AND INVOICE_DATE <= '${now.toISOString().split('T')[0]}' AND INVOICE_AMOUNT > 0`
+        );
+    }
+  }
 
   // Helper function to generate time series data
   function generateTimeSeriesData(currentValue: number, yearlyGoal: number) {

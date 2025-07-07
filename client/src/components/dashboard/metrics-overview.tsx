@@ -57,37 +57,6 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     }
   };
 
-  // Calculate current value based on time period progress
-  const calculateCurrentValueForPeriod = (yearlyValue: number, period: string) => {
-    const now = new Date();
-    const yearStart = new Date(now.getFullYear(), 0, 1);
-    const dayOfYear = Math.floor((now.getTime() - yearStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    
-    switch (period) {
-      case 'daily':
-        // Show average daily rate for the year so far
-        return yearlyValue / dayOfYear;
-        
-      case 'weekly':
-        // Show this week's portion of yearly value
-        const weekOfYear = Math.ceil(dayOfYear / 7);
-        return yearlyValue / weekOfYear;
-        
-      case 'monthly':
-        // Show this month's portion of yearly value  
-        const monthOfYear = now.getMonth() + 1;
-        return yearlyValue / monthOfYear;
-        
-      case 'quarterly':
-        // Show this quarter's portion of yearly value
-        const quarterOfYear = Math.floor(now.getMonth() / 3) + 1;
-        return yearlyValue / quarterOfYear;
-        
-      case 'yearly':
-      default:
-        return yearlyValue;
-    }
-  };
 
   // Format values for display
   const formatMetricValue = (value: number, format: string): string => {
@@ -120,11 +89,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         metric.quarterlyGoals
       );
 
-      // Calculate current value based on actual time period progress
-      const adjustedCurrentValue = calculateCurrentValueForPeriod(
-        metric.currentValue, 
-        timePeriod
-      );
+      // Backend already provides period-specific currentValue based on SQL query
+      const adjustedCurrentValue = metric.currentValue;
 
       const currentProgress = currentGoal > 0 
         ? Math.round((adjustedCurrentValue / currentGoal) * 100) 
