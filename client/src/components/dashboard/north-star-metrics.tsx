@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -68,22 +67,15 @@ function getProgressStatus(progress: number) {
   return { color: 'text-red-600', bgColor: 'bg-red-100' };
 }
 
-export default function NorthStarMetrics() {
-  const [timePeriod, setTimePeriod] = useState("yearly");
+interface NorthStarMetricsProps {
+  dashboardData?: any;
+  timePeriod: string;
+  setTimePeriod: (period: string) => void;
+}
 
-  // Fetch optimized dashboard data
-  const { data: dashboardData, isLoading } = useQuery({
-    queryKey: ["/api/dashboard/metrics", timePeriod],
-    queryFn: async () => {
-      const response = await fetch(`/api/dashboard/metrics?companyId=1&timePeriod=${timePeriod}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch dashboard metrics');
-      }
-      return response.json();
-    },
-    refetchInterval: 30000,
-    staleTime: 30000, // Cache for 30 seconds
-  });
+export default function NorthStarMetrics({ dashboardData, timePeriod, setTimePeriod }: NorthStarMetricsProps) {
+  // No longer making API call - using props from parent component
+  const isLoading = !dashboardData;
 
   // Data source mapping for Snowflake metrics
   const getDataSourceInfo = (metricName: string) => {

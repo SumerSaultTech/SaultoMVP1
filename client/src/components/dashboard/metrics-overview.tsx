@@ -254,7 +254,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   return (
     <div className="space-y-6">
       {/* North Star Metrics */}
-      <NorthStarMetrics />
+      <NorthStarMetrics dashboardData={dashboardData} timePeriod={timePeriod} setTimePeriod={setTimePeriod} />
 
       {/* Header */}
       <div className="flex items-center justify-between">
