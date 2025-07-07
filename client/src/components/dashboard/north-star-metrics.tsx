@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info, Database, Table, Columns } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface NorthStarMetric {
   id: string;
@@ -180,6 +181,36 @@ export default function NorthStarMetrics({ dashboardData, timePeriod, setTimePer
       };
     });
   })();
+
+  // Generate simple chart data based on real values and time period
+  const generateChartData = (metric: NorthStarMetric) => {
+    const { current, goal } = getRealDisplayValues(metric);
+    
+    // Create a simple progress chart showing current vs goal over time periods
+    const periods = timePeriod === 'daily' ? 7 : 
+                   timePeriod === 'weekly' ? 4 : 
+                   timePeriod === 'monthly' ? 12 : 
+                   timePeriod === 'quarterly' ? 4 : 12;
+    
+    const periodGoal = goal / periods;
+    
+    return Array.from({ length: periods }, (_, index) => {
+      const periodLabel = timePeriod === 'daily' ? `Day ${index + 1}` :
+                         timePeriod === 'weekly' ? `Week ${index + 1}` :
+                         timePeriod === 'monthly' ? new Date(2024, index).toLocaleDateString('en-US', { month: 'short' }) :
+                         timePeriod === 'quarterly' ? `Q${index + 1}` :
+                         new Date(2024, index).toLocaleDateString('en-US', { month: 'short' });
+      
+      const cumulativeGoal = periodGoal * (index + 1);
+      const actualProgress = index <= periods - 1 ? (current / periods) * (index + 1) : null;
+      
+      return {
+        period: periodLabel,
+        goal: Math.round(cumulativeGoal),
+        actual: actualProgress ? Math.round(actualProgress) : null
+      };
+    });
+  };
 
   // Only show metrics with real Snowflake data - no fallback
   const metrics = northStarMetrics;
@@ -366,7 +397,49 @@ export default function NorthStarMetrics({ dashboardData, timePeriod, setTimePer
                   </div>
                 </div>
 
-
+                {/* Chart - Same format as Business metrics */}
+                <div className="h-32 -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={generateChartData(metric)} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="period" 
+                        tick={{ fontSize: 10 }}
+                        stroke="#6b7280"
+                      />
+                      <YAxis 
+                        tick={{ fontSize: 10 }}
+                        stroke="#6b7280"
+                      />
+                      <Tooltip 
+                        contentStyle={{
+                          backgroundColor: '#f9fafb',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '6px',
+                          fontSize: '12px'
+                        }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="goal" 
+                        stroke="#9ca3af" 
+                        strokeDasharray="5 5" 
+                        strokeWidth={2}
+                        dot={false}
+                        name="Goal"
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="actual" 
+                        stroke="#8b5cf6" 
+                        strokeWidth={3}
+                        dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 4 }}
+                        name="Actual"
+                        connectNulls={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
 
               </CardContent>
             </Card>
