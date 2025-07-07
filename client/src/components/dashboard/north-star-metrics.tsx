@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info, Database, Table, Columns } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface NorthStarMetric {
   id: string;
@@ -30,138 +29,6 @@ const formatLargeNumber = (value: number): string => {
     }
   };
 
-// Generate progress data for North Star metrics based on time period
-function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
-  const currentValue = parseFloat(metric.value.replace(/[$,]/g, ''));
-  const yearlyGoal = parseFloat(metric.yearlyGoal.replace(/[$,]/g, ''));
-
-  // Performance patterns for different metrics
-  const revenuePattern = [0.75, 0.82, 0.88, 0.95, 1.02, 1.08, 1.15, 1.22, 1.18, 1.25, 1.32, 1.40];
-  const profitPattern = [0.65, 0.72, 0.79, 0.86, 0.93, 1.00, 1.07, 1.14, 1.10, 1.17, 1.24, 1.31];
-  const pattern = metric.id === 'annual-revenue' ? revenuePattern : profitPattern;
-
-  switch (timePeriod) {
-    case "weekly":
-      return generateWeeklyNorthStarData(yearlyGoal, pattern);
-    case "monthly":
-      return generateMonthlyNorthStarData(yearlyGoal, pattern);
-    case "quarterly":
-      return generateQuarterlyNorthStarData(yearlyGoal, pattern);
-    case "ytd":
-    default:
-      return generateYTDNorthStarData(yearlyGoal, pattern);
-  }
-}
-
-function generateWeeklyNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const currentDay = today.getDay();
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
-
-  const dailyGoal = yearlyGoal / 365;
-
-  return weekdays.map((day, index) => {
-    const dayProgress = dailyGoal * (index + 1);
-    const performanceMultiplier = pattern[index % 7] || 1.0;
-    const actualValue = index <= currentDayIndex ? dayProgress * performanceMultiplier : null;
-
-    return {
-      period: day,
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: index === currentDayIndex
-    };
-  });
-}
-
-function generateMonthlyNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const currentDay = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-
-  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const dailyGoal = yearlyGoal / 365;
-
-  return allDays.map((day, index) => {
-    const dayProgress = dailyGoal * day;
-    const performanceMultiplier = pattern[index % 30] || 1.0;
-    const actualValue = day <= currentDay ? dayProgress * performanceMultiplier : null;
-
-    return {
-      period: day.toString(),
-      goal: Math.round(dayProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: day === currentDay
-    };
-  });
-}
-
-function generateQuarterlyNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-  const quarterStartMonth = (currentQuarter - 1) * 3;
-  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
-  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
-
-  const weeks: Date[] = [];
-  const currentWeekStart = new Date(quarterStart);
-  const dayOfWeek = currentWeekStart.getDay();
-  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-
-  while (currentWeekStart <= quarterEnd) {
-    weeks.push(new Date(currentWeekStart));
-    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  }
-
-  const weeklyGoal = yearlyGoal / 52;
-
-  return weeks.map((weekStart, index) => {
-    const weekProgress = weeklyGoal * (index + 1);
-    const performanceMultiplier = pattern[index % 12] || 1.0;
-    const actualValue = weekStart <= today ? weekProgress * performanceMultiplier : null;
-
-    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-
-    return {
-      period: weekLabel,
-      goal: Math.round(weekProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: weekStart <= today && (index === weeks.length - 1 || weeks[index + 1] > today)
-    };
-  });
-}
-
-function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
-  const today = new Date();
-  const yearStart = new Date(today.getFullYear(), 0, 1);
-  const yearEnd = new Date(today.getFullYear(), 11, 31);
-
-  const months = [];
-  const currentMonth = new Date(yearStart);
-
-  while (currentMonth <= yearEnd) {
-    months.push(new Date(currentMonth));
-    currentMonth.setMonth(currentMonth.getMonth() + 1);
-  }
-
-  const monthlyGoal = yearlyGoal / 12;
-
-  return months.map((month, index) => {
-    const goalProgress = monthlyGoal * (index + 1);
-    const performanceMultiplier = pattern[index] || 1.0;
-    const actualValue = month <= today ? goalProgress * performanceMultiplier : null;
-
-    const monthLabel = month.toLocaleDateString('en-US', { month: 'short' });
-
-    return {
-      period: monthLabel,
-      goal: Math.round(goalProgress),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: month.getMonth() === today.getMonth()
-    };
-  });
-}
 
 function formatValue(value: string | number, format: string): string {
   if (!value && value !== 0) return '0';
@@ -202,19 +69,20 @@ function getProgressStatus(progress: number) {
 }
 
 export default function NorthStarMetrics() {
-  const [northStarTimePeriod, setNorthStarTimePeriod] = useState("Monthly View");
+  const [timePeriod, setTimePeriod] = useState("yearly");
 
-  // Fetch real Snowflake dashboard metrics
-  const { data: dashboardMetrics, isLoading } = useQuery({
-    queryKey: ["/api/dashboard/metrics-data", northStarTimePeriod],
+  // Fetch optimized dashboard data
+  const { data: dashboardData, isLoading } = useQuery({
+    queryKey: ["/api/dashboard/metrics", timePeriod],
     queryFn: async () => {
-      const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(northStarTimePeriod)}`);
+      const response = await fetch(`/api/dashboard/metrics?companyId=1&timePeriod=${timePeriod}`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
       return response.json();
     },
     refetchInterval: 30000,
+    staleTime: 30000, // Cache for 30 seconds
   });
 
   // Data source mapping for Snowflake metrics
@@ -258,146 +126,92 @@ export default function NorthStarMetrics() {
     };
   };
 
-  // Time period options matching Snowflake service
-  const northStarTimePeriodOptions = [
-    { value: "Daily View", label: "Daily View" },
-    { value: "Weekly View", label: "Weekly View" },
-    { value: "Monthly View", label: "Monthly View" }, 
-    { value: "Yearly View", label: "Yearly View" }
-  ];
 
-  // Create North Star metrics from real Snowflake data
+  // Client-side goal calculation based on time period
+  const calculateGoalForPeriod = (yearlyGoal: number, period: string, monthlyGoals?: any, quarterlyGoals?: any) => {
+    switch (period) {
+      case 'daily':
+        return yearlyGoal / 365;
+      case 'weekly':
+        return yearlyGoal / 52;
+      case 'monthly':
+        if (monthlyGoals) {
+          const currentMonth = new Date().toLocaleString('default', { month: 'long' });
+          return monthlyGoals[currentMonth] || (yearlyGoal / 12);
+        }
+        return yearlyGoal / 12;
+      case 'quarterly':
+        if (quarterlyGoals) {
+          const currentQuarter = Math.floor(new Date().getMonth() / 3) + 1;
+          return quarterlyGoals[`Q${currentQuarter}`] || (yearlyGoal / 4);
+        }
+        return yearlyGoal / 4;
+      case 'yearly':
+      default:
+        return yearlyGoal;
+    }
+  };
+
+  // Format values for display
+  const formatMetricValue = (value: number, format: string): string => {
+    if (format === 'currency') {
+      return formatLargeNumber(value);
+    } else if (format === 'percentage') {
+      return `${value.toFixed(1)}%`;
+    } else {
+      return value.toLocaleString();
+    }
+  };
+
+  // Get North Star metrics from API response
   const northStarMetrics: NorthStarMetric[] = (() => {
-    if (!dashboardMetrics || !Array.isArray(dashboardMetrics)) {
+    if (!dashboardData?.northStarMetrics || !Array.isArray(dashboardData.northStarMetrics)) {
       return [];
     }
 
-    // Find revenue and expenses metrics by metricId from real Snowflake calculations
-    const revenueMetric = dashboardMetrics.find(m => m.metricId === 1); // Annual Revenue 
-    const expensesMetric = dashboardMetrics.find(m => m.metricId === 3); // Monthly Expenses
+    return dashboardData.northStarMetrics.map((metric: any) => {
+      const currentGoal = calculateGoalForPeriod(
+        metric.yearlyGoal, 
+        timePeriod, 
+        metric.monthlyGoals, 
+        metric.quarterlyGoals
+      );
 
-    // Calculate profit from revenue minus expenses
-    const revenueValue = revenueMetric?.currentValue || 0;
-    const expensesValue = expensesMetric?.currentValue || 0;
-    const profitValue = revenueValue - expensesValue;
-
-    // Use realistic yearly goals
-    const revenueGoal = revenueMetric?.yearlyGoal || 3500000; // Use actual goal or fallback
-    const profitGoal = 700000;   // $700K annual profit goal
-
-    console.log('North Star Metrics Data:', {
-      revenueValue,
-      expensesValue,
-      profitValue,
-      revenueGoal,
-      profitGoal
+      return {
+        id: metric.id.toString(),
+        name: metric.name,
+        value: formatMetricValue(metric.currentValue, metric.format),
+        yearlyGoal: formatMetricValue(currentGoal, metric.format),
+        changePercent: metric.changePercent || "+0%",
+        description: metric.description || "",
+        format: metric.format
+      };
     });
-
-    return [
-      {
-        id: "annual-revenue",
-        name: "Annual Revenue",
-        value: formatLargeNumber(revenueValue),
-        yearlyGoal: formatLargeNumber(revenueGoal),
-        changePercent: "+12.5",
-        description: "Total revenue from QuickBooks data",
-        format: "currency"
-      },
-      {
-        id: "annual-profit", 
-        name: "Annual Profit",
-        value: formatLargeNumber(profitValue),
-        yearlyGoal: formatLargeNumber(profitGoal),
-        changePercent: "+8.2",
-        description: "Net profit after all expenses",
-        format: "currency"
-      }
-    ];
   })();
 
-  // Default metrics for fallback
-  const defaultMetrics = [
-    {
-      id: 'annual-revenue',
-      name: 'Annual Revenue',
-      currentValue: 2850000,
-      yearlyGoal: 3500000,
-      format: 'currency',
-      description: 'Total revenue for the current fiscal year',
-      category: 'revenue'
-    },
-    {
-      id: 'annual-profit',
-      name: 'Annual Profit',
-      currentValue: 485000,
-      yearlyGoal: 700000,
-      format: 'currency',
-      description: 'Net profit after all expenses for the current fiscal year',
-      category: 'profit'
-    }
-  ];
+  // Only show metrics with real Snowflake data - no fallback
+  const metrics = northStarMetrics;
 
-  // Use North Star metrics if available, otherwise use defaults
-  const metrics = northStarMetrics && Array.isArray(northStarMetrics) && northStarMetrics.length > 0 
-    ? northStarMetrics
-    : defaultMetrics;
-
-  const getTimePeriodLabel = (period: string) => {
-    const option = northStarTimePeriodOptions.find(opt => opt.value === period);
-    return option?.label || "Year to Date";
-  };
-
-  // Calculate adaptive goal based on time period
-  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
-    const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
-
-    switch (timePeriod) {
-      case "weekly":
-        return (yearlyValue / 52).toFixed(0);
-      case "monthly":
-        return (yearlyValue / 12).toFixed(0);
-      case "quarterly":
-        return (yearlyValue / 4).toFixed(0);
-      case "ytd":
-      default:
-        return yearlyValue.toFixed(0);
-    }
-  };
-
-  // Get the EXACT same values that are displayed in the chart
-  const getChartDisplayValues = (metric: NorthStarMetric, timePeriod: string) => {
-    const chartData = generateNorthStarData(metric, timePeriod);
-
-    // Find the most recent actual data point from the chart
-    const actualDataPoints = chartData.filter(point => point.actual !== null);
-    const currentActual = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].actual : 0;
-
-    // Get the corresponding goal for that same data point
-    const currentGoal = actualDataPoints.length > 0 ? actualDataPoints[actualDataPoints.length - 1].goal : chartData[chartData.length - 1]?.goal || 0;
+  // Use real API data for current values and goals
+  const getRealDisplayValues = (metric: NorthStarMetric) => {
+    // Parse the actual values from the metric (which come from real Snowflake data)
+    const currentValue = parseFloat(metric.value.replace(/[$,M]/g, '')) * (metric.value.includes('M') ? 1000000 : 1);
+    const goalValue = parseFloat(metric.yearlyGoal.replace(/[$,M]/g, '')) * (metric.yearlyGoal.includes('M') ? 1000000 : 1);
 
     return {
-      current: currentActual || 0,
-      goal: currentGoal || 0
+      current: currentValue,
+      goal: goalValue
     };
   };
 
-  // Calculate YTD progress vs YTD goal for "on pace" indicator
+  // Calculate YTD progress from real API data only
   const getYTDProgress = (metric: NorthStarMetric) => {
-    const ytdChartData = generateNorthStarData(metric, "ytd");
-
-    // Find the most recent actual data point from YTD chart
-    const actualDataPoints = ytdChartData.filter(point => point.actual !== null);
-    if (actualDataPoints.length === 0) return { current: 0, goal: 0, progress: 0 };
-
-    // Get the latest actual value and corresponding goal
-    const latestPoint = actualDataPoints[actualDataPoints.length - 1];
-    const currentYTD = latestPoint.actual || 0;
-    const goalYTD = latestPoint.goal || 1;
-
+    const { current, goal } = getRealDisplayValues(metric);
+    
     return {
-      current: currentYTD,
-      goal: goalYTD,
-      progress: Math.round((currentYTD / goalYTD) * 100)
+      current,
+      goal,
+      progress: goal > 0 ? Math.round((current / goal) * 100) : 0
     };
   };
 
@@ -409,19 +223,19 @@ export default function NorthStarMetrics() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">North Star Metrics</h3>
           <div className="h-px bg-gradient-to-r from-purple-300 to-transparent flex-1 ml-4"></div>
         </div>
-
+        
         <div className="flex items-center space-x-2">
           <Calendar className="h-4 w-4 text-purple-600" />
-          <Select value={northStarTimePeriod} onValueChange={setNorthStarTimePeriod}>
-            <SelectTrigger className="w-40 border-purple-200 focus:ring-purple-500">
-              <SelectValue placeholder="Select period" />
+          <Select value={timePeriod} onValueChange={setTimePeriod}>
+            <SelectTrigger className="w-32 border-purple-200 focus:ring-purple-500">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {northStarTimePeriodOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="weekly">Weekly</SelectItem>
+              <SelectItem value="monthly">Monthly</SelectItem>
+              <SelectItem value="quarterly">Quarterly</SelectItem>
+              <SelectItem value="yearly">Yearly</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -449,11 +263,11 @@ export default function NorthStarMetrics() {
               </CardContent>
             </Card>
           </>
-        ) : (
-          northStarMetrics.map((metric) => {
-          // Get the EXACT same values used in the chart
-          const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
-          const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
+        ) : metrics.length > 0 ? (
+          metrics.map((metric) => {
+          // Use real API data for all calculations
+          const realDisplayValues = getRealDisplayValues(metric);
+          const progress = calculateProgress(realDisplayValues.current, realDisplayValues.goal);
           const progressStatus = getProgressStatus(progress);
 
           // Use YTD progress for "on pace" indicator regardless of selected time period
@@ -462,7 +276,6 @@ export default function NorthStarMetrics() {
 
           const changeValue = parseFloat(metric.changePercent);
           const isPositive = changeValue >= 0;
-          const chartData = generateNorthStarData(metric, northStarTimePeriod);
 
           return (
             <Card key={metric.id} className="relative overflow-hidden border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-gray-800">
@@ -536,10 +349,10 @@ export default function NorthStarMetrics() {
                 {/* Current Value */}
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatValue(chartDisplayValues.current, metric.format)}
+                    {metric.value}
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
-                    of {formatValue(chartDisplayValues.goal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
+                    of {metric.yearlyGoal} annual goal
                   </div>
                 </div>
 
@@ -561,76 +374,20 @@ export default function NorthStarMetrics() {
                   </div>
                 </div>
 
-                {/* Time Period Chart */}
-                <div className="space-y-1">
-                  <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {getTimePeriodLabel(northStarTimePeriod)} Progress
-                  </h4>
-
-                  <ResponsiveContainer width="100%" height={140}>
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="period"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
-                      />
-                      <YAxis 
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
-                        tickFormatter={(value) => formatValue(value.toString(), metric.format)}
-                      />
-                      <Tooltip 
-                        contentStyle={{
-                          backgroundColor: 'white',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                        }}
-                        labelFormatter={(period) => `${period}`}
-                        formatter={(value: any, name: string) => [
-                          formatValue(value?.toString() || '0', metric.format),
-                          name === 'actual' ? 'Actual' : 'Goal'
-                        ]}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="goal" 
-                        stroke="#9ca3af" 
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        dot={false}
-                        name="goal"
-                        connectNulls={false}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="actual" 
-                        stroke="#8b5cf6" 
-                        strokeWidth={3}
-                        connectNulls={false}
-                        dot={(props: any) => {
-                          const { cx, cy, payload } = props;
-                          if (!payload || payload.actual === null) return <g />;
-                          return payload?.isCurrent ? (
-                            <circle cx={cx} cy={cy} r={6} fill="#8b5cf6" stroke="#fff" strokeWidth={2} />
-                          ) : (
-                            <circle cx={cx} cy={cy} r={3} fill="#8b5cf6" />
-                          );
-                        }}
-                        name="actual"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
 
 
               </CardContent>
             </Card>
             );
           })
+        ) : (
+          <div className="col-span-1 md:col-span-2 text-center py-8">
+            <div className="text-gray-500 dark:text-gray-400">
+              <Target className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No North Star metrics available</p>
+              <p className="text-sm">Metrics will appear when real Snowflake data is found</p>
+            </div>
+          </div>
         )}
       </div>
     </div>

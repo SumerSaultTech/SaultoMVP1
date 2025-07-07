@@ -350,31 +350,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get dashboard metrics data with calculated values
-  app.get("/api/dashboard/metrics-data", async (req, res) => {
+  // Optimized dashboard API - returns North Star and Business metrics separately
+  app.get("/api/dashboard/metrics", async (req, res) => {
     try {
-      console.log("=== Dashboard metrics data request ===");
-      const timePeriod = req.query.timePeriod as string || 'ytd';
-      console.log(`Time period filter: ${timePeriod}`);
+      console.log("=== Optimized dashboard metrics request ===");
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : 1;
+      const timePeriod = req.query.timePeriod as string || 'yearly';
+      console.log(`Company ID: ${companyId}, Time period: ${timePeriod}`);
       
-      const metrics = await storage.getKpiMetrics(1);
-      console.log(`Found ${metrics.length} metrics for dashboard`);
+      // Get all metrics for the company
+      const allMetrics = await storage.getKpiMetrics(companyId);
+      console.log(`Found ${allMetrics.length} total metrics for company ${companyId}`);
       
-      const dashboardData = [];
-
-      for (const metric of metrics) {
-        console.log(`Processing metric: ${metric.name} (ID: ${metric.id})`);
+      // Process metrics and execute their SQL queries
+      const processedMetrics = [];
+      
+      for (const metric of allMetrics) {
+        console.log(`Processing metric: ${metric.name} (ID: ${metric.id}, North Star: ${metric.isNorthStar})`);
+        
+        let currentValue = 0;
         
         if (metric.sqlQuery?.trim()) {
           try {
-            // Use the same direct SQL execution approach as metrics management
             console.log(`Executing SQL query for metric ${metric.name}`);
             const result = await snowflakeService.executeQuery(metric.sqlQuery);
             
             if (result.success && result.data && result.data.length > 0) {
               // Extract current value from the first row
               const firstRow = result.data[0];
-              let currentValue = 0;
               
               // Try to find a numeric value in the first row
               const numericFields = Object.keys(firstRow).filter(key => {
@@ -387,54 +390,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               
               console.log(`SQL query result for ${metric.name}: ${currentValue}`);
-              
-              // Generate time series data based on current value
-              const timeSeriesData = generateTimeSeriesData(currentValue, parseFloat(metric.yearlyGoal || "0"));
-              
-              dashboardData.push({
-                metricId: metric.id,
-                currentValue: currentValue,
-                yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
-                format: metric.format || "currency",
-                timeSeriesData: timeSeriesData
-              });
             } else {
               console.log(`No data returned for metric ${metric.name}`);
-              // Add fallback with zero values
-              dashboardData.push({
-                metricId: metric.id,
-                currentValue: 0,
-                yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
-                format: metric.format || "currency",
-                timeSeriesData: generateTimeSeriesData(0, parseFloat(metric.yearlyGoal || "0"))
-              });
             }
           } catch (error) {
             console.error(`Error executing SQL for metric ${metric.name}:`, error);
-            // Provide fallback data structure with zero values
-            dashboardData.push({
-              metricId: metric.id,
-              currentValue: 0,
-              yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
-              format: metric.format || "currency",
-              timeSeriesData: generateTimeSeriesData(0, parseFloat(metric.yearlyGoal || "0"))
-            });
           }
         } else {
-          console.log(`No SQL query defined for metric ${metric.name}, using zero values`);
-          // No SQL query, use zero values
-          dashboardData.push({
-            metricId: metric.id,
-            currentValue: 0,
+          console.log(`No SQL query defined for metric ${metric.name}`);
+        }
+        
+        // Only include metrics that have real data (currentValue > 0) or are explicitly configured
+        if (currentValue > 0 || metric.value) {
+          processedMetrics.push({
+            id: metric.id,
+            name: metric.name,
+            description: metric.description,
+            currentValue: currentValue,
             yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
+            monthlyGoals: metric.monthlyGoals,
+            quarterlyGoals: metric.quarterlyGoals,
+            goalType: metric.goalType || 'yearly',
             format: metric.format || "currency",
-            timeSeriesData: generateTimeSeriesData(0, parseFloat(metric.yearlyGoal || "0"))
+            category: metric.category || "revenue",
+            isNorthStar: metric.isNorthStar || false,
+            isIncreasing: metric.isIncreasing !== false,
+            priority: metric.priority || 1,
+            changePercent: metric.changePercent || "+0%",
+            lastCalculatedAt: metric.lastCalculatedAt
           });
         }
       }
       
-      console.log(`Returning ${dashboardData.length} dashboard metrics`);
-      res.json(dashboardData);
+      // Separate North Star and Business metrics
+      const northStarMetrics = processedMetrics.filter(m => m.isNorthStar);
+      const businessMetrics = processedMetrics.filter(m => !m.isNorthStar);
+      
+      console.log(`Returning ${northStarMetrics.length} North Star metrics and ${businessMetrics.length} Business metrics`);
+      
+      res.json({
+        northStarMetrics,
+        businessMetrics,
+        timePeriod,
+        companyId
+      });
     } catch (error) {
       console.error("Dashboard metrics error:", error);
       res.status(500).json({ error: "Failed to fetch dashboard metrics" });

@@ -16,66 +16,96 @@ interface MetricsOverviewProps {
 
 
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
-  const [timePeriod, setTimePeriod] = useState("Monthly View");
+  const [timePeriod, setTimePeriod] = useState("yearly");
   
-  // Fetch real Snowflake dashboard metrics
-  const { data: dashboardMetrics, isLoading: isDashboardLoading } = useQuery({
-    queryKey: ["/api/dashboard/metrics-data", timePeriod],
+  // Fetch optimized dashboard data (same as North Star component)
+  const { data: dashboardData, isLoading } = useQuery({
+    queryKey: ["/api/dashboard/metrics", timePeriod],
     queryFn: async () => {
-      const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(timePeriod)}`);
+      const response = await fetch(`/api/dashboard/metrics?companyId=1&timePeriod=${timePeriod}`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
       return response.json();
     },
     refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 30000, // Cache for 30 seconds
   });
-
-  // Also fetch configured KPI metrics for additional display
-  const { data: kpiMetrics, isLoading: isKpiLoading } = useQuery({
-    queryKey: ["/api/kpi-metrics"],
-  });
-
-  const isLoading = isDashboardLoading || isKpiLoading;
   
-  // Only show metrics that have real Snowflake data
+  // Client-side goal calculation based on time period (same as North Star)
+  const calculateGoalForPeriod = (yearlyGoal: number, period: string, monthlyGoals?: any, quarterlyGoals?: any) => {
+    switch (period) {
+      case 'daily':
+        return yearlyGoal / 365;
+      case 'weekly':
+        return yearlyGoal / 52;
+      case 'monthly':
+        if (monthlyGoals) {
+          const currentMonth = new Date().toLocaleString('default', { month: 'long' });
+          return monthlyGoals[currentMonth] || (yearlyGoal / 12);
+        }
+        return yearlyGoal / 12;
+      case 'quarterly':
+        if (quarterlyGoals) {
+          const currentQuarter = Math.floor(new Date().getMonth() / 3) + 1;
+          return quarterlyGoals[`Q${currentQuarter}`] || (yearlyGoal / 4);
+        }
+        return yearlyGoal / 4;
+      case 'yearly':
+      default:
+        return yearlyGoal;
+    }
+  };
+
+  // Format values for display
+  const formatMetricValue = (value: number, format: string): string => {
+    if (format === 'currency') {
+      if (value >= 1000000) {
+        return `$${(value / 1000000).toFixed(1)}M`;
+      } else if (value >= 1000) {
+        return `$${(value / 1000).toFixed(0)}K`;
+      } else {
+        return `$${value.toLocaleString()}`;
+      }
+    } else if (format === 'percentage') {
+      return `${value.toFixed(1)}%`;
+    } else {
+      return value.toLocaleString();
+    }
+  };
+
+  // Get Business metrics from API response (exclude North Star metrics)
   const metrics = (() => {
-    if (!kpiMetrics || !Array.isArray(kpiMetrics) || kpiMetrics.length === 0) {
+    if (!dashboardData?.businessMetrics || !Array.isArray(dashboardData.businessMetrics)) {
       return []; // No fallback data - show nothing
     }
 
-    // If we have dashboard metrics from Snowflake, only show metrics with real data
-    if (dashboardMetrics && Array.isArray(dashboardMetrics)) {
-      return kpiMetrics
-        .map((kpi: any) => {
-          // Find corresponding dashboard metric by metricId
-          const dashboardMetric = dashboardMetrics.find((dm: any) => dm.metricId === kpi.id);
-          
-          if (dashboardMetric && dashboardMetric.currentValue > 0) {
-            // Only show metrics with actual data (currentValue > 0)
-            const formattedValue = dashboardMetric.format === 'currency' 
-              ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
-              : `${dashboardMetric.currentValue.toLocaleString()}`;
-              
-            return {
-              ...kpi,
-              value: formattedValue,
-              yearlyGoal: dashboardMetric.format === 'currency' 
-                ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
-                : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
-              // Calculate progress based on real values
-              goalProgress: dashboardMetric.yearlyGoal > 0 
-                ? Math.round((dashboardMetric.currentValue / dashboardMetric.yearlyGoal) * 100).toString()
-                : "0"
-            };
-          }
-          
-          return null; // Don't show metrics without real data
-        })
-        .filter(Boolean); // Remove null entries
-    }
-    
-    return []; // No real data available - show nothing
+    return dashboardData.businessMetrics.map((metric: any) => {
+      const currentGoal = calculateGoalForPeriod(
+        metric.yearlyGoal, 
+        timePeriod, 
+        metric.monthlyGoals, 
+        metric.quarterlyGoals
+      );
+
+      const currentProgress = currentGoal > 0 
+        ? Math.round((metric.currentValue / currentGoal) * 100) 
+        : 0;
+
+      return {
+        id: metric.id,
+        name: metric.name,
+        description: metric.description,
+        value: formatMetricValue(metric.currentValue, metric.format),
+        yearlyGoal: formatMetricValue(currentGoal, metric.format),
+        goalProgress: currentProgress.toString(),
+        changePercent: metric.changePercent || "+0%",
+        category: metric.category || "revenue",
+        format: metric.format || "currency",
+        priority: metric.priority || 1,
+        isIncreasing: metric.isIncreasing !== false
+      };
+    });
   })();
 
   // Data source mapping for real Snowflake metrics
@@ -153,79 +183,30 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     };
   };
 
-  // Time period options matching Snowflake service
+  // Time period options
   const timePeriodOptions = [
-    { value: "Daily View", label: "Daily View" },
-    { value: "Weekly View", label: "Weekly View" },
-    { value: "Monthly View", label: "Monthly View" }, 
-    { value: "Yearly View", label: "Yearly View" }
+    { value: "daily", label: "Daily" },
+    { value: "weekly", label: "Weekly" },
+    { value: "monthly", label: "Monthly" }, 
+    { value: "quarterly", label: "Quarterly" },
+    { value: "yearly", label: "Yearly" }
   ];
 
   // Helper function to get time period label
   const getTimePeriodLabel = () => {
     const option = timePeriodOptions.find(opt => opt.value === timePeriod);
-    return option?.label || "Year to Date";
-  };
-
-  // Helper functions for adaptive goals
-  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
-    const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
-    
-    switch (timePeriod) {
-      case "weekly":
-        return formatGoalValue(yearlyValue / 52);
-      case "monthly":
-        return formatGoalValue(yearlyValue / 12);
-      case "quarterly":
-        return formatGoalValue(yearlyValue / 4);
-      case "ytd":
-      default:
-        return formatGoalValue(yearlyValue);
-    }
-  };
-
-  const formatGoalValue = (value: number) => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    } else {
-      return `$${Math.round(value).toLocaleString()}`;
-    }
+    return option?.label || "Yearly";
   };
 
   const getTimePeriodLabelShort = (period: string) => {
     switch (period) {
+      case "daily": return "daily";
       case "weekly": return "weekly";
       case "monthly": return "monthly";
       case "quarterly": return "quarterly";
-      case "ytd": return "annual";
+      case "yearly": return "annual";
       default: return "annual";
     }
-  };
-
-  const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string, metricId: number) => {
-    const current = parseFloat(currentValue.replace(/[$,M]/g, '')) * (currentValue.includes('M') ? 1000000 : 1);
-    const yearly = parseFloat(yearlyGoal.replace(/[$,M]/g, '')) * (yearlyGoal.includes('M') ? 1000000 : 1);
-    
-    let periodGoal: number;
-    switch (timePeriod) {
-      case "weekly":
-        periodGoal = yearly / 52;
-        break;
-      case "monthly":
-        periodGoal = yearly / 12;
-        break;
-      case "quarterly":
-        periodGoal = yearly / 4;
-        break;
-      case "ytd":
-      default:
-        periodGoal = yearly;
-        break;
-    }
-    
-    return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
   };
 
 
@@ -322,8 +303,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                 {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                  parseInt(metric.goalProgress) >= 100 ? 'bg-green-500' : 
+                  parseInt(metric.goalProgress) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
                 
                 <CardHeader className="pb-3">
@@ -388,11 +369,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </p>
                     </div>
                     <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                      parseInt(metric.goalProgress) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                      parseInt(metric.goalProgress) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                       'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     }`}>
-                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
+                      {metric.goalProgress}% to goal
                     </div>
                   </div>
                 </CardHeader>
@@ -404,7 +385,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       {metric.value}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
+                      vs. {metric.yearlyGoal} {getTimePeriodLabelShort(timePeriod)} goal
                     </div>
                   </div>
                   
@@ -427,8 +408,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                 <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                   {/* Goal progress indicator */}
                   <div className={`absolute top-0 left-0 w-full h-1 ${
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                    parseInt(metric.goalProgress) >= 100 ? 'bg-green-500' : 
+                    parseInt(metric.goalProgress) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                   }`}></div>
                   
                   <CardHeader className="pb-3">
@@ -493,11 +474,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         </p>
                       </div>
                       <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                        parseInt(metric.goalProgress) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                        parseInt(metric.goalProgress) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                         'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                       }`}>
-                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
+                        {metric.goalProgress}% to goal
                       </div>
                     </div>
                   </CardHeader>
@@ -509,7 +490,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         {metric.value}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
+                        vs. {metric.yearlyGoal} {getTimePeriodLabelShort(timePeriod)} goal
                       </div>
                     </div>
                     
