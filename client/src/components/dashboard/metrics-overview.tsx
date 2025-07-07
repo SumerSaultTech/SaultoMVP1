@@ -14,165 +14,6 @@ interface MetricsOverviewProps {
   onRefresh: () => void;
 }
 
-// Default metrics for initial display
-const defaultMetrics = [
-  {
-    id: 1,
-    name: "Annual Recurring Revenue",
-    value: "$3,200,000",
-    yearlyGoal: "$3,000,000",
-    goalProgress: "107",
-    changePercent: "+15%",
-    category: "revenue",
-    format: "currency",
-    priority: 1,
-    isIncreasing: true,
-    description: "Total yearly recurring revenue from subscriptions"
-  },
-  {
-    id: 2,
-    name: "Monthly Recurring Revenue",
-    value: "$180,000",
-    yearlyGoal: "$200,000",
-    goalProgress: "90",
-    changePercent: "+8%",
-    category: "revenue",
-    format: "currency",
-    priority: 2,
-    isIncreasing: true,
-    description: "Monthly recurring revenue from subscriptions"
-  },
-  {
-    id: 3,
-    name: "Customer Acquisition Cost",
-    value: "$180",
-    yearlyGoal: "$120",
-    goalProgress: "67",
-    changePercent: "-3%",
-    category: "efficiency",
-    format: "currency",
-    priority: 3,
-    isIncreasing: false,
-    description: "Average cost to acquire a new customer"
-  },
-  {
-    id: 4,
-    name: "Customer Lifetime Value",
-    value: "$2,400",
-    yearlyGoal: "$3,200",
-    goalProgress: "75",
-    changePercent: "+12%",
-    category: "revenue",
-    format: "currency",
-    priority: 4,
-    isIncreasing: true,
-    description: "Average revenue per customer over their lifetime"
-  },
-  {
-    id: 5,
-    name: "Monthly Churn Rate",
-    value: "3.2%",
-    yearlyGoal: "1.5%",
-    goalProgress: "47",
-    changePercent: "+0.8%",
-    category: "retention",
-    format: "percentage",
-    priority: 5,
-    isIncreasing: false,
-    description: "Percentage of customers who cancel each month"
-  },
-  {
-    id: 6,
-    name: "Net Revenue Retention",
-    value: "132%",
-    yearlyGoal: "125%",
-    goalProgress: "106",
-    changePercent: "+7%",
-    category: "retention",
-    format: "percentage",
-    priority: 6,
-    isIncreasing: true,
-    description: "Revenue growth from existing customers"
-  },
-  {
-    id: 7,
-    name: "Daily Active Users",
-    value: "38,400",
-    yearlyGoal: "60,000",
-    goalProgress: "64",
-    changePercent: "+12%",
-    category: "growth",
-    format: "number",
-    priority: 7,
-    isIncreasing: true,
-    description: "Number of users active in the last 24 hours"
-  },
-  {
-    id: 8,
-    name: "Lead Conversion Rate",
-    value: "17.8%",
-    yearlyGoal: "15%",
-    goalProgress: "119",
-    changePercent: "+4.2%",
-    category: "growth",
-    format: "percentage",
-    priority: 8,
-    isIncreasing: true,
-    description: "Percentage of leads that convert to customers"
-  },
-  {
-    id: 9,
-    name: "Average Deal Size",
-    value: "$6,200",
-    yearlyGoal: "$10,000",
-    goalProgress: "62",
-    changePercent: "-8%",
-    category: "revenue",
-    format: "currency",
-    priority: 9,
-    isIncreasing: false,
-    description: "Average value of closed deals"
-  },
-  {
-    id: 10,
-    name: "Sales Cycle Length",
-    value: "28 days",
-    yearlyGoal: "35 days",
-    goalProgress: "125",
-    changePercent: "-12 days",
-    category: "efficiency",
-    format: "number",
-    priority: 10,
-    isIncreasing: true,
-    description: "Average time from lead to closed deal"
-  },
-  {
-    id: 11,
-    name: "Customer Satisfaction Score",
-    value: "4.1/5",
-    yearlyGoal: "4.5/5",
-    goalProgress: "91",
-    changePercent: "-0.1",
-    category: "retention",
-    format: "number",
-    priority: 11,
-    isIncreasing: false,
-    description: "Average customer satisfaction rating"
-  },
-  {
-    id: 12,
-    name: "Product Adoption Rate",
-    value: "52%",
-    yearlyGoal: "75%",
-    goalProgress: "69",
-    changePercent: "+2%",
-    category: "growth",
-    format: "percentage",
-    priority: 12,
-    isIncreasing: true,
-    description: "Percentage of users actively using key features"
-  }
-];
 
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const [timePeriod, setTimePeriod] = useState("Monthly View");
@@ -197,44 +38,44 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   const isLoading = isDashboardLoading || isKpiLoading;
   
-  // Merge real Snowflake dashboard data with KPI metrics structure
+  // Only show metrics that have real Snowflake data
   const metrics = (() => {
     if (!kpiMetrics || !Array.isArray(kpiMetrics) || kpiMetrics.length === 0) {
-      return defaultMetrics;
+      return []; // No fallback data - show nothing
     }
 
-    // If we have dashboard metrics from Snowflake, merge them with KPI structure
+    // If we have dashboard metrics from Snowflake, only show metrics with real data
     if (dashboardMetrics && Array.isArray(dashboardMetrics)) {
-      return kpiMetrics.map((kpi: any) => {
-        // Find corresponding dashboard metric by metricId
-        const dashboardMetric = dashboardMetrics.find((dm: any) => dm.metricId === kpi.id);
-        
-        if (dashboardMetric) {
-          // Use real Snowflake value instead of static value
-          const formattedValue = dashboardMetric.format === 'currency' 
-            ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
-            : `${dashboardMetric.currentValue.toLocaleString()}`;
-            
-
-            
-          return {
-            ...kpi,
-            value: formattedValue,
-            yearlyGoal: dashboardMetric.format === 'currency' 
-              ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
-              : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
-            // Calculate progress based on real values
-            goalProgress: dashboardMetric.yearlyGoal > 0 
-              ? Math.round((dashboardMetric.currentValue / dashboardMetric.yearlyGoal) * 100).toString()
-              : "0"
-          };
-        }
-        
-        return kpi;
-      });
+      return kpiMetrics
+        .map((kpi: any) => {
+          // Find corresponding dashboard metric by metricId
+          const dashboardMetric = dashboardMetrics.find((dm: any) => dm.metricId === kpi.id);
+          
+          if (dashboardMetric && dashboardMetric.currentValue > 0) {
+            // Only show metrics with actual data (currentValue > 0)
+            const formattedValue = dashboardMetric.format === 'currency' 
+              ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
+              : `${dashboardMetric.currentValue.toLocaleString()}`;
+              
+            return {
+              ...kpi,
+              value: formattedValue,
+              yearlyGoal: dashboardMetric.format === 'currency' 
+                ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
+                : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
+              // Calculate progress based on real values
+              goalProgress: dashboardMetric.yearlyGoal > 0 
+                ? Math.round((dashboardMetric.currentValue / dashboardMetric.yearlyGoal) * 100).toString()
+                : "0"
+            };
+          }
+          
+          return null; // Don't show metrics without real data
+        })
+        .filter(Boolean); // Remove null entries
     }
     
-    return kpiMetrics;
+    return []; // No real data available - show nothing
   })();
 
   // Data source mapping for real Snowflake metrics
@@ -364,8 +205,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   };
 
   const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string, metricId: number) => {
-    const current = getAdaptiveActual(currentValue, timePeriod, metricId);
-    const yearly = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+    const current = parseFloat(currentValue.replace(/[$,M]/g, '')) * (currentValue.includes('M') ? 1000000 : 1);
+    const yearly = parseFloat(yearlyGoal.replace(/[$,M]/g, '')) * (yearlyGoal.includes('M') ? 1000000 : 1);
     
     let periodGoal: number;
     switch (timePeriod) {
@@ -387,79 +228,6 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
   };
 
-  const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number) => {
-    const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
-    
-    // Create realistic business scenarios where short-term performance differs from yearly
-    const performanceMultipliers: Record<string, Record<number, number>> = {
-      weekly: {
-        1: 1.3,   // ARR: Strong weekly performance
-        2: 0.8,   // MRR: Weak this week
-        3: 1.1,   // CAC: Slightly higher cost this week
-        4: 0.9,   // LTV: Lower this week
-        5: 1.4,   // Churn: Much worse this week
-        6: 1.2,   // NRR: Strong weekly retention
-        7: 1.1,   // DAU: Good week for users
-        8: 1.5,   // Conversion: Excellent week
-        9: 0.7,   // Deal size: Smaller deals this week
-        10: 0.8,  // Sales cycle: Faster this week (better)
-        11: 0.9,  // CSAT: Lower this week
-        12: 1.3   // Adoption: Great weekly adoption
-      },
-      monthly: {
-        1: 1.1,   // ARR: Good monthly growth
-        2: 0.95,  // MRR: Slightly behind this month
-        3: 1.05,  // CAC: A bit higher this month
-        4: 1.0,   // LTV: On track this month
-        5: 1.2,   // Churn: Bad month for retention
-        6: 1.1,   // NRR: Strong month
-        7: 0.9,   // DAU: Slower month
-        8: 1.2,   // Conversion: Strong conversion month
-        9: 0.85,  // Deal size: Smaller deals this month
-        10: 0.9,  // Sales cycle: Faster this month
-        11: 1.05, // CSAT: Slightly better
-        12: 1.1   // Adoption: Good monthly progress
-      },
-      quarterly: {
-        1: 1.05,  // ARR: Slightly ahead for quarter
-        2: 0.98,  // MRR: A bit behind quarterly target
-        3: 1.08,  // CAC: Higher costs this quarter
-        4: 0.95,  // LTV: Lower this quarter
-        5: 1.1,   // Churn: Higher churn this quarter
-        6: 1.08,  // NRR: Good quarterly retention
-        7: 0.95,  // DAU: Behind quarterly target
-        8: 1.15,  // Conversion: Excellent quarter
-        9: 0.9,   // Deal size: Smaller average deals
-        10: 0.85, // Sales cycle: Much faster quarter
-        11: 1.02, // CSAT: Slightly up
-        12: 1.05  // Adoption: Steady quarterly growth
-      }
-    };
-    
-    const multiplier = performanceMultipliers[timePeriod]?.[metricId] || 1.0;
-    
-    switch (timePeriod) {
-      case "weekly":
-        return (yearly / 52) * multiplier;
-      case "monthly":
-        return (yearly / 12) * multiplier;
-      case "quarterly":
-        return (yearly / 4) * multiplier;
-      case "ytd":
-      default:
-        return yearly; // Full yearly value (no multiplier for YTD)
-    }
-  };
-
-  const formatActualValue = (value: number) => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    } else {
-      return `$${Math.round(value).toLocaleString()}`;
-    }
-  };
 
   // Group metrics by category
   const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
@@ -633,7 +401,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   {/* Current Value */}
                   <div>
                     <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
+                      {metric.value}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
                       vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
@@ -738,7 +506,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     {/* Current Value */}
                     <div>
                       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
+                        {metric.value}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
                         vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
