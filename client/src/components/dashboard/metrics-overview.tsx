@@ -159,7 +159,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     };
 
     // Check if this is a real Snowflake metric or a configured KPI metric
-    if (dashboardMetrics) {
+    if (dashboardData?.businessMetrics) {
       const metricKey = metricName.toLowerCase().includes('revenue') ? 'revenue' :
                        metricName.toLowerCase().includes('profit') ? 'profit' :
                        metricName.toLowerCase().includes('arr') ? 'arr' :
