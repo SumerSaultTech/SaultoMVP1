@@ -100,20 +100,20 @@ export default function Setup() {
     );
   };
 
-  // Handle credential submission for Airbyte connection
+  // Handle credential submission for Python connector connection
   const handleCredentialSubmit = async (credentials: Record<string, string>) => {
     if (!currentToolForCredentials) return;
 
     setIsLoggingIn(true);
     try {
-      // Call API to create Airbyte connection
-      const response = await fetch("/api/airbyte/connections", {
+      // Call API to create Python connector connection
+      const response = await fetch("/api/connectors/create", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          sourceType: currentToolForCredentials,
+          connectorType: currentToolForCredentials,
           credentials: credentials,
           companyId: 1748544793859, // Using the company ID from CLAUDE.md
         }),
@@ -156,21 +156,50 @@ export default function Setup() {
     setCredentialDialogOpen(true);
   };
 
-  // Simulate data sync process
-  const simulateDataSync = async () => {
+  // Real data sync process
+  const realDataSync = async () => {
     setIsSyncing(true);
     setSyncProgress(0);
 
-    const totalSteps = selectedTools.length * 20; // 20 progress points per tool
-    let currentProgress = 0;
+    const companyId = 1748544793859; // Using the company ID from CLAUDE.md
+    let completedSyncs = 0;
 
     for (const tool of selectedTools) {
-      // Simulate sync for each tool
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        currentProgress++;
-        setSyncProgress((currentProgress / totalSteps) * 100);
+      try {
+        setSyncProgress((completedSyncs / selectedTools.length) * 100);
+        
+        console.log(`Starting sync for ${tool}...`);
+        
+        // Call the Python connector sync API for each connected tool
+        const syncResponse = await fetch(`/api/connectors/${companyId}/${tool}/sync`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (syncResponse.ok) {
+          const syncResult = await syncResponse.json();
+          console.log(`Sync completed for ${tool}:`, syncResult);
+          
+          toast({
+            title: `${tool} Sync Complete`,
+            description: `Successfully synced ${syncResult.records_synced || 0} records from ${tool}`,
+          });
+        } else {
+          throw new Error(`Sync failed for ${tool}`);
+        }
+      } catch (error) {
+        console.error(`Error syncing ${tool}:`, error);
+        toast({
+          title: `${tool} Sync Failed`,
+          description: `Failed to sync data from ${tool}. Please try again.`,
+          variant: "destructive",
+        });
       }
+      
+      completedSyncs++;
+      setSyncProgress((completedSyncs / selectedTools.length) * 100);
     }
 
     setIsSyncing(false);
@@ -449,7 +478,7 @@ export default function Setup() {
               <Button 
                 onClick={() => {
                   setCurrentStep("syncProgress");
-                  simulateDataSync();
+                  realDataSync();
                 }}
                 disabled={completedLogins.length !== selectedTools.length}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -479,7 +508,7 @@ export default function Setup() {
         <CardContent className="p-8 space-y-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="font-medium">Syncing with Airbyte...</span>
+              <span className="font-medium">Syncing with Python Connectors...</span>
               <span className="text-sm text-gray-500">{Math.round(syncProgress)}%</span>
             </div>
             <Progress value={syncProgress} className="h-3" />

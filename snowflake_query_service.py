@@ -2,9 +2,13 @@
 import os
 import sys
 import json
-import snowflake.connector
 from decimal import Decimal
 from datetime import datetime, date
+
+# Enable pure Python mode to avoid libcrypto issues in Replit
+os.environ["SNOWFLAKE_CONNECTOR_PREFER_PYTHON_SSL"] = "true"
+
+import snowflake.connector
 
 def execute_snowflake_query(sql_query):
     try:

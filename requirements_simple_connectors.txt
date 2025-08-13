@@ -1,0 +1,12 @@
+# Simple Python Connector Dependencies (with compatible pandas/numpy)
+flask==2.3.3
+requests==2.31.0
+snowflake-connector-python[pure]>=3.5.0
+python-dotenv==1.0.0
+pandas==1.5.3
+numpy==1.24.3
+
+# Additional dependencies for specific connectors
+# Jira connector uses base64 encoding (built-in)
+# Salesforce connector uses requests (already included)
+# HubSpot connector uses requests (already included)

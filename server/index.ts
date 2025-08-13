@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { startPythonServices } from "./startup-services";
 
 const app = express();
 app.use(express.json());
@@ -64,7 +65,21 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = 5000;
-  server.listen(port, () => {
+  server.listen({
+    port,
+    host: "0.0.0.0",
+    reusePort: true,
+  }, async () => {
     log(`serving on port ${port}`);
+    
+    // Auto-start Python services in development mode  
+    if (app.get("env") === "development") {
+      log("🔧 Auto-starting Python services...");
+      setTimeout(() => {
+        startPythonServices().catch(error => {
+          log(`⚠️ Failed to auto-start Python services: ${error.message}`);
+        });
+      }, 2000); // Wait 2 seconds for main server to be ready
+    }
   });
 })();

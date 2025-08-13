@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Development
 - `npm run dev` - Start development server (frontend + backend on port 5000)
+- `npm run start:all` - Start all services (Node.js + Python connectors + Snowflake)
+- `npm run start:connectors` - Start Python connector service only (port 5002)
+- `npm run start:snowflake` - Start Snowflake Python service only (port 5001)
 - `npm run build` - Build for production  
 - `npm run start` - Start production server
 - `npm run check` - Run TypeScript type checking
@@ -13,8 +16,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Python Services
 - `python start_python_service.py` - Start Snowflake service on port 5001
+- `python start_simple_connector_service.py` - Start Python connector API service on port 5002
 - `python test_snowflake_connection.py` - Test Snowflake connectivity
-- `python snowflake_service.py` - Direct Snowflake service (called by start_python_service.py)
+- `python test_jira_connector.py` - Test Jira connector specifically
+
+### Replit Setup
+The app is now fully configured for **automatic startup** in Replit:
+
+1. **🚀 Automatic Startup**: 
+   - The `.replit` file runs `npm run start:replit` which starts all services
+   - Node.js server auto-detects and starts Python services if needed
+   - **Just hit the "Run" button and everything starts automatically!**
+
+2. **📋 Manual Commands** (if needed):
+   - `npm run start:replit` - Replit-optimized startup (recommended)
+   - `npm run start:all` - General multi-service startup  
+   - `npm run start:connectors:quick` - Just the connector service
+
+3. **🔍 Service Monitoring**:
+   - **Service Ports**: 5000 (main app), 5001 (Snowflake), 5002 (connectors)
+   - **Health Check**: Visit `/api/health` to see real-time status of all services
+   - **Graceful Fallback**: If Python services fail, connectors work in mock mode
+
+4. **✅ What happens when you hit "Run"**:
+   - Installs Python dependencies automatically
+   - Starts Python Connector Service (port 5002) 
+   - Starts Snowflake Python Service (port 5001)
+   - Starts main Node.js app (port 5000)
+   - Shows status of each service
+
+### Troubleshooting Python Connectors
+If you see `ECONNREFUSED 127.0.0.1:5002` errors:
+
+1. **Start the connector service**:
+   ```bash
+   npm run start:connectors:quick
+   # OR
+   python quick_start_connectors.py
+   ```
+
+2. **Check service status**:
+   ```bash
+   curl http://localhost:5002/health
+   # OR visit /api/health in your browser
+   ```
+
+3. **Replit-specific steps**:
+   - Open a new Shell tab in Replit
+   - Run `npm run start:connectors:quick`
+   - Keep the shell tab open while using the app
 
 ## Architecture
 
@@ -132,10 +182,35 @@ Services in `server/services/` handle specific business logic:
 
 ## Multi-Language Architecture
 
-This codebase uses **TypeScript for application logic** and **Python for Snowflake operations**:
+This codebase uses **TypeScript for application logic** and **Python for data operations**:
 - TypeScript handles web server, API, frontend, and business logic
-- Python services (port 5001) handle Snowflake queries and data processing
+- Python services handle Snowflake queries and data processing:
+  - **Port 5001**: Snowflake query service
+  - **Port 5002**: API connector service (Salesforce, HubSpot, etc.)
 - Communication between services via HTTP APIs
+
+### Custom Python Connector System (Replaces Airbyte)
+Simplified Python-based data pipeline (no pandas dependencies):
+- **Base Connector**: `python_connectors/simple_base_connector.py` - Abstract base for all connectors
+- **Salesforce Connector**: `python_connectors/simple_salesforce_connector.py` - Salesforce REST API integration  
+- **Jira Connector**: `python_connectors/simple_jira_connector.py` - Jira/Atlassian API integration
+- **Connector Manager**: `python_connectors/simple_connector_manager.py` - Orchestrates multiple connectors
+- **API Service**: `python_connectors/simple_api_service.py` - Flask HTTP API on port 5002
+- **TypeScript Bridge**: `server/services/python-connector-service.ts` - Interfaces with Python API
+
+**Custom Connector Workflow**:
+1. Setup page uses `/api/connectors/create` to configure new connectors
+2. Python service validates credentials and stores connector configuration
+3. Sync process calls `/api/connectors/{companyId}/{connectorType}/sync` 
+4. Data flows directly from APIs to Snowflake via Python connectors
+
+**Architecture Benefits**:
+- **No Airbyte dependency** - fully custom solution
+- No pandas/numpy dependencies (Replit compatible)  
+- Pure Python data structures for maximum compatibility
+- Real API data extraction from Jira, Salesforce, etc.
+- Direct control over data pipeline and transformations
+- Lightweight and fast startup times
 
 ## Testing
 

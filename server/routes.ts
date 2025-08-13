@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { snowflakePythonService as snowflakeService } from "./services/snowflake-python";
-import { dataConnectorService } from "./services/data-connector-fixed";
+import { snowflakeService } from "./services/snowflake";
+import { pythonConnectorService } from "./services/python-connector-service";
 import { openaiService } from "./services/openai";
 import { metricsAIService } from "./services/metrics-ai";
 import { snowflakeCortexService } from "./services/snowflake-cortex";
@@ -23,21 +23,6 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
-// In-memory storage for connections (replace with database in production)
-interface StoredConnection {
-  id: number;
-  companyId: number;
-  name: string;
-  type: string;
-  status: string;
-  connectorId: string;
-  tableCount: number;
-  lastSyncAt: Date | null;
-  createdAt: Date;
-}
-
-const connectionsStore: StoredConnection[] = [];
-let connectionIdCounter = 1;
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
@@ -126,6 +111,37 @@ const companiesArray: any[] = [
 ];
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  
+  // Health check endpoint with service status
+  app.get("/api/health", async (req, res) => {
+    const health = {
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      services: {
+        main: "running",
+        snowflake: "unknown",
+        connectors: "unknown"
+      }
+    };
+
+    // Check Python connector service
+    try {
+      const connectorHealthy = await pythonConnectorService.isServiceHealthy();
+      health.services.connectors = connectorHealthy ? "running" : "offline";
+    } catch (error) {
+      health.services.connectors = "error";
+    }
+
+    // Check Snowflake service (if available)
+    try {
+      const response = await fetch("http://localhost:5001/health", { signal: AbortSignal.timeout(2000) });
+      health.services.snowflake = response.ok ? "running" : "error";
+    } catch (error) {
+      health.services.snowflake = "offline";
+    }
+
+    res.json(health);
+  });
   
   // Companies
   app.get("/api/companies", async (req, res) => {
@@ -248,8 +264,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Created company database: ${dbCreation.databaseName}`);
 
-      // Setup data connectors using Airbyte
-      const connectorsResult = await dataConnectorService.setupConnectors();
+      // Setup data connectors using Python connector service
+      const connectorsResult = await pythonConnectorService.setupConnectors();
       if (!connectorsResult.success) {
         throw new Error("Failed to setup data connectors");
       }
@@ -319,8 +335,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Deploy models
   app.post("/api/sql-models/deploy", async (req, res) => {
     try {
-      // SQL model deployment functionality removed
-      const result = { success: true, message: "Model deployment functionality not implemented" };
+      // TODO: Replace with working SQL deployment service
+      const result = { success: true, modelsDeployed: 0, message: "SQL deployment service temporarily disabled" };
       
       // Update setup status
       const models = await storage.getSqlModels();
@@ -1124,8 +1140,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual sync trigger
   app.post("/api/sync/trigger", async (req, res) => {
     try {
-      // Fivetran service functionality removed
-      const result = { success: true, message: "Manual sync functionality not implemented" };
+      // TODO: Replace with Python connector sync
+      const result = { success: true, message: "Fivetran service removed - using Python connectors" };
       
       await storage.createPipelineActivity({
         type: "sync",
@@ -1453,14 +1469,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Airbyte Connection Management
-  app.post("/api/airbyte/connections", async (req, res) => {
+  // Python Connector Management
+  app.post("/api/connectors/create", async (req, res) => {
     try {
-      const { sourceType, credentials, companyId } = req.body;
+      const { connectorType, credentials, companyId } = req.body;
       
-      if (!sourceType || !credentials || !companyId) {
+      if (!connectorType || !credentials || !companyId) {
         return res.status(400).json({ 
-          error: "Missing required fields: sourceType, credentials, and companyId" 
+          error: "Missing required fields: connectorType, credentials, and companyId" 
         });
       }
 
@@ -1470,41 +1486,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Company not found" });
       }
 
-      // Create real Airbyte connection
-      const result = await dataConnectorService.createConnector({
-        service: sourceType,
-        workspaceId: '', // Will be auto-detected
-        config: credentials
+      // Create Python connector
+      const result = await pythonConnectorService.createConnectorWithConfig({
+        service: connectorType,
+        config: { ...credentials, companyId }
       });
-
-      // dataConnectorService.createConnector returns a ConnectorResponse, not a success/error object
-      // So if we get here, it was successful
-
-      // Store connection in memory
-      const connection: StoredConnection = {
-        id: connectionIdCounter++,
-        companyId,
-        name: result.name,
-        type: sourceType,
-        status: result.status,
-        connectorId: result.id,
-        tableCount: result.tableCount,
-        lastSyncAt: result.lastSyncAt,
-        createdAt: new Date()
-      };
-
-      connectionsStore.push(connection);
       
-      console.log(`Created Airbyte connection: ${sourceType} for company ${company.name}`);
+      console.log(`Created connection: ${connectorType} for company ${company.name}`);
       console.log(`Connection ID: ${result.id}`);
       
       res.json({
         success: true,
         connectionId: result.id,
-        sourceType,
+        connectorType,
         companyId,
         status: result.status,
-        message: `Successfully created ${sourceType} connection for ${company.name}`,
+        message: `Successfully created ${connectorType} connection for ${company.name}`,
         data: {
           name: result.name,
           status: result.status,
@@ -1515,51 +1512,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
     } catch (error: any) {
-      console.error("Airbyte connection creation error:", error);
+      console.error("Connection creation error:", error);
       res.status(500).json({ 
-        error: "Failed to create Airbyte connection",
+        error: "Failed to create connection",
         details: error.message 
       });
     }
   });
 
-  // Get Airbyte connections for a company
-  app.get("/api/airbyte/connections/:companyId", async (req, res) => {
+  // Get Python connectors for a company
+  app.get("/api/connectors/:companyId", async (req, res) => {
     try {
       const companyId = parseInt(req.params.companyId);
       
-      // Fetch connections from memory
-      const connections = connectionsStore.filter(conn => conn.companyId === companyId);
+      // Get available connector types from Python service
+      const availableResult = await pythonConnectorService.getAvailableConnectors();
       
-      // Get real-time status from Airbyte for each connection
-      const connectionsWithStatus = await Promise.all(
-        connections.map(async (conn) => {
-          if (conn.connectorId) {
-            const statusResult = await dataConnectorService.getConnectorStatus(conn.connectorId);
-            return {
-              id: conn.id,
-              sourceType: conn.type,
-              companyId: conn.companyId,
-              status: statusResult.success ? statusResult.data.status : conn.status,
-              createdAt: conn.createdAt,
-              lastSync: statusResult.success ? statusResult.data.lastSync : conn.lastSyncAt,
-              recordsSynced: statusResult.success ? statusResult.data.recordsSynced : 0
-            };
+      if (!availableResult.success) {
+        return res.status(500).json({ 
+          error: "Failed to fetch available connectors",
+          details: availableResult.error 
+        });
+      }
+      
+      // Check status for each connector type that might exist for this company
+      const connectionsWithStatus = [];
+      
+      if (availableResult.connectors) {
+        for (const connector of availableResult.connectors) {
+          const status = await pythonConnectorService.getConnectorStatus(companyId, connector.name);
+          
+          // Only include connectors that exist (have been configured)
+          if (status.exists) {
+            connectionsWithStatus.push({
+              id: `python_${connector.name}_${companyId}`,
+              connectionId: `python_${connector.name}_${companyId}`,
+              sourceType: connector.name,
+              companyId: companyId,
+              status: status.status,
+              createdAt: new Date(), // We don't track creation time in the simple connector
+              lastSync: null, // We don't track last sync time in the simple connector
+              recordsSynced: 0
+            });
           }
-          return {
-            id: conn.id,
-            sourceType: conn.type,
-            companyId: conn.companyId,
-            status: conn.status,
-            createdAt: conn.createdAt,
-            lastSync: conn.lastSyncAt
-          };
-        })
-      );
+        }
+      }
       
       res.json(connectionsWithStatus);
     } catch (error: any) {
-      console.error("Error fetching Airbyte connections:", error);
+      console.error("Error fetching connections:", error);
       res.status(500).json({ 
         error: "Failed to fetch connections",
         details: error.message 
@@ -1567,12 +1568,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Trigger sync for a specific connection
-  app.post("/api/airbyte/connections/:connectionId/sync", async (req, res) => {
+  // Trigger sync for a specific Python connector
+  app.post("/api/connectors/:connectionId/sync", async (req, res) => {
     try {
       const { connectionId } = req.params;
       
-      const result = await dataConnectorService.triggerSync(connectionId);
+      const result = await pythonConnectorService.triggerSyncById(connectionId);
       
       if (!result.success) {
         return res.status(500).json({ 
@@ -1590,6 +1591,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error triggering sync:", error);
       res.status(500).json({ 
         error: "Failed to trigger sync",
+        details: error.message
+      });
+    }
+  });
+
+  // Direct connector sync route for setup page
+  app.post("/api/connectors/:companyId/:connectorType/sync", async (req, res) => {
+    try {
+      const { companyId, connectorType } = req.params;
+      const { tables } = req.body; // Optional: specific tables to sync
+      
+      const result = await pythonConnectorService.syncConnector(
+        parseInt(companyId), 
+        connectorType, 
+        tables
+      );
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error syncing connector:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync connector",
         details: error.message
       });
     }
