@@ -458,7 +458,7 @@ export function CredentialDialog({
         <DialogHeader>
           <DialogTitle>Connect to {appName}</DialogTitle>
           <DialogDescription>
-            Enter your {appName} credentials to create an Airbyte connection. 
+            Enter your {appName} credentials to create a Python connector connection. 
             Your credentials are securely encrypted and stored.
           </DialogDescription>
         </DialogHeader>

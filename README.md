@@ -56,7 +56,7 @@ This application provides a modern, responsive dashboard for businesses to:
 │   │   ├── metrics-ai.ts       # Metrics AI suggestions
 │   │   ├── openai.ts           # OpenAI integration
 │   │   ├── data-connector.ts   # Data source connections
-│   │   └── fivetran.ts         # Fivetran ETL integration
+│   │   └── python-connector-service.ts # Python connector integration
 │   ├── db.ts                   # Database connection
 │   ├── routes.ts               # API endpoints
 │   ├── storage.ts              # Data access layer

@@ -259,7 +259,7 @@ class OpenAIService {
 
     if (lowerMessage.includes("setup") || lowerMessage.includes("configure")) {
       return {
-        content: "For data warehouse setup, ensure your Snowflake connection is configured and Fivetran connectors are syncing data from Salesforce, HubSpot, and QuickBooks. Once data is flowing, deploy your SQL models in order: staging → intermediate → core."
+        content: "For data warehouse setup, ensure your Snowflake connection is configured and Python connectors are syncing data from Salesforce, HubSpot, and QuickBooks. Once data is flowing, deploy your SQL models in order: staging → intermediate → core."
       };
     }
 

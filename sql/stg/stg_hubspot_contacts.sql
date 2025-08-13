@@ -92,7 +92,7 @@ SELECT
         ELSE 'unqualified'
     END AS lead_category
 
-FROM raw_fivetran.hubspot.contact
+FROM MIAS_DATA_DB.RAW.hubspot_contacts
 WHERE properties_email_value IS NOT NULL
     AND REGEXP_CONTAINS(properties_email_value, r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     AND properties_createdate_value IS NOT NULL

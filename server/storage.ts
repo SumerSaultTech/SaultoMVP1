@@ -93,8 +93,8 @@ export class MemStorage implements IStorage {
     // Initialize with default setup status
     this.setupStatus = {
       id: 1,
-      snowflakeConnected: false,
-      fivetranConfigured: false,
+      warehouseConnected: false,
+      dataSourcesConfigured: false,
       modelsDeployed: 0,
       totalModels: 0,
       lastUpdated: new Date(),
@@ -254,8 +254,8 @@ export class MemStorage implements IStorage {
     if (!this.setupStatus) {
       this.setupStatus = {
         id: 1,
-        snowflakeConnected: false,
-        fivetranConfigured: false,
+        warehouseConnected: false,
+        dataSourcesConfigured: false,
         modelsDeployed: 0,
         totalModels: 0,
         lastUpdated: new Date(),

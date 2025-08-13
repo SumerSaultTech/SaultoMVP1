@@ -30,12 +30,12 @@ export default function Sidebar() {
   const getSystemStatus = () => {
     if (!setupStatus) return { text: "Loading...", color: "bg-gray-500" };
     
-    if (setupStatus.snowflakeConnected && setupStatus.fivetranConfigured && 
+    if (setupStatus.warehouseConnected && setupStatus.dataSourcesConfigured && 
         setupStatus.modelsDeployed === setupStatus.totalModels && setupStatus.totalModels > 0) {
       return { text: "All Systems Operational", color: "bg-green-500" };
     }
     
-    if (setupStatus.snowflakeConnected || setupStatus.fivetranConfigured) {
+    if (setupStatus.warehouseConnected || setupStatus.dataSourcesConfigured) {
       return { text: "Partially Configured", color: "bg-amber-500" };
     }
     

@@ -64,6 +64,6 @@ SELECT
         ELSE 'unknown'
     END AS company_size
 
-FROM raw_fivetran.salesforce.account
+FROM MIAS_DATA_DB.RAW.salesforce_accounts
 WHERE isdeleted = false
     AND createddate IS NOT NULL

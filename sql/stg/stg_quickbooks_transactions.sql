@@ -108,7 +108,7 @@ SELECT
         ELSE NULL
     END AS payment_terms_days
 
-FROM raw_fivetran.quickbooks.transaction
+FROM MIAS_DATA_DB.RAW.quickbooks_transactions
 WHERE txn_date IS NOT NULL
     AND total_amt IS NOT NULL
     AND txn_type IS NOT NULL

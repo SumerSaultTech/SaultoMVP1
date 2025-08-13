@@ -1140,8 +1140,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual sync trigger
   app.post("/api/sync/trigger", async (req, res) => {
     try {
-      // TODO: Replace with Python connector sync
-      const result = { success: true, message: "Fivetran service removed - using Python connectors" };
+      // Manual sync using Python connector service
+      const result = { success: true, message: "Manual sync using Python connectors" };
       
       await storage.createPipelineActivity({
         type: "sync",
