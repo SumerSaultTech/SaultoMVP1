@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useState, useEffect } from "react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Setup from "@/pages/setup";
@@ -16,10 +17,7 @@ import UserManagement from "@/pages/user-management";
 import SaultoChat from "@/pages/saultochat";
 import Sidebar from "@/components/layout/sidebar";
 
-function Router() {
-  // Check if user is authenticated
-  const isAuthenticated = localStorage.getItem("isAuthenticated");
-  
+function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean; selectedCompany: string | null }) {
   if (!isAuthenticated) {
     return (
       <Switch>
@@ -29,9 +27,6 @@ function Router() {
     );
   }
 
-  // Check if user has selected a company
-  const selectedCompany = localStorage.getItem("selectedCompany");
-  
   if (!selectedCompany) {
     return <CompanySelection />;
   }
@@ -53,18 +48,41 @@ function Router() {
 }
 
 function App() {
-  const isAuthenticated = localStorage.getItem("isAuthenticated");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
+    () => localStorage.getItem("isAuthenticated") === "true"
+  );
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(
+    () => localStorage.getItem("selectedCompany")
+  );
+
+  useEffect(() => {
+    // Listen for storage changes
+    const handleStorageChange = () => {
+      setIsAuthenticated(localStorage.getItem("isAuthenticated") === "true");
+      setSelectedCompany(localStorage.getItem("selectedCompany"));
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    
+    // Also check periodically for changes (in case they happen in the same tab)
+    const interval = setInterval(handleStorageChange, 100);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         {!isAuthenticated ? (
-          <Router />
+          <Router isAuthenticated={isAuthenticated} selectedCompany={selectedCompany} />
         ) : (
           <div className="min-h-screen flex bg-gray-50">
             <Sidebar />
             <div className="flex-1 flex flex-col overflow-hidden">
-              <Router />
+              <Router isAuthenticated={isAuthenticated} selectedCompany={selectedCompany} />
             </div>
           </div>
         )}

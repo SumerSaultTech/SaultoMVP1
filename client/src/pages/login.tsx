@@ -22,6 +22,9 @@ export default function Login() {
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("currentUser", credentials.username);
       
+      // Trigger a storage event to update the app immediately
+      window.dispatchEvent(new Event('storage'));
+      
       // Redirect to dashboard
       setLocation("/");
     }
