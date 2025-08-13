@@ -66,7 +66,7 @@ async function startConnectorService(pythonCmd: string): Promise<boolean> {
     }
 
     // Start the simplified connector service (no pandas dependency)
-    const connectorProcess = spawn(pythonCmd, ['start_simple_connector_service.py'], {
+    const connectorProcess = spawn(pythonCmd, ['python_services/start_simple_connector_service.py'], {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -111,7 +111,7 @@ async function startSnowflakeService(pythonCmd: string): Promise<boolean> {
 
     console.log('🚀 Starting Snowflake Python Service...');
     
-    const snowflakeProcess = spawn(pythonCmd, ['start_python_service.py'], {
+    const snowflakeProcess = spawn(pythonCmd, ['python_services/start_python_service.py'], {
       detached: true,
       stdio: 'pipe'
     });
@@ -170,8 +170,8 @@ export async function startPythonServices(): Promise<void> {
   } else {
     console.log('⚠️ Python services failed to start automatically');
     console.log('💡 You can start them manually:');
-    console.log(`   - ${pythonCmd} start_simple_connector_service.py`);
-    console.log(`   - ${pythonCmd} start_python_service.py`);
+    console.log(`   - ${pythonCmd} python_services/start_simple_connector_service.py`);
+    console.log(`   - ${pythonCmd} python_services/start_python_service.py`);
   }
 }
 

@@ -96,7 +96,7 @@ export class MetricsAIService {
           ]
         },
         {
-          name: 'stg_salesforce_accounts',
+          name: 'stg_salesforce__accounts',
           columns: [
             { name: 'account_id', type: 'STRING' },
             { name: 'account_name', type: 'STRING' },

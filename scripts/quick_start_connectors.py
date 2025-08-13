@@ -14,7 +14,7 @@ def install_dependencies():
     """Install Python dependencies if needed"""
     print("📦 Installing Python dependencies...")
     try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements_connectors.txt"], 
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements_simple_connectors.txt"], 
                       check=True, capture_output=True)
         print("✅ Dependencies installed successfully")
         return True
@@ -22,7 +22,7 @@ def install_dependencies():
         print(f"❌ Failed to install dependencies: {e}")
         return False
     except FileNotFoundError:
-        print("⚠️  requirements_connectors.txt not found, continuing anyway...")
+        print("⚠️  requirements_simple_connectors.txt not found, continuing anyway...")
         return True
 
 def start_connector_service():
@@ -31,7 +31,7 @@ def start_connector_service():
     
     try:
         # Start the simplified service (no pandas dependency)
-        process = subprocess.Popen([sys.executable, "start_simple_connector_service.py"])
+        process = subprocess.Popen([sys.executable, "python_services/start_simple_connector_service.py"])
         
         # Wait a bit for service to start
         print("⏳ Waiting for service to start...")
@@ -98,8 +98,8 @@ def main():
         print("💡 Troubleshooting:")
         print("   1. Make sure port 5002 is not in use")
         print("   2. Check that Python dependencies are installed")
-        print("   3. Verify start_simple_connector_service.py exists")
-        print("   4. Try: python start_simple_connector_service.py")
+        print("   3. Verify python_services/start_simple_connector_service.py exists")
+        print("   4. Try: python python_services/start_simple_connector_service.py")
         print("   5. Check console for error messages")
         return 1
 

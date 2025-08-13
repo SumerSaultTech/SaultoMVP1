@@ -13,7 +13,7 @@ WITH salesforce_customers AS (
         created_at AS sf_created_at,
         updated_at AS sf_updated_at,
         'salesforce' AS source_system
-    FROM {{ ref('stg_salesforce_accounts') }}
+    FROM {{ ref('stg_salesforce__accounts') }}
     WHERE account_status = 'active'
 ),
 
@@ -32,7 +32,7 @@ hubspot_contacts AS (
         created_at AS hs_created_at,
         updated_at AS hs_updated_at,
         'hubspot' AS source_system
-    FROM {{ ref('stg_hubspot_contacts') }}
+    FROM {{ ref('stg_hubspot__contacts') }}
     WHERE has_valid_email = true
 ),
 

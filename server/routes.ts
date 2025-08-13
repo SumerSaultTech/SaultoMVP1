@@ -703,7 +703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Use the dedicated Python service for reliable execution
       const result = await new Promise<any>((resolve) => {
-        const pythonProcess = spawn('python', ['snowflake_query_service.py', sql], {
+        const pythonProcess = spawn('python', ['python_services/snowflake_query_service.py', sql], {
           cwd: process.cwd()
         });
         

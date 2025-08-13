@@ -5,7 +5,7 @@ echo "🚀 Starting SaultoMVP1 Services..."
 
 # Install Python dependencies if needed
 echo "📦 Installing Python dependencies..."
-pip install -r requirements_connectors.txt > /dev/null 2>&1 || echo "⚠️ Warning: Could not install Python dependencies"
+pip install -r requirements_simple_connectors.txt > /dev/null 2>&1 || echo "⚠️ Warning: Could not install Python dependencies"
 
 # Function to start service with retry
 start_service_with_retry() {
@@ -39,11 +39,11 @@ start_service_with_retry() {
 
 # Start services with retry logic
 echo "🔌 Starting Python Connector Service (port 5002)..."
-start_service_with_retry "Python Connector Service" "python start_simple_connector_service.py" "5002"
+start_service_with_retry "Python Connector Service" "python python_services/start_simple_connector_service.py" "5002"
 CONNECTOR_PID=$!
 
 echo "❄️  Starting Snowflake Python Service (port 5001)..."
-start_service_with_retry "Snowflake Python Service" "python start_python_service.py" "5001"
+start_service_with_retry "Snowflake Python Service" "python python_services/start_python_service.py" "5001"
 SNOWFLAKE_PID=$!
 
 echo "🌐 Starting Node.js Development Server (port 5000)..."
