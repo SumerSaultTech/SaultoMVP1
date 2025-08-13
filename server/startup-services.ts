@@ -8,6 +8,31 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 /**
+ * Detect available Python command
+ */
+async function detectPythonCommand(): Promise<string | null> {
+  const pythonCommands = [
+    process.env.PYTHON_COMMAND || '',
+    'python3',
+    'python',
+    'py'
+  ].filter(Boolean);
+
+  for (const cmd of pythonCommands) {
+    try {
+      await execAsync(`${cmd} --version`);
+      console.log(`🐍 Found Python: ${cmd}`);
+      return cmd;
+    } catch (error) {
+      // Command not found, try next
+    }
+  }
+  
+  console.warn('⚠️ No Python command found. Tried:', pythonCommands.join(', '));
+  return null;
+}
+
+/**
  * Check if a port is in use
  */
 async function isPortInUse(port: number): Promise<boolean> {
@@ -22,7 +47,7 @@ async function isPortInUse(port: number): Promise<boolean> {
 /**
  * Start Python connector service if not already running
  */
-async function startConnectorService(): Promise<boolean> {
+async function startConnectorService(pythonCmd: string): Promise<boolean> {
   try {
     console.log('🔍 Checking Python Connector Service (port 5002)...');
     
@@ -35,13 +60,13 @@ async function startConnectorService(): Promise<boolean> {
     
     // Install dependencies first
     try {
-      await execAsync('pip install -q -r requirements_simple_connectors.txt');
+      await execAsync(`${pythonCmd} -m pip install -q -r requirements_simple_connectors.txt`);
     } catch (error) {
       console.warn('⚠️ Warning: Could not install Python dependencies');
     }
 
     // Start the simplified connector service (no pandas dependency)
-    const connectorProcess = spawn('python', ['start_simple_connector_service.py'], {
+    const connectorProcess = spawn(pythonCmd, ['start_simple_connector_service.py'], {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -75,7 +100,7 @@ async function startConnectorService(): Promise<boolean> {
 /**
  * Start Snowflake Python service if not already running
  */
-async function startSnowflakeService(): Promise<boolean> {
+async function startSnowflakeService(pythonCmd: string): Promise<boolean> {
   try {
     console.log('🔍 Checking Snowflake Python Service (port 5001)...');
     
@@ -86,7 +111,7 @@ async function startSnowflakeService(): Promise<boolean> {
 
     console.log('🚀 Starting Snowflake Python Service...');
     
-    const snowflakeProcess = spawn('python', ['start_python_service.py'], {
+    const snowflakeProcess = spawn(pythonCmd, ['start_python_service.py'], {
       detached: true,
       stdio: 'pipe'
     });
@@ -114,10 +139,26 @@ async function startSnowflakeService(): Promise<boolean> {
 export async function startPythonServices(): Promise<void> {
   console.log('🔧 Auto-starting Python services...');
   
+  // Check if Python auto-start is disabled
+  if (process.env.DISABLE_PYTHON_AUTOSTART === 'true') {
+    console.log('⏭️ Python auto-start disabled via DISABLE_PYTHON_AUTOSTART=true');
+    console.log('💡 App will use fallback responses for Python services');
+    return;
+  }
+  
+  // Detect available Python command
+  const pythonCmd = await detectPythonCommand();
+  if (!pythonCmd) {
+    console.log('❌ Python not found. Skipping Python service startup.');
+    console.log('💡 Install Python or set PYTHON_COMMAND environment variable');
+    console.log('💡 App will use fallback responses for Python services');
+    return;
+  }
+  
   // Start services in parallel
   const [connectorStarted, snowflakeStarted] = await Promise.all([
-    startConnectorService(),
-    startSnowflakeService()
+    startConnectorService(pythonCmd),
+    startSnowflakeService(pythonCmd)
   ]);
 
   if (connectorStarted && snowflakeStarted) {
@@ -129,8 +170,8 @@ export async function startPythonServices(): Promise<void> {
   } else {
     console.log('⚠️ Python services failed to start automatically');
     console.log('💡 You can start them manually:');
-    console.log('   - python start_simple_connector_service.py');
-    console.log('   - python start_python_service.py');
+    console.log(`   - ${pythonCmd} start_simple_connector_service.py`);
+    console.log(`   - ${pythonCmd} start_python_service.py`);
   }
 }
 

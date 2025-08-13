@@ -64,12 +64,17 @@ app.use((req, res, next) => {
   // ALWAYS serve the app on port 5000
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, async () => {
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+  const host = process.env.HOST || (process.env.NODE_ENV === "development" ? "127.0.0.1" : "0.0.0.0");
+  
+  const listenOptions: any = { port, host };
+  
+  // Only use reusePort in production or when explicitly set
+  if (process.env.NODE_ENV === "production" || process.env.USE_REUSE_PORT === "true") {
+    listenOptions.reusePort = true;
+  }
+  
+  server.listen(listenOptions, async () => {
     log(`serving on port ${port}`);
     
     // Auto-start Python services in development mode  
