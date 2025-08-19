@@ -210,16 +210,16 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         const dashboardMetric = dashboardMetrics.find((dm: any) => dm.metricId === kpi.id);
         
         if (dashboardMetric) {
-          // Use real Snowflake value instead of static value
-          const formattedValue = dashboardMetric.format === 'currency' 
-            ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
-            : `${dashboardMetric.currentValue.toLocaleString()}`;
-            
-
-            
+          // Store raw values for calculations, format only for display
           return {
             ...kpi,
-            value: formattedValue,
+            // Store raw values for calculations
+            rawCurrentValue: dashboardMetric.currentValue,
+            rawYearlyGoal: dashboardMetric.yearlyGoal,
+            // Keep formatted values for compatibility
+            value: dashboardMetric.format === 'currency' 
+              ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
+              : `${dashboardMetric.currentValue.toLocaleString()}`,
             yearlyGoal: dashboardMetric.format === 'currency' 
               ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
               : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
@@ -327,16 +327,30 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   };
 
   // Helper functions for adaptive goals
-  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
-    const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+  const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string, metric?: any) => {
+    // Use raw yearly goal if available, otherwise parse formatted value
+    let yearlyValue: number;
+    if (metric?.rawYearlyGoal) {
+      yearlyValue = metric.rawYearlyGoal;
+    } else {
+      yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+    }
     
-    switch (timePeriod) {
+    switch (timePeriod.toLowerCase()) {
+      case "daily view":
+      case "daily":
+        return formatGoalValue(yearlyValue / 365);
+      case "weekly view":
       case "weekly":
         return formatGoalValue(yearlyValue / 52);
+      case "monthly view":
       case "monthly":
         return formatGoalValue(yearlyValue / 12);
+      case "quarterly view":
       case "quarterly":
         return formatGoalValue(yearlyValue / 4);
+      case "yearly view":
+      case "yearly":
       case "ytd":
       default:
         return formatGoalValue(yearlyValue);
@@ -354,30 +368,63 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   };
 
   const getTimePeriodLabelShort = (period: string) => {
-    switch (period) {
-      case "weekly": return "weekly";
-      case "monthly": return "monthly";
-      case "quarterly": return "quarterly";
-      case "ytd": return "annual";
-      default: return "annual";
+    switch (period.toLowerCase()) {
+      case "daily view":
+      case "daily": 
+        return "daily";
+      case "weekly view":
+      case "weekly": 
+        return "weekly";
+      case "monthly view":
+      case "monthly": 
+        return "monthly";
+      case "quarterly view":
+      case "quarterly": 
+        return "quarterly";
+      case "yearly view":
+      case "yearly":
+      case "ytd": 
+        return "annual";
+      default: 
+        return "annual";
     }
   };
 
-  const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string, metricId: number) => {
-    const current = getAdaptiveActual(currentValue, timePeriod, metricId);
-    const yearly = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+  const getAdaptiveProgress = (currentValue: string, yearlyGoal: string, timePeriod: string, metricId: number, metric?: any) => {
+    const current = getAdaptiveActual(currentValue, timePeriod, metricId, metric);
+    
+    // Use raw yearly goal if available, otherwise parse formatted value
+    let yearly: number;
+    if (metric?.rawYearlyGoal) {
+      yearly = metric.rawYearlyGoal;
+    } else {
+      // Add null safety check for yearlyGoal
+      if (!yearlyGoal || typeof yearlyGoal !== 'string') {
+        return 0;
+      }
+      yearly = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
+    }
     
     let periodGoal: number;
-    switch (timePeriod) {
+    switch (timePeriod.toLowerCase()) {
+      case "daily view":
+      case "daily":
+        periodGoal = yearly / 365;
+        break;
+      case "weekly view":
       case "weekly":
         periodGoal = yearly / 52;
         break;
+      case "monthly view":
       case "monthly":
         periodGoal = yearly / 12;
         break;
+      case "quarterly view":
       case "quarterly":
         periodGoal = yearly / 4;
         break;
+      case "yearly view":
+      case "yearly":
       case "ytd":
       default:
         periodGoal = yearly;
@@ -387,12 +434,36 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
   };
 
-  const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number) => {
-    const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+  const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number, metric?: any) => {
+    // Use raw current value if available, otherwise parse formatted value
+    let yearly: number;
+    if (metric?.rawCurrentValue) {
+      yearly = metric.rawCurrentValue;
+    } else {
+      // Add null safety check and fallback
+      if (!yearlyValue || typeof yearlyValue !== 'string') {
+        return 0;
+      }
+      yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+    }
     
     // Create realistic business scenarios where short-term performance differs from yearly
     const performanceMultipliers: Record<string, Record<number, number>> = {
-      weekly: {
+      "daily view": {
+        1: 1.1,   // ARR: Good daily performance
+        2: 0.9,   // MRR: Slightly behind today
+        3: 1.05,  // CAC: A bit higher today
+        4: 1.0,   // LTV: On track today
+        5: 1.3,   // Churn: Higher churn today
+        6: 1.1,   // NRR: Strong daily retention
+        7: 0.95,  // DAU: Slower today
+        8: 1.2,   // Conversion: Strong conversion today
+        9: 0.8,   // Deal size: Smaller deals today
+        10: 0.9,  // Sales cycle: Faster today
+        11: 1.02, // CSAT: Slightly better today
+        12: 1.1   // Adoption: Good daily progress
+      },
+      "weekly view": {
         1: 1.3,   // ARR: Strong weekly performance
         2: 0.8,   // MRR: Weak this week
         3: 1.1,   // CAC: Slightly higher cost this week
@@ -406,7 +477,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         11: 0.9,  // CSAT: Lower this week
         12: 1.3   // Adoption: Great weekly adoption
       },
-      monthly: {
+      "monthly view": {
         1: 1.1,   // ARR: Good monthly growth
         2: 0.95,  // MRR: Slightly behind this month
         3: 1.05,  // CAC: A bit higher this month
@@ -420,7 +491,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         11: 1.05, // CSAT: Slightly better
         12: 1.1   // Adoption: Good monthly progress
       },
-      quarterly: {
+      "quarterly view": {
         1: 1.05,  // ARR: Slightly ahead for quarter
         2: 0.98,  // MRR: A bit behind quarterly target
         3: 1.08,  // CAC: Higher costs this quarter
@@ -436,15 +507,23 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
       }
     };
     
-    const multiplier = performanceMultipliers[timePeriod]?.[metricId] || 1.0;
+    const multiplier = performanceMultipliers[timePeriod.toLowerCase()]?.[metricId] || 1.0;
     
-    switch (timePeriod) {
+    switch (timePeriod.toLowerCase()) {
+      case "daily view":
+      case "daily":
+        return (yearly / 365) * multiplier;
+      case "weekly view":
       case "weekly":
         return (yearly / 52) * multiplier;
+      case "monthly view":
       case "monthly":
         return (yearly / 12) * multiplier;
+      case "quarterly view":
       case "quarterly":
         return (yearly / 4) * multiplier;
+      case "yearly view":
+      case "yearly":
       case "ytd":
       default:
         return yearly; // Full yearly value (no multiplier for YTD)
@@ -554,8 +633,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                 {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
-                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 100 ? 'bg-green-500' : 
+                  getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
                 
                 <CardHeader className="pb-3">
@@ -620,11 +699,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                       </p>
                     </div>
                     <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                      getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                       'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     }`}>
-                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
+                      {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric)}% to goal
                     </div>
                   </div>
                 </CardHeader>
@@ -633,10 +712,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   {/* Current Value */}
                   <div>
                     <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
+                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
+                      vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric)} {getTimePeriodLabelShort(timePeriod)} goal
                     </div>
                   </div>
                   
@@ -659,8 +738,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                 <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                   {/* Goal progress indicator */}
                   <div className={`absolute top-0 left-0 w-full h-1 ${
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'bg-green-500' : 
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 100 ? 'bg-green-500' : 
+                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
                   }`}></div>
                   
                   <CardHeader className="pb-3">
@@ -725,11 +804,11 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         </p>
                       </div>
                       <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
+                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
                         'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                       }`}>
-                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id)}% to goal
+                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric)}% to goal
                       </div>
                     </div>
                   </CardHeader>
@@ -738,10 +817,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     {/* Current Value */}
                     <div>
                       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id))}
+                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod)} {getTimePeriodLabelShort(timePeriod)} goal
+                        vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric)} {getTimePeriodLabelShort(timePeriod)} goal
                       </div>
                     </div>
                     

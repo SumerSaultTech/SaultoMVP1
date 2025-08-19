@@ -14,15 +14,15 @@ from dataclasses import dataclass
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import Snowflake loader with pure Python mode (should work in Replit)
+# Import PostgreSQL loader
 try:
-    from .snowflake_loader import SnowflakeLoader
-    SNOWFLAKE_AVAILABLE = True
-    logger.info("Snowflake loader (pure Python mode) available")
+    from .postgres_loader import PostgresLoader
+    POSTGRES_AVAILABLE = True
+    logger.info("PostgreSQL loader available")
 except ImportError as e:
-    SNOWFLAKE_AVAILABLE = False
-    logger.info("Snowflake loader not available - data will only be logged")
-    logger.debug(f"Snowflake import error: {e}")
+    POSTGRES_AVAILABLE = False
+    logger.info("PostgreSQL loader not available - data will only be logged")
+    logger.debug(f"PostgreSQL import error: {e}")
 
 @dataclass
 class SyncResult:
@@ -53,8 +53,8 @@ class SimpleBaseConnector(ABC):
         self.credentials = credentials
         self.config = config or {}
         
-        # Initialize Snowflake loader if available
-        self.snowflake_loader = SnowflakeLoader() if SNOWFLAKE_AVAILABLE else None
+        # Initialize PostgreSQL loader if available
+        self.postgres_loader = PostgresLoader() if POSTGRES_AVAILABLE else None
         
     @property
     @abstractmethod
@@ -111,30 +111,30 @@ class SimpleBaseConnector(ABC):
             
             logger.info(f"Extracted {len(data)} records from {table_name}")
             
-            # Load data into Snowflake if available
-            if self.snowflake_loader and SNOWFLAKE_AVAILABLE:
+            # Load data into PostgreSQL if available
+            if self.postgres_loader and POSTGRES_AVAILABLE:
                 try:
                     # Create table name with connector prefix
-                    snowflake_table_name = f"{self.connector_name.upper()}_{table_name.upper()}"
+                    postgres_table_name = f"{self.connector_name}_{table_name}".lower()
                     
-                    records_loaded = self.snowflake_loader.load_data(
-                        table_name=snowflake_table_name,
+                    records_loaded = self.postgres_loader.load_data(
+                        table_name=postgres_table_name,
                         data=data,
                         source_system=self.connector_name,
                         company_id=self.company_id
                     )
                     
-                    logger.info(f"Successfully loaded {records_loaded} records into Snowflake table {snowflake_table_name}")
+                    logger.info(f"Successfully loaded {records_loaded} records into PostgreSQL table {postgres_table_name}")
                     return True, records_loaded
                     
                 except Exception as e:
-                    logger.error(f"Failed to load data into Snowflake: {e}")
-                    # Still return success if data was extracted, even if Snowflake load failed
-                    logger.info(f"Data extraction successful, but Snowflake load failed for {table_name}")
+                    logger.error(f"Failed to load data into PostgreSQL: {e}")
+                    # Still return success if data was extracted, even if PostgreSQL load failed
+                    logger.info(f"Data extraction successful, but PostgreSQL load failed for {table_name}")
                     return True, len(data)
             else:
-                # Fallback: just log the data if Snowflake is not available
-                logger.info(f"Snowflake not available - logging data for {table_name}")
+                # Fallback: just log the data if PostgreSQL is not available
+                logger.info(f"PostgreSQL not available - logging data for {table_name}")
                 logger.info(f"Sample record: {data[0] if data else 'No data'}")
                 return True, len(data)
                 

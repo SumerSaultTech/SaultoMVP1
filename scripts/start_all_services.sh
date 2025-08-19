@@ -3,9 +3,20 @@
 
 echo "🚀 Starting SaultoMVP1 Services..."
 
-# Install Python dependencies if needed
-echo "📦 Installing Python dependencies..."
-pip install -r requirements_simple_connectors.txt > /dev/null 2>&1 || echo "⚠️ Warning: Could not install Python dependencies"
+# Setup Python virtual environment and dependencies
+echo "📦 Setting up Python virtual environment..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv || echo "⚠️ Warning: Could not create virtual environment"
+fi
+
+if [ -d "venv" ]; then
+    source venv/bin/activate
+    pip install -r requirements_simple_connectors.txt > /dev/null 2>&1 || echo "⚠️ Warning: Could not install Python dependencies"
+    echo "✅ Virtual environment ready with dependencies"
+else
+    echo "⚠️ Warning: Using system Python"
+    pip install -r requirements_simple_connectors.txt > /dev/null 2>&1 || echo "⚠️ Warning: Could not install Python dependencies"
+fi
 
 # Function to start service with retry
 start_service_with_retry() {
@@ -39,12 +50,15 @@ start_service_with_retry() {
 
 # Start services with retry logic
 echo "🔌 Starting Python Connector Service (port 5002)..."
-start_service_with_retry "Python Connector Service" "python python_services/start_simple_connector_service.py" "5002"
+if [ -d "venv" ]; then
+    start_service_with_retry "Python Connector Service" "bash -c 'source venv/bin/activate && python python_services/start_simple_connector_service.py'" "5002"
+else
+    start_service_with_retry "Python Connector Service" "python python_services/start_simple_connector_service.py" "5002"
+fi
 CONNECTOR_PID=$!
 
-echo "❄️  Starting Snowflake Python Service (port 5001)..."
-start_service_with_retry "Snowflake Python Service" "python python_services/start_python_service.py" "5001"
-SNOWFLAKE_PID=$!
+# Removed Snowflake Python Service - now using PostgreSQL only
+echo "📊 PostgreSQL will handle analytics data directly"
 
 echo "🌐 Starting Node.js Development Server (port 5000)..."
 start_service_with_retry "Node.js Development Server" "npm run dev" "5000"
@@ -77,7 +91,7 @@ echo ""
 echo "Available endpoints:"
 echo "  📊 Main App:           http://localhost:5000"
 echo "  🔌 Connector API:      http://localhost:5002"
-echo "  ❄️  Snowflake Service: http://localhost:5001"
+echo "  📊 PostgreSQL: Database analytics via main app"
 echo ""
 echo "🔧 API Endpoints:"
 echo "  GET  /health                              - Health check"
@@ -87,7 +101,7 @@ echo "  POST /connectors/{company}/{type}/sync    - Sync data"
 echo ""
 
 # Keep script running (trap Ctrl+C to clean up)
-trap 'echo "🛑 Stopping services..."; kill $CONNECTOR_PID $SNOWFLAKE_PID $NODE_PID 2>/dev/null; exit' INT
+trap 'echo "🛑 Stopping services..."; kill $CONNECTOR_PID $NODE_PID 2>/dev/null; exit' INT
 
 # Wait for any service to exit
 wait

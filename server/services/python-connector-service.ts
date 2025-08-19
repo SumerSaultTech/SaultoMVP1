@@ -39,7 +39,7 @@ class PythonConnectorService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.PYTHON_CONNECTOR_URL || 'http://localhost:5002';
+    this.baseUrl = process.env.PYTHON_CONNECTOR_URL || 'http://127.0.0.1:5002';
   }
 
   /**

@@ -21,9 +21,9 @@ interface ColumnPreviewProps {
 
 function ColumnPreview({ tableName }: ColumnPreviewProps) {
   const { data: previewData, isLoading } = useQuery({
-    queryKey: ["/api/snowflake/table-data", tableName, "preview"],
+    queryKey: ["/api/postgres/table-data", tableName, "preview"],
     queryFn: async () => {
-      const response = await fetch(`/api/snowflake/table-data/${tableName}?limit=3`);
+      const response = await fetch(`/api/postgres/table-data/${tableName}?limit=3`);
       if (!response.ok) throw new Error('Failed to fetch preview data');
       return response.json();
     },
@@ -98,14 +98,14 @@ export default function DataBrowser() {
   const [filterColumn, setFilterColumn] = useState<string>("");
   const [filterValue, setFilterValue] = useState("");
 
-  // Fetch available tables from Snowflake
+  // Fetch available tables from PostgreSQL
   const { data: tables, isLoading: tablesLoading, refetch: refetchTables } = useQuery({
-    queryKey: ["/api/snowflake/tables"],
+    queryKey: ["/api/postgres/tables"],
   });
 
   // Fetch data for selected table
   const { data: tableData, isLoading: dataLoading, refetch: refetchData } = useQuery({
-    queryKey: ["/api/snowflake/table-data", selectedTable, filterColumn, filterValue],
+    queryKey: ["/api/postgres/table-data", selectedTable, filterColumn, filterValue],
     queryFn: async () => {
       if (!selectedTable) return null;
       
@@ -113,7 +113,7 @@ export default function DataBrowser() {
       if (filterColumn) params.append('filterColumn', filterColumn);
       if (filterValue) params.append('filterValue', filterValue);
       
-      const url = `/api/snowflake/table-data/${selectedTable}${params.toString() ? `?${params.toString()}` : ''}`;
+      const url = `/api/postgres/table-data/${selectedTable}${params.toString() ? `?${params.toString()}` : ''}`;
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -126,7 +126,7 @@ export default function DataBrowser() {
   });
 
   const filteredTables = tables?.filter((table: any) =>
-    table.TABLE_NAME.toLowerCase().includes(searchTerm.toLowerCase())
+    table.table_name.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
   const handleTableSelect = (tableName: string) => {
@@ -167,7 +167,7 @@ export default function DataBrowser() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-gray-900">Data Browser</h1>
-              <p className="text-sm text-gray-500">MIAS_DATA_DB</p>
+              <p className="text-sm text-gray-500">PostgreSQL Analytics</p>
             </div>
           </div>
           
@@ -193,22 +193,22 @@ export default function DataBrowser() {
             <div className="space-y-2">
               {filteredTables.map((table: any) => (
                 <Card
-                  key={table.TABLE_NAME}
+                  key={table.table_name}
                   className={`cursor-pointer transition-all hover:shadow-md ${
-                    selectedTable === table.TABLE_NAME ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                    selectedTable === table.table_name ? 'ring-2 ring-blue-500 bg-blue-50' : ''
                   }`}
-                  onClick={() => handleTableSelect(table.TABLE_NAME)}
+                  onClick={() => handleTableSelect(table.table_name)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-sm truncate">{table.TABLE_NAME}</h3>
+                        <h3 className="font-medium text-sm truncate">{table.table_name}</h3>
                         <p className="text-xs text-gray-500 mt-1">
-                          {table.TABLE_SCHEMA} schema
+                          {table.table_schema} schema
                         </p>
                       </div>
                       <Badge variant="secondary" className="text-xs">
-                        {table.ROW_COUNT || 0} rows
+                        {table.row_count || 0} rows
                       </Badge>
                     </div>
                   </CardContent>

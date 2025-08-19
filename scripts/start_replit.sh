@@ -40,8 +40,7 @@ pip install -q -r requirements_simple_connectors.txt 2>/dev/null || echo "⚠️
 # Start Python Connector Service first (most important for your use case)
 start_if_not_running "Python Connector Service" "python python_services/start_simple_connector_service.py" "5002"
 
-# Start Snowflake Python Service
-start_if_not_running "Snowflake Python Service" "python python_services/start_python_service.py" "5001"
+# Removed Snowflake Python Service - now using PostgreSQL only
 
 # Start main Node.js app last
 echo "🌐 Starting main Node.js application..."
@@ -65,11 +64,7 @@ else
     echo "❌ Python Connector Service: NOT RUNNING"
 fi
 
-if port_in_use 5001; then
-    echo "✅ Snowflake Python Service: RUNNING (port 5001)"
-else
-    echo "❌ Snowflake Python Service: NOT RUNNING"
-fi
+echo "✅ PostgreSQL: Available via DATABASE_URL"
 
 if port_in_use 5000; then
     echo "✅ Main Node.js App: RUNNING (port 5000)"

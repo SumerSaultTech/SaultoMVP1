@@ -5,8 +5,7 @@ import { z } from "zod";
 export const companies = pgTable("companies", {
   id: bigint("id", { mode: "number" }).primaryKey(),
   name: text("name").notNull(),
-  slug: text("slug").unique().notNull(), // Used for database naming: company_slug_db
-  snowflakeDatabase: text("snowflake_database").notNull(),
+  slug: text("slug").unique().notNull(), // Used for analytics schema naming: analytics_company_{id}
   createdAt: timestamp("created_at").defaultNow(),
   isActive: boolean("is_active").default(true),
 });
