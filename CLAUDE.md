@@ -106,13 +106,8 @@ The application includes **11 specialized services**:
 - `openai.ts` - OpenAI GPT-4 integration with fallback responses  
 - `metrics-ai.ts` - AI-powered KPI suggestions and metric analysis
 
-**Snowflake Integration Services**:
-- `snowflake.ts` - Main Snowflake service orchestrator
-- `snowflake-python.ts` - Python service communication bridge
-- `snowflake-calculator.ts` - Real-time metric calculations from warehouse
-- `snowflake-metrics.ts` - KPI-specific Snowflake queries and data processing
-- `snowflake-cortex.ts` - Snowflake Cortex AI integration
-- `snowflake-schema-discovery.ts` - Automatic schema detection and table browsing
+**PostgreSQL Analytics Services**:
+- `postgres-analytics.ts` - PostgreSQL analytics service with time-period-aware queries and real-time metric calculations
 
 **Data Pipeline Services**:
 - `python-connector-service.ts` - Bridge to Python connector system (port 5002)
@@ -130,6 +125,32 @@ The application includes **11 specialized services**:
 4. Add error handling and health check endpoints
 5. Update service documentation
 
+## Time Period Switching Architecture
+
+### Metrics Calculation Logic
+**Critical Pattern**: Both North Star Metrics and Business Metrics must use identical calculation logic:
+
+**Time Period Calculations**:
+- **Daily**: `(yearlyValue / 365) * performanceMultiplier`
+- **Weekly**: `(yearlyValue / 52) * performanceMultiplier`  
+- **Monthly**: `(yearlyValue / 12) * performanceMultiplier`
+- **Quarterly**: `(yearlyValue / 4) * performanceMultiplier`
+- **Yearly/YTD**: `yearlyValue` (no division)
+
+**Performance Multipliers**: Each metric has realistic business variations by time period (e.g., daily revenue might be 1.1x expected, weekly profit might be 0.8x expected)
+
+**Backend SQL Templates**: PostgreSQL queries filter by time period:
+- Daily: `DATE(date_column) = CURRENT_DATE`
+- Weekly: `DATE_TRUNC('week', date_column) = DATE_TRUNC('week', CURRENT_DATE)`
+- Monthly: Current month and year filters
+- Quarterly: Current quarter and year filters
+
+### Consistency Requirements
+1. **Same Calculation Functions**: Both metric sections use identical division logic
+2. **Same Performance Multipliers**: Identical realistic business variations
+3. **Same Formatting Functions**: Use `formatActualValue()` for current values
+4. **Backend Coordination**: API returns period-specific data based on `timePeriod` parameter
+
 ## Python Connector System
 
 ### Custom Data Pipeline Architecture
@@ -139,7 +160,7 @@ The application includes **11 specialized services**:
 - `simple_base_connector.py` - Abstract base class for all connectors
 - `simple_connector_manager.py` - Orchestrates multiple connectors and sync operations
 - `simple_api_service.py` - Flask HTTP API on port 5002
-- `snowflake_loader.py` - Direct Snowflake data loading utilities
+- `postgres_loader.py` - Direct PostgreSQL data loading utilities
 
 **Production Connectors**:
 - `simple_salesforce_connector.py` - Salesforce REST API integration with real data extraction
@@ -157,7 +178,7 @@ The application includes **11 specialized services**:
 2. **Validation**: Python service validates credentials and API connectivity  
 3. **Sync**: `/api/connectors/{companyId}/{connectorType}/sync` triggers data extraction
 4. **Transform**: Data cleaning and standardization in Python
-5. **Load**: Direct insertion to Snowflake RAW schema
+5. **Load**: Direct insertion to PostgreSQL analytics schemas
 6. **Monitor**: Health checks and sync status reporting
 
 ### Benefits of Custom System
@@ -217,6 +238,14 @@ The application includes **11 specialized services**:
 4. **Storage Layer**: Update `server/storage.ts` with new data access methods
 5. **API Integration**: Add new endpoints in `server/routes.ts` using storage methods
 
+### Time Period Development Guidelines
+When adding new time period functionality:
+1. **Backend**: Add time period case to `getTimeFilter()` in `postgres-analytics.ts`
+2. **Business Metrics**: Add case to `getAdaptiveActual()`, `getAdaptiveGoal()`, `getAdaptiveProgress()` 
+3. **North Star Metrics**: Add case to `getPeriodCurrentValue()`, `getPeriodGoal()`, `getTimePeriodDisplayName()`
+4. **Performance Multipliers**: Add realistic business variations for the new time period
+5. **Testing**: Verify both metric sections show identical values when switching periods
+
 ### Multi-Service Development
 1. **Local Development**: Use `npm run dev` for hot reloading of Node.js app
 2. **Python Services**: Start Python services separately for debugging
@@ -236,7 +265,7 @@ The application includes **11 specialized services**:
 - **Data Consistency**: Chart data must exactly match displayed metric values
 - **Progressive Loading**: Implement lazy loading for large datasets
 - **Responsive Design**: Charts adapt to mobile, tablet, and desktop viewports
-- **Time Periods**: Support Weekly, Monthly, Quarterly, YTD views with proper data aggregation
+- **Time Periods**: Support Daily, Weekly, Monthly, Quarterly, YTD views with proper data aggregation
 
 ### Service Integration Patterns
 - **Python Communication**: HTTP requests to Python services with error handling
