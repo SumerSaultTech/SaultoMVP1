@@ -1,9 +1,11 @@
 {
   "kpiMetrics": {
     "1": {
+      "companyId": 1748544793859,
       "name": "Annual Revenue",
-      "description": "Total Annual Revenue based on QuickBooks transactions",
-      "yearlyGoal": "3000000",
+      "description": "Total annual revenue from all closed won opportunities",
+      "sqlQuery": "SELECT COALESCE(SUM(hubspot.amount), 0) + COALESCE(SUM(salesforce.amount), 0) AS metric_value FROM (SELECT amount FROM analytics_company_{companyId}.hubspot_deal WHERE dealstage = 'closedwon' AND closedate >= DATE_TRUNC('year', CURRENT_DATE)) AS hubspot FULL OUTER JOIN (SELECT amount FROM analytics_company_{companyId}.salesforce_opportunity WHERE stagename = 'Closed Won' AND closedate >= DATE_TRUNC('year', CURRENT_DATE)) AS salesforce ON TRUE;",
+      "yearlyGoal": "1000000",
       "goalType": "yearly",
       "quarterlyGoals": {
         "Q1": "",
@@ -29,57 +31,15 @@
       "format": "currency",
       "isIncreasing": true,
       "isNorthStar": true,
-      "sqlQuery": "SELECT INVOICE_DATE as date, SUM(INVOICE_AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_REVENUE WHERE INVOICE_DATE >= '2024-01-01' AND INVOICE_AMOUNT > 0 GROUP BY INVOICE_DATE ORDER BY INVOICE_DATE;",
-      "companyId": 1,
       "id": 1,
-      "value": null,
-      "changePercent": null,
-      "currentProgress": null,
-      "timePeriod": "monthly",
       "lastCalculatedAt": null
     },
     "2": {
-      "name": "Monthly Deal Value",
-      "description": "Total value of deals closed each month from HubSpot",
-      "yearlyGoal": "1200000",
-      "goalType": "yearly",
-      "quarterlyGoals": {
-        "Q1": "",
-        "Q2": "",
-        "Q3": "",
-        "Q4": ""
-      },
-      "monthlyGoals": {
-        "Jan": "",
-        "Feb": "",
-        "Mar": "",
-        "Apr": "",
-        "May": "",
-        "Jun": "",
-        "Jul": "",
-        "Aug": "",
-        "Sep": "",
-        "Oct": "",
-        "Nov": "",
-        "Dec": ""
-      },
-      "category": "sales",
-      "format": "currency",
-      "isIncreasing": true,
-      "isNorthStar": false,
-      "sqlQuery": "SELECT CLOSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_HUBSPOT_DEALS WHERE CLOSE_DATE >= '2024-01-01' AND AMOUNT > 0 AND STAGE = 'Closed Won' GROUP BY CLOSE_DATE ORDER BY CLOSE_DATE;",
-      "companyId": 1,
-      "id": 2,
-      "value": null,
-      "changePercent": null,
-      "currentProgress": null,
-      "timePeriod": "monthly",
-      "lastCalculatedAt": null
-    },
-    "3": {
-      "name": "Monthly Expenses",
-      "description": "Total business expenses from QuickBooks",
-      "yearlyGoal": "600000",
+      "companyId": 1748544793859,
+      "name": "Annual Profit",
+      "description": "Total annual profit calculated as revenue minus expenses",
+      "sqlQuery": "SELECT COALESCE((SELECT SUM(amount) FROM analytics_company_{companyId}.salesforce_opportunity WHERE stagename = 'Closed Won' AND EXTRACT(YEAR FROM closedate) = EXTRACT(YEAR FROM CURRENT_DATE)), 0) - COALESCE((SELECT SUM(amount) FROM analytics_company_{companyId}.hubspot_deal WHERE dealstage = 'expense' AND EXTRACT(YEAR FROM closedate) = EXTRACT(YEAR FROM CURRENT_DATE)), 0) as metric_value",
+      "yearlyGoal": "500000",
       "goalType": "yearly",
       "quarterlyGoals": {
         "Q1": "",
@@ -103,15 +63,43 @@
       },
       "category": "finance",
       "format": "currency",
-      "isIncreasing": false,
+      "isIncreasing": true,
+      "isNorthStar": true,
+      "id": 2,
+      "lastCalculatedAt": null
+    },
+    "3": {
+      "companyId": 1748544793859,
+      "name": "Monthly Recurring Revenue (MRR)",
+      "description": "Total predictable revenue generated from subscriptions on a monthly basis.",
+      "sqlQuery": "SELECT COALESCE(SUM(hubspot_deal.amount), 0) + COALESCE(SUM(salesforce_opportunity.amount), 0) AS mrr FROM (SELECT amount FROM analytics_company_{companyId}.hubspot_deal WHERE dealstage = 'Closed Won' AND dealtype = 'Subscription' AND closedate >= DATE_TRUNC('month', CURRENT_DATE)) AS hubspot_deal FULL OUTER JOIN (SELECT amount FROM analytics_company_{companyId}.salesforce_opportunity WHERE stagename = 'Closed Won' AND type = 'Subscription' AND closedate >= DATE_TRUNC('month', CURRENT_DATE)) AS salesforce_opportunity ON TRUE;",
+      "yearlyGoal": "$1,200,000",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "revenue",
+      "format": "currency",
+      "isIncreasing": true,
       "isNorthStar": false,
-      "sqlQuery": "SELECT EXPENSE_DATE as date, SUM(AMOUNT) as daily_revenue FROM MIAS_DATA_DB.CORE.CORE_QUICKBOOKS_EXPENSES WHERE EXPENSE_DATE >= '2024-01-01' AND AMOUNT > 0 GROUP BY EXPENSE_DATE ORDER BY EXPENSE_DATE;",
-      "companyId": 1,
       "id": 3,
-      "value": null,
-      "changePercent": null,
-      "currentProgress": null,
-      "timePeriod": "monthly",
       "lastCalculatedAt": null
     }
   }

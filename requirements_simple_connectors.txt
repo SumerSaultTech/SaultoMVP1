@@ -1,12 +1,17 @@
 # Simple Python Connector Dependencies (Python 3.13 compatible)
 flask==2.3.3
 requests==2.31.0
-snowflake-connector-python[pure]>=3.5.0
+psycopg[binary]>=3.0.0
 python-dotenv==1.0.0
-pandas>=2.0.0
-numpy>=1.25.0
+
+# Optional dependencies (removed pandas/numpy for lightweight deployment)
+# pandas>=2.0.0
+# numpy>=1.25.0
 
 # Additional dependencies for specific connectors
 # Jira connector uses base64 encoding (built-in)
 # Salesforce connector uses requests (already included)
 # HubSpot connector uses requests (already included)
+
+# Removed Snowflake dependency as we migrated to PostgreSQL
+# snowflake-connector-python[pure]>=3.5.0

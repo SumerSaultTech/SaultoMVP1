@@ -58,15 +58,23 @@ async function startConnectorService(pythonCmd: string): Promise<boolean> {
 
     console.log('🚀 Starting Python Connector Service...');
     
-    // Install dependencies first
+    // Create virtual environment and install dependencies
     try {
-      await execAsync(`${pythonCmd} -m pip install -q -r requirements_simple_connectors.txt`);
+      console.log('🔧 Setting up Python virtual environment...');
+      await execAsync(`${pythonCmd} -m venv venv`);
+      await execAsync(`source venv/bin/activate && pip install -q -r requirements_simple_connectors.txt`);
+      console.log('✅ Virtual environment ready with dependencies');
     } catch (error) {
-      console.warn('⚠️ Warning: Could not install Python dependencies');
+      console.warn('⚠️ Warning: Could not setup virtual environment, trying system Python');
+      try {
+        await execAsync(`${pythonCmd} -m pip install -q -r requirements_simple_connectors.txt`);
+      } catch (pipError) {
+        console.warn('⚠️ Warning: Could not install Python dependencies');
+      }
     }
 
-    // Start the simplified connector service (no pandas dependency)
-    const connectorProcess = spawn(pythonCmd, ['python_services/start_simple_connector_service.py'], {
+    // Start the simplified connector service with virtual environment
+    const connectorProcess = spawn('bash', ['-c', `source venv/bin/activate && ${pythonCmd} python_services/start_simple_connector_service.py`], {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -97,52 +105,18 @@ async function startConnectorService(pythonCmd: string): Promise<boolean> {
   }
 }
 
-/**
- * Start Snowflake Python service if not already running
- */
-async function startSnowflakeService(pythonCmd: string): Promise<boolean> {
-  try {
-    console.log('🔍 Checking Snowflake Python Service (port 5001)...');
-    
-    if (await isPortInUse(5001)) {
-      console.log('✅ Snowflake Python Service already running');
-      return true;
-    }
-
-    console.log('🚀 Starting Snowflake Python Service...');
-    
-    const snowflakeProcess = spawn(pythonCmd, ['python_services/start_python_service.py'], {
-      detached: true,
-      stdio: 'pipe'
-    });
-
-    // Wait a bit and check if it started
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    if (await isPortInUse(5001)) {
-      console.log('✅ Snowflake Python Service started successfully');
-      return true;
-    } else {
-      console.warn('⚠️ Snowflake Python Service may have failed to start');
-      return false;
-    }
-    
-  } catch (error) {
-    console.error('❌ Failed to start Snowflake Python Service:', error);
-    return false;
-  }
-}
+// Removed Snowflake service startup - now using PostgreSQL only
 
 /**
- * Start all Python services
+ * Start Python connector service
  */
 export async function startPythonServices(): Promise<void> {
-  console.log('🔧 Auto-starting Python services...');
+  console.log('🔧 Auto-starting Python connector service...');
   
   // Check if Python auto-start is disabled
   if (process.env.DISABLE_PYTHON_AUTOSTART === 'true') {
     console.log('⏭️ Python auto-start disabled via DISABLE_PYTHON_AUTOSTART=true');
-    console.log('💡 App will use fallback responses for Python services');
+    console.log('💡 App will use fallback responses for connector service');
     return;
   }
   
@@ -151,27 +125,20 @@ export async function startPythonServices(): Promise<void> {
   if (!pythonCmd) {
     console.log('❌ Python not found. Skipping Python service startup.');
     console.log('💡 Install Python or set PYTHON_COMMAND environment variable');
-    console.log('💡 App will use fallback responses for Python services');
+    console.log('💡 App will use fallback responses for connector service');
     return;
   }
   
-  // Start services in parallel
-  const [connectorStarted, snowflakeStarted] = await Promise.all([
-    startConnectorService(pythonCmd),
-    startSnowflakeService(pythonCmd)
-  ]);
+  // Start connector service only (PostgreSQL handles analytics data)
+  const connectorStarted = await startConnectorService(pythonCmd);
 
-  if (connectorStarted && snowflakeStarted) {
-    console.log('🎉 All Python services started successfully!');
-  } else if (connectorStarted) {
-    console.log('✅ Python Connector Service started (Snowflake service failed)');
-  } else if (snowflakeStarted) {
-    console.log('✅ Snowflake Python Service started (Connector service failed)');
+  if (connectorStarted) {
+    console.log('🎉 Python Connector Service started successfully!');
+    console.log('📊 Analytics data will be stored in PostgreSQL schemas');
   } else {
-    console.log('⚠️ Python services failed to start automatically');
-    console.log('💡 You can start them manually:');
+    console.log('⚠️ Python connector service failed to start automatically');
+    console.log('💡 You can start it manually:');
     console.log(`   - ${pythonCmd} python_services/start_simple_connector_service.py`);
-    console.log(`   - ${pythonCmd} python_services/start_python_service.py`);
   }
 }
 
@@ -181,16 +148,13 @@ export async function startPythonServices(): Promise<void> {
 export async function checkServiceStatus(): Promise<{
   main: boolean;
   connectors: boolean;
-  snowflake: boolean;
+  postgres: boolean;
 }> {
-  const [connectors, snowflake] = await Promise.all([
-    isPortInUse(5002),
-    isPortInUse(5001)
-  ]);
+  const connectors = await isPortInUse(5002);
 
   return {
     main: true, // If this code is running, main service is up
     connectors,
-    snowflake
+    postgres: true // PostgreSQL is always available via DATABASE_URL
   };
 }

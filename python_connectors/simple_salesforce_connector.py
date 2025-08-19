@@ -6,12 +6,13 @@ import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import logging
+import urllib.parse
 from .simple_base_connector import SimpleBaseConnector
 
 logger = logging.getLogger(__name__)
 
 class SimpleSalesforceConnector(SimpleBaseConnector):
-    """Simplified Salesforce API connector using REST API"""
+    """Simplified Salesforce API connector using REST API v59.0"""
     
     @property
     def connector_name(self) -> str:
@@ -23,204 +24,242 @@ class SimpleSalesforceConnector(SimpleBaseConnector):
     
     def __init__(self, company_id: int, credentials: Dict[str, Any], config: Dict[str, Any] = None):
         super().__init__(company_id, credentials, config)
-        self.access_token = None
-        self.instance_url = credentials.get("instance_url", "https://login.salesforce.com")
+        self.client_id = credentials.get("client_id")
+        self.client_secret = credentials.get("client_secret")
+        self.username = credentials.get("username")
+        self.password = credentials.get("password")
+        self.security_token = credentials.get("security_token")
+        self.instance_url = credentials.get("instance_url", "").rstrip('/')
         
-        # Default tables to sync
-        self.default_tables = [
-            "Account", "Contact", "Lead", "Opportunity", "User", "Task", "Event",
-            "Case", "Product2", "Pricebook2", "PricebookEntry", "Quote", "Contract",
-            "Campaign", "CampaignMember", "OpportunityLineItem"
+        # Authentication state
+        self.access_token = None
+        self.token_type = "Bearer"
+        
+        # API version
+        self.api_version = "v59.0"
+        
+        # Default objects to sync
+        self.default_objects = [
+            "Account", "Contact", "Opportunity", "Lead", "Case", "Task", "Event", "User"
         ]
+        
+        # Standard field mappings for each object
+        self.object_fields = {
+            "Account": [
+                "Id", "Name", "Type", "Industry", "AnnualRevenue", "NumberOfEmployees",
+                "BillingStreet", "BillingCity", "BillingState", "BillingPostalCode", 
+                "BillingCountry", "Phone", "Website", "OwnerId", "CreatedDate", 
+                "LastModifiedDate", "IsDeleted"
+            ],
+            "Contact": [
+                "Id", "FirstName", "LastName", "AccountId", "Email", "Phone", "Title",
+                "Department", "LeadSource", "OwnerId", "CreatedDate", "LastModifiedDate", "IsDeleted"
+            ],
+            "Opportunity": [
+                "Id", "Name", "AccountId", "StageName", "Amount", "CloseDate", "Probability",
+                "Type", "LeadSource", "OwnerId", "CreatedDate", "LastModifiedDate", "IsDeleted"
+            ],
+            "Lead": [
+                "Id", "FirstName", "LastName", "Company", "Email", "Phone", "Status", "Source",
+                "Industry", "Rating", "OwnerId", "CreatedDate", "LastModifiedDate", "IsDeleted"
+            ],
+            "Case": [
+                "Id", "CaseNumber", "AccountId", "ContactId", "Subject", "Status", "Priority",
+                "Origin", "Type", "Reason", "OwnerId", "CreatedDate", "LastModifiedDate", "IsDeleted"
+            ],
+            "Task": [
+                "Id", "Subject", "AccountId", "WhoId", "WhatId", "Status", "Priority",
+                "ActivityDate", "OwnerId", "CreatedDate", "LastModifiedDate", "IsDeleted"
+            ],
+            "Event": [
+                "Id", "Subject", "AccountId", "WhoId", "WhatId", "StartDateTime", "EndDateTime",
+                "Type", "OwnerId", "CreatedDate", "LastModifiedDate", "IsDeleted"
+            ],
+            "User": [
+                "Id", "Name", "Username", "Email", "FirstName", "LastName", "IsActive",
+                "UserRoleId", "ProfileId", "CreatedDate", "LastModifiedDate"
+            ]
+        }
     
     def authenticate(self) -> bool:
-        """Authenticate with Salesforce and get access token"""
+        """Authenticate with Salesforce using OAuth 2.0 Username-Password flow"""
         try:
-            auth_url = f"{self.instance_url}/services/oauth2/token"
+            # OAuth token endpoint
+            token_url = f"{self.instance_url}/services/oauth2/token"
             
-            data = {
+            # Username-password flow parameters
+            params = {
                 'grant_type': 'password',
-                'client_id': self.credentials['client_id'],
-                'client_secret': self.credentials['client_secret'],
-                'username': self.credentials['username'],
-                'password': self.credentials['password'] + self.credentials.get('security_token', '')
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'username': self.username,
+                'password': self.password + self.security_token  # Concatenate password with security token
             }
             
-            response = requests.post(auth_url, data=data)
+            response = requests.post(token_url, data=params, timeout=30)
             response.raise_for_status()
             
-            auth_data = response.json()
-            self.access_token = auth_data['access_token']
-            self.instance_url = auth_data['instance_url']
+            token_data = response.json()
+            self.access_token = token_data['access_token']
+            self.token_type = token_data.get('token_type', 'Bearer')
             
-            logger.info("Successfully authenticated with Salesforce")
+            # Update instance URL if provided in response
+            if 'instance_url' in token_data:
+                self.instance_url = token_data['instance_url']
+            
+            logger.info("Salesforce authentication successful")
             return True
             
         except Exception as e:
             logger.error(f"Salesforce authentication failed: {str(e)}")
+            self.access_token = None
             return False
+    
+    def get_headers(self) -> Dict[str, str]:
+        """Get headers for API requests"""
+        if not self.access_token:
+            raise ValueError("Not authenticated. Call authenticate() first.")
+        
+        return {
+            'Authorization': f'{self.token_type} {self.access_token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
     
     def test_connection(self) -> bool:
         """Test Salesforce connection"""
-        if not self.authenticate():
-            return False
-            
         try:
+            # First authenticate
+            if not self.authenticate():
+                return False
+            
             # Test with a simple query
-            query = "SELECT Id, Name FROM Account LIMIT 1"
-            result = self.soql_query(query)
-            return result is not None
+            url = f"{self.instance_url}/services/data/{self.api_version}/query"
+            params = {'q': 'SELECT Id, Name FROM Organization LIMIT 1'}
+            
+            response = requests.get(url, headers=self.get_headers(), params=params, timeout=10)
+            response.raise_for_status()
+            
+            logger.info("Salesforce connection test successful")
+            return True
             
         except Exception as e:
             logger.error(f"Salesforce connection test failed: {str(e)}")
             return False
     
-    def soql_query(self, query: str) -> Optional[Dict]:
-        """Execute SOQL query"""
-        if not self.access_token:
-            if not self.authenticate():
-                return None
-        
-        try:
-            headers = {
-                'Authorization': f'Bearer {self.access_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            url = f"{self.instance_url}/services/data/v57.0/query"
-            params = {'q': query}
-            
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            return response.json()
-            
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 401:
-                # Token expired, try to re-authenticate
-                logger.info("Access token expired, re-authenticating...")
-                if self.authenticate():
-                    return self.soql_query(query)
-            logger.error(f"SOQL query failed: {str(e)}")
-            return None
-        except Exception as e:
-            logger.error(f"SOQL query error: {str(e)}")
-            return None
-    
     def get_available_tables(self) -> List[str]:
         """Get list of available Salesforce objects"""
-        if not self.access_token:
-            if not self.authenticate():
-                return self.default_tables
-        
-        try:
-            headers = {
-                'Authorization': f'Bearer {self.access_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            url = f"{self.instance_url}/services/data/v57.0/sobjects"
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            # Filter to common business objects that are queryable
-            objects = []
-            for obj in data['sobjects']:
-                if (obj['queryable'] and 
-                    obj['createable'] and 
-                    not obj['name'].endswith('__History') and
-                    not obj['name'].endswith('__Share') and
-                    not obj['name'].startswith('Setup')):
-                    objects.append(obj['name'])
-            
-            # Return top objects or default list
-            return objects[:20] if objects else self.default_tables
-            
-        except Exception as e:
-            logger.error(f"Failed to get Salesforce objects: {str(e)}")
-            return self.default_tables
+        return self.default_objects
     
-    def get_object_fields(self, object_name: str) -> List[str]:
-        """Get field names for a Salesforce object"""
-        if not self.access_token:
-            if not self.authenticate():
-                return []
+    def make_soql_request(self, soql_query: str, max_records: int = 2000) -> List[Dict]:
+        """Make SOQL query request with pagination"""
+        all_records = []
         
         try:
-            headers = {
-                'Authorization': f'Bearer {self.access_token}',
-                'Content-Type': 'application/json'
-            }
+            # Ensure we're authenticated
+            if not self.access_token:
+                if not self.authenticate():
+                    return []
             
-            url = f"{self.instance_url}/services/data/v57.0/sobjects/{object_name}/describe"
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
+            url = f"{self.instance_url}/services/data/{self.api_version}/query"
+            params = {'q': soql_query}
             
-            data = response.json()
+            records_retrieved = 0
             
-            # Get field names, prioritizing commonly used fields
-            fields = []
-            for field in data['fields']:
-                if field['type'] not in ['address', 'location']:  # Skip complex types
-                    fields.append(field['name'])
+            while url and records_retrieved < max_records:
+                if url.startswith('http'):
+                    # Full URL for subsequent requests
+                    response = requests.get(url, headers=self.get_headers(), timeout=30)
+                else:
+                    # Relative URL - construct full URL
+                    response = requests.get(f"{self.instance_url}{url}", headers=self.get_headers(), timeout=30)
+                
+                if response.status_code == 401:
+                    # Token expired, re-authenticate
+                    logger.info("Access token expired, re-authenticating...")
+                    if self.authenticate():
+                        continue  # Retry the request
+                    else:
+                        break
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                if 'records' in data:
+                    records = data['records']
+                    # Remove Salesforce metadata from records
+                    clean_records = []
+                    for record in records:
+                        clean_record = {k: v for k, v in record.items() if k != 'attributes'}
+                        clean_records.append(clean_record)
+                    
+                    all_records.extend(clean_records)
+                    records_retrieved += len(records)
+                    
+                    # Check for more records
+                    if data.get('done', True) or not data.get('nextRecordsUrl'):
+                        break
+                    
+                    url = data.get('nextRecordsUrl')
+                else:
+                    break
             
-            # Limit to reasonable number of fields
-            return fields[:50]
+            logger.info(f"Retrieved {len(all_records)} records from Salesforce")
+            return all_records
             
         except Exception as e:
-            logger.error(f"Failed to get fields for {object_name}: {str(e)}")
-            # Return basic fields as fallback
-            return ['Id', 'Name', 'CreatedDate', 'LastModifiedDate']
+            logger.error(f"SOQL request failed: {str(e)}")
+            return []
+    
+    def build_soql_query(self, object_name: str, fields: List[str], incremental: bool = True, limit: int = None) -> str:
+        """Build SOQL query for object extraction"""
+        fields_str = ', '.join(fields)
+        query = f"SELECT {fields_str} FROM {object_name}"
+        
+        conditions = []
+        
+        # Add incremental filter if requested
+        if incremental:
+            # Get records updated in last 30 days for initial sync
+            conditions.append("LastModifiedDate >= LAST_N_DAYS:30")
+        
+        # Exclude deleted records for most objects
+        if object_name != "User":  # Users don't have IsDeleted field
+            conditions.append("IsDeleted = FALSE")
+        
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        
+        query += " ORDER BY LastModifiedDate DESC"
+        
+        if limit:
+            query += f" LIMIT {limit}"
+        
+        return query
     
     def extract_data(self, table_name: str, incremental: bool = True) -> List[Dict[str, Any]]:
         """Extract data from Salesforce object"""
         try:
+            logger.info(f"Extracting data from Salesforce {table_name}")
+            
             # Get fields for this object
-            fields = self.get_object_fields(table_name)
-            if not fields:
-                logger.warning(f"No fields found for {table_name}")
-                return []
+            fields = self.object_fields.get(table_name, ["Id", "Name", "CreatedDate", "LastModifiedDate"])
             
             # Build SOQL query
-            field_list = ', '.join(fields)
-            query = f"SELECT {field_list} FROM {table_name}"
+            soql_query = self.build_soql_query(table_name, fields, incremental)
             
-            # Add incremental filter if requested
-            if incremental:
-                # For demo purposes, just get recent records
-                query += " WHERE LastModifiedDate > LAST_N_DAYS:30"
-            
-            # Add ordering and limit
-            query += " ORDER BY LastModifiedDate DESC LIMIT 1000"
-            
-            logger.info(f"Executing query: {query}")
+            logger.info(f"Executing SOQL: {soql_query}")
             
             # Execute query
-            result = self.soql_query(query)
-            if not result or not result.get('records'):
-                logger.info(f"No records found for {table_name}")
+            results = self.make_soql_request(soql_query)
+            
+            if not results:
+                logger.info(f"No {table_name} records found")
                 return []
             
-            # Clean up records (remove Salesforce metadata)
-            records = result['records']
-            cleaned_records = []
-            
-            for record in records:
-                # Remove Salesforce metadata
-                clean_record = {k: v for k, v in record.items() if k != 'attributes'}
+            logger.info(f"Extracted {len(results)} {table_name} records")
+            return results
                 
-                # Flatten nested objects to strings
-                for key, value in clean_record.items():
-                    if isinstance(value, dict):
-                        clean_record[key] = str(value)
-                
-                cleaned_records.append(clean_record)
-            
-            logger.info(f"Extracted {len(cleaned_records)} records from {table_name}")
-            return cleaned_records
-            
         except Exception as e:
             logger.error(f"Failed to extract data from {table_name}: {str(e)}")
             return []

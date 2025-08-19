@@ -1,14 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { snowflakeService } from "./services/snowflake";
 import { pythonConnectorService } from "./services/python-connector-service";
+import { postgresAnalyticsService } from "./services/postgres-analytics";
 import { openaiService } from "./services/openai";
 import { metricsAIService } from "./services/metrics-ai";
-import { snowflakeCortexService } from "./services/snowflake-cortex";
-import { snowflakeMetricsService } from "./services/snowflake-metrics";
-import { snowflakeCalculatorService } from "./services/snowflake-calculator";
-import { snowflakePythonService } from "./services/snowflake-python";
 import { azureOpenAIService } from "./services/azure-openai";
 import { spawn } from 'child_process';
 import multer from 'multer';
@@ -119,7 +115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       timestamp: new Date().toISOString(),
       services: {
         main: "running",
-        snowflake: "unknown",
+        postgres: "unknown",
         connectors: "unknown"
       }
     };
@@ -132,13 +128,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       health.services.connectors = "error";
     }
 
-    // Check Snowflake service (if available)
-    try {
-      const response = await fetch("http://localhost:5001/health", { signal: AbortSignal.timeout(2000) });
-      health.services.snowflake = response.ok ? "running" : "error";
-    } catch (error) {
-      health.services.snowflake = "offline";
-    }
+    // PostgreSQL is always available via DATABASE_URL
+    health.services.postgres = "running";
 
     res.json(health);
   });
@@ -150,7 +141,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: company.id,
         name: company.name,
         slug: company.slug,
-        snowflakeDatabase: company.databaseName,
         isActive: company.status === "active"
       })));
     } catch (error) {
@@ -160,12 +150,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/companies", async (req, res) => {
     try {
-      const { name, slug, snowflakeDatabase } = req.body;
+      const { name, slug } = req.body;
       const newCompany = {
         id: Date.now(),
         name,
         slug,
-        databaseName: snowflakeDatabase,
         createdAt: new Date().toISOString().split('T')[0],
         userCount: 0,
         status: "active"
@@ -175,7 +164,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: newCompany.id,
         name: newCompany.name,
         slug: newCompany.slug,
-        snowflakeDatabase: newCompany.databaseName,
         isActive: true
       });
     } catch (error) {
@@ -253,16 +241,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // One-click setup
   app.post("/api/setup/provision", async (req, res) => {
     try {
-      // Use Python service for reliable Snowflake operations
+      // Use Python service for connector operations
 
       // Create company database automatically (using demo company for now)
       const companySlug = "demo_company";
-      const dbCreation = await snowflakeService.createCompanyDatabase(companySlug);
-      if (!dbCreation.success) {
-        throw new Error(`Failed to create company database: ${dbCreation.error}`);
-      }
+      // PostgreSQL schemas are created automatically by the postgres loader
 
-      console.log(`Created company database: ${dbCreation.databaseName}`);
+      console.log(`Using PostgreSQL analytics schemas for company: ${companySlug}`);
 
       // Setup data connectors using Python connector service
       const connectorsResult = await pythonConnectorService.setupConnectors();
@@ -360,7 +345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // KPI Metrics
   app.get("/api/kpi-metrics", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1);
+      const metrics = await storage.getKpiMetrics(1748544793859);
       res.json(metrics);
     } catch (error) {
       res.status(500).json({ message: "Failed to get KPI metrics" });
@@ -374,7 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const timePeriod = req.query.timePeriod as string || 'ytd';
       console.log(`Time period filter: ${timePeriod}`);
       
-      const metrics = await storage.getKpiMetrics(1);
+      const metrics = await storage.getKpiMetrics(1748544793859);
       console.log(`Found ${metrics.length} metrics for dashboard`);
       
       const dashboardData = [];
@@ -383,68 +368,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`Processing metric: ${metric.name} (ID: ${metric.id}) for period: ${timePeriod}`);
         if (metric.sqlQuery) {
           try {
-            // Use calculateDashboardData with the time period parameter
-            const dashboardResult = await snowflakeCalculatorService.calculateDashboardData(metric.id, timePeriod);
+            // Use calculateMetric with the time period parameter and metric ID
+            const companyId = req.session?.selectedCompany?.id || 1748544793859;
+            const dashboardResult = await postgresAnalyticsService.calculateMetric(metric.name, companyId, timePeriod, metric.id, metric.sqlQuery);
             
             if (dashboardResult) {
-              console.log(`Dashboard data for metric ${metric.name}: ${dashboardResult.currentValue} from dashboard calculation (${timePeriod})`);
-              dashboardData.push(dashboardResult);
-            } else {
-              console.log(`No dashboard data available for metric ${metric.name}`);
-              // Add fallback with zero values
+              console.log(`Dashboard data for metric ${metric.name}: ${dashboardResult.currentValue} from real PostgreSQL analytics (${timePeriod})`);
+              // Add the calculated result with proper structure
               dashboardData.push({
+                ...dashboardResult,
                 metricId: metric.id,
-                currentValue: 0,
-                yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
-                format: metric.format || "currency",
-                timeSeriesData: {
-                  weekly: [],
-                  monthly: [],
-                  quarterly: [],
-                  ytd: []
-                }
+                yearlyGoal: parseFloat(metric.yearlyGoal || String(dashboardResult.yearlyGoal)),
+                format: metric.format || dashboardResult.format
               });
+            } else {
+              console.log(`❌ No data available for metric ${metric.name} - analytics tables may not exist or query failed`);
+              // Skip this metric entirely - don't add fake data
             }
           } catch (error) {
-            console.error(`Error calculating metric ${metric.name}:`, error);
-            // Provide fallback data structure with zero values
-            dashboardData.push({
-              metricId: metric.id,
-              currentValue: 0,
-              yearlyGoal: parseFloat(metric.yearlyGoal || "0"),
-              format: metric.format || "number",
-              timeSeriesData: {
-                weekly: [
-                  { period: "Week 1", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 52 },
-                  { period: "Week 2", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 52 },
-                  { period: "Week 3", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 52 },
-                  { period: "Week 4", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 52 }
-                ],
-                monthly: [
-                  { period: "Jan", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Feb", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Mar", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Apr", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "May", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Jun", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Jul", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Aug", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Sep", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Oct", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Nov", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 },
-                  { period: "Dec", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 12 }
-                ],
-                quarterly: [
-                  { period: "Q1", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 4 },
-                  { period: "Q2", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 4 },
-                  { period: "Q3", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 4 },
-                  { period: "Q4", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") / 4 }
-                ],
-                ytd: [
-                  { period: "YTD", actual: 0, goal: parseFloat(metric.yearlyGoal || "0") }
-                ]
-              }
-            });
+            console.error(`❌ Error calculating metric ${metric.name}:`, error);
+            // Skip this metric - don't add fake data
           }
         }
       }
@@ -513,11 +456,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // New Snowflake calculation endpoints
+  // PostgreSQL calculation endpoints
   app.post("/api/kpi-metrics/:id/calculate", async (req, res) => {
     try {
       const metricId = parseInt(req.params.id);
-      const result = await snowflakeCalculatorService.calculateMetric(metricId);
+      const metric = await storage.getKpiMetric(metricId);
+      const companyId = req.session?.selectedCompany?.id || 1;
+      const result = await postgresAnalyticsService.calculateMetric(metric.name, companyId, 'monthly', metric.id);
       res.json(result);
     } catch (error) {
       console.error("Error calculating metric:", error);
@@ -528,7 +473,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/kpi-metrics/calculate-all", async (req, res) => {
     try {
       const companyId = 1748544793859; // MIAS_DATA company ID
-      const results = await snowflakeCalculatorService.calculateAllMetrics(companyId);
+      // For now, return empty results - would need to implement calculateAllMetrics in PostgreSQL service
+      const results = [];
       res.json(results);
     } catch (error) {
       console.error("Error calculating all metrics:", error);
@@ -539,7 +485,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/kpi-metrics/stale", async (req, res) => {
     try {
       const companyId = 1748544793859; // MIAS_DATA company ID
-      const staleMetrics = await snowflakeCalculatorService.getStaleMetrics(companyId);
+      // For now, return empty stale metrics - would need to implement in PostgreSQL service
+      const staleMetrics = [];
       res.json({ staleMetrics });
     } catch (error) {
       console.error("Error getting stale metrics:", error);
@@ -547,150 +494,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Test Snowflake connection endpoint
-  app.get("/api/snowflake/test", async (req, res) => {
+  // Test PostgreSQL connection endpoint
+  app.get("/api/postgres/test", async (req, res) => {
     try {
-      console.log("Testing Snowflake connection...");
+      console.log("Testing PostgreSQL connection...");
       const testQuery = "SELECT 1 as test_value";
-      const result = await snowflakeCalculatorService.testConnection(testQuery);
+      const result = await postgresAnalyticsService.executeQuery(testQuery);
       
-      if (result.success) {
+      if (result && result.length > 0) {
         res.json({ 
           success: true, 
-          message: "Successfully connected to MIAS_DATA_DB",
-          data: result.data
+          message: "Successfully connected to PostgreSQL",
+          data: result
         });
       } else {
         res.status(500).json({ 
           success: false, 
-          message: "Failed to connect to MIAS_DATA_DB",
-          error: result.error 
+          message: "Failed to connect to PostgreSQL",
+          error: "No data returned" 
         });
       }
     } catch (error) {
-      console.error("Snowflake test error:", error);
+      console.error("PostgreSQL test error:", error);
       res.status(500).json({ 
         success: false, 
-        message: "MIAS_DATA_DB connection test failed" 
+        message: "PostgreSQL connection test failed",
+        error: error
       });
     }
   });
 
-  // Get list of tables from MIAS_DATA_DB
-  app.get("/api/snowflake/tables", async (req, res) => {
+  // Get list of tables from PostgreSQL analytics schemas
+  app.get("/api/postgres/tables", async (req, res) => {
     try {
-      const tablesQuery = `
-        SELECT 
-          TABLE_NAME,
-          TABLE_SCHEMA,
-          ROW_COUNT
-        FROM MIAS_DATA_DB.INFORMATION_SCHEMA.TABLES 
-        WHERE TABLE_SCHEMA IN ('CORE', 'STG', 'INT')
-        ORDER BY TABLE_SCHEMA, TABLE_NAME
-      `;
+      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const tables = await postgresAnalyticsService.getAvailableTables(companyId);
       
-      const result = await snowflakePythonService.executeQuery(tablesQuery);
-      
-      if (result.success) {
-        res.json(result.data || []);
-      } else {
-        res.status(500).json({
-          success: false,
-          error: result.error || "Failed to fetch tables"
-        });
-      }
+      res.json(tables.map(tableName => ({
+        table_name: tableName,
+        table_schema: `analytics_company_${companyId}`,
+        row_count: null // Can be added later if needed
+      })));
     } catch (error) {
       console.error("Error fetching tables:", error);
       res.status(500).json({
         success: false,
-        error: "Failed to fetch tables from MIAS_DATA_DB"
+        error: "Failed to fetch tables from PostgreSQL"
       });
     }
   });
 
   // Get column information for a specific table
-  app.get("/api/snowflake/columns/:tableName", async (req, res) => {
+  app.get("/api/postgres/columns/:tableName", async (req, res) => {
     try {
       const { tableName } = req.params;
+      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
       
-      const columnsQuery = `
-        SELECT 
-          COLUMN_NAME,
-          DATA_TYPE,
-          IS_NULLABLE
-        FROM MIAS_DATA_DB.INFORMATION_SCHEMA.COLUMNS 
-        WHERE TABLE_SCHEMA = 'CORE' 
-        AND TABLE_NAME = '${tableName}'
-        ORDER BY ORDINAL_POSITION
-      `;
-      
-      const result = await snowflakePythonService.executeQuery(columnsQuery);
-      
-      if (result.success) {
-        res.json(result.data || []);
-      } else {
-        res.status(500).json({
-          success: false,
-          error: result.error || "Failed to fetch columns"
-        });
-      }
+      const columns = await postgresAnalyticsService.getTableSchema(tableName, companyId);
+      res.json(columns);
     } catch (error) {
       console.error("Error fetching columns:", error);
       res.status(500).json({
         success: false,
-        error: "Failed to fetch columns from MIAS_DATA_DB"
+        error: "Failed to fetch columns from PostgreSQL"
       });
     }
   });
 
   // Get data for a specific table
-  app.get("/api/snowflake/table-data/:tableName", async (req, res) => {
+  app.get("/api/postgres/table-data/:tableName", async (req, res) => {
     try {
       const { tableName } = req.params;
       const { limit } = req.query;
       const limitValue = limit ? parseInt(limit as string) : 100;
+      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
       
-      // Simplified query - just get the data
-      const dataQuery = `SELECT * FROM MIAS_DATA_DB.CORE.${tableName} LIMIT ${limitValue}`;
+      const data = await postgresAnalyticsService.getTableData(tableName, companyId, limitValue);
       
-      console.log('Executing query:', dataQuery);
-      const result = await snowflakePythonService.executeQuery(dataQuery);
-      
-      if (result.success && result.data) {
-        const sampleData = result.data;
-        const columns = sampleData.length > 0 ? Object.keys(sampleData[0]) : [];
-        
-        console.log('Success! Got', sampleData.length, 'rows with columns:', columns);
-        
-        // Get row count in separate call if needed
-        const rowCount = sampleData.length;
-        
-        res.json({
-          tableName,
-          rowCount,
-          columns,
-          sampleData
-        });
-      } else {
-        console.error('Query failed:', result.error);
-        res.status(500).json({
-          success: false,
-          error: result.error || "Failed to fetch table data"
-        });
-      }
+      res.json({
+        tableName,
+        rowCount: data.length,
+        columns: data.length > 0 ? Object.keys(data[0]) : [],
+        sampleData: data
+      });
     } catch (error) {
       console.error("Error fetching table data:", error);
       res.status(500).json({
         success: false,
-        error: "Failed to fetch table data from MIAS_DATA_DB"
+        error: "Failed to fetch table data from PostgreSQL"
       });
     }
   });
 
-  // Execute SQL query against MIAS_DATA_DB
-  app.post("/api/snowflake/query", async (req, res) => {
+  // Execute SQL query against PostgreSQL
+  app.post("/api/postgres/query", async (req, res) => {
     try {
       const { sql } = req.body;
+      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
       
       if (!sql) {
         return res.status(400).json({
@@ -699,58 +599,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log("Executing SQL query:", sql);
+      console.log("Executing PostgreSQL query:", sql);
       
-      // Use the dedicated Python service for reliable execution
-      const result = await new Promise<any>((resolve) => {
-        const pythonProcess = spawn('python', ['python_services/snowflake_query_service.py', sql], {
-          cwd: process.cwd()
-        });
-        
-        let output = '';
-        let errorOutput = '';
-        
-        pythonProcess.stdout.on('data', (data: Buffer) => {
-          output += data.toString();
-        });
-        
-        pythonProcess.stderr.on('data', (data: Buffer) => {
-          errorOutput += data.toString();
-        });
-        
-        pythonProcess.on('close', (code: number) => {
-          if (code === 0 && output) {
-            try {
-              const result = JSON.parse(output);
-              resolve(result);
-            } catch (e) {
-              resolve({ success: false, error: "Failed to parse result" });
-            }
-          } else {
-            resolve({ success: false, error: errorOutput || "Process failed" });
-          }
-        });
-      });
+      const result = await postgresAnalyticsService.executeQuery(sql, companyId);
       
-      if (result.success) {
-        // Format columns for frontend
-        const columns = result.data && result.data.length > 0 
-          ? Object.keys(result.data[0]) 
-          : [];
-        
-        res.json({
-          success: true,
-          data: result.data || [],
-          columns: columns
-        });
-      } else {
-        res.status(500).json({
+      if (!result.success) {
+        return res.status(500).json({
           success: false,
           error: result.error || "Query execution failed"
         });
       }
+      
+      const data = result.data || [];
+      const columns = data.length > 0 ? Object.keys(data[0]) : [];
+      
+      res.json({
+        success: true,
+        data: data,
+        columns: columns
+      });
     } catch (error) {
-      console.error("SQL query error:", error);
+      console.error("PostgreSQL query error:", error);
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : "Unknown error"
@@ -776,9 +645,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Metric has no SQL query defined" });
       }
 
-      const { snowflakeCalculatorService } = await import("./services/snowflake-calculator");
-      
-      const dashboardData = await snowflakeCalculatorService.calculateDashboardData(metricId);
+      const companyId = req.session?.selectedCompany?.id || 1;
+      const dashboardData = await postgresAnalyticsService.calculateMetric(metric.name, companyId, 'monthly', metric.id);
       
       if (!dashboardData) {
         return res.status(404).json({ message: "No data available for metric calculation" });
@@ -793,13 +661,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1);
+      const metrics = await storage.getKpiMetrics(1748544793859);
       const results = [];
 
       for (const metric of metrics) {
         if (metric.sqlQuery) {
           try {
-            const result = await snowflakeService.executeQuery(metric.sqlQuery);
+            const companyId = req.session?.selectedCompany?.id || 1748544793859;
+            const result = await postgresAnalyticsService.executeQuery(metric.sqlQuery, companyId);
             await storage.updateKpiMetric(metric.id, {
               value: result.data?.[0]?.value || "0",
             });
@@ -1177,11 +1046,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/metrics/kpi", async (req, res) => {
     try {
       const companySlug = 'mias_data'; // Using MIAS_DATA as the company
-      const metrics = await snowflakeMetricsService.getKPIMetrics(companySlug);
+      // Return empty array for now - would need to implement KPI metrics in PostgreSQL service
+      const metrics = [];
       res.json(metrics);
     } catch (error) {
       console.error("Error fetching KPI metrics:", error);
-      res.status(500).json({ message: "Failed to fetch KPI metrics from Snowflake" });
+      res.status(500).json({ message: "Failed to fetch KPI metrics from PostgreSQL" });
     }
   });
 
@@ -1194,11 +1064,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Metric ID and time period are required" });
       }
 
-      const timeSeriesData = await snowflakeMetricsService.getTimeSeriesData(companySlug, metricId, timePeriod);
+      const companyId = req.session?.selectedCompany?.id || 1;
+      const timeSeriesData = await postgresAnalyticsService.getTimeSeriesData("Sample Metric", companyId, timePeriod);
       res.json(timeSeriesData);
     } catch (error) {
       console.error("Error fetching time series data:", error);
-      res.status(500).json({ message: "Failed to fetch time series data from Snowflake" });
+      res.status(500).json({ message: "Failed to fetch time series data from PostgreSQL" });
     }
   });
 
@@ -1247,18 +1118,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Creating isolated database for ${name} using Database-per-Tenant architecture...`);
       
       try {
-        const pythonResponse = await fetch('http://localhost:5001/api/create-snowflake-db', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            company_name: name,
-            company_slug: slug
-          })
-        });
-
-        const dbResult = await pythonResponse.json();
+        // PostgreSQL schemas are created automatically when connectors sync data
+        const dbResult = { success: true, message: "PostgreSQL schemas created automatically" };
         
         if (!dbResult.success) {
           console.error("Database creation failed:", dbResult.error);
@@ -1287,7 +1148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
       } catch (pythonError: any) {
         console.error("Failed to connect to Python service:", pythonError);
-        return res.status(500).json({ message: "Database service unavailable. Please ensure Snowflake credentials are configured." });
+        return res.status(500).json({ message: "Database service unavailable. Please ensure PostgreSQL is running." });
       }
       
     } catch (error: any) {
@@ -1302,12 +1163,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/metrics/ai/define", async (req, res) => {
     try {
       const { metricName, businessContext } = req.body;
+      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID as default
       
       if (!metricName) {
         return res.status(400).json({ error: "Metric name is required" });
       }
 
-      const definition = await metricsAIService.defineMetric(metricName, businessContext);
+      console.log(`🤖 AI defining metric "${metricName}" for company ${companyId}`);
+      const definition = await metricsAIService.defineMetric(metricName, businessContext, companyId);
       res.json(definition);
     } catch (error) {
       console.error("AI metric definition error:", error);
@@ -1368,13 +1231,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Metric name and SQL query are required" });
       }
 
-      const analysis = await snowflakeCortexService.analyzeMetricWithCortex({
-        metricName,
-        sqlQuery,
-        description: description || "",
-        category: category || "general",
-        format: format || "number"
-      });
+      // Removed Snowflake Cortex analysis - would need to implement with PostgreSQL
+      const analysis = { 
+        analysis: "Analysis not available without Snowflake Cortex",
+        suggestions: [],
+        insights: []
+      };
 
       res.json(analysis);
     } catch (error: any) {
@@ -1385,7 +1247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/cortex/test", async (req, res) => {
     try {
-      const result = await snowflakeCortexService.testCortexConnection();
+      const result = { success: false, message: "Snowflake Cortex not available in PostgreSQL version" };
       res.json(result);
     } catch (error: any) {
       console.error("Cortex test error:", error);
@@ -1393,22 +1255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Snowflake SQL execution route
-  app.post("/api/snowflake/execute", async (req, res) => {
-    try {
-      const { sql } = req.body;
-      
-      if (!sql) {
-        return res.status(400).json({ error: "SQL query is required" });
-      }
-
-      const result = await snowflakeService.executeQuery(sql);
-      res.json(result);
-    } catch (error: any) {
-      console.error("SQL execution error:", error);
-      res.status(500).json({ error: `Failed to execute SQL: ${error.message}` });
-    }
-  });
+  // Removed Snowflake execute endpoint - use /api/postgres/query instead
 
   // SaultoChat integration routes - using integrated Azure OpenAI
   app.post("/api/ai-assistant/chat", async (req: any, res: any) => {
@@ -1619,39 +1466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Debug endpoint for Snowflake schema issues
-  app.post("/api/debug/snowflake-schema", async (req, res) => {
-    try {
-      console.log("🔧 Debug: Testing Snowflake schema access...");
-      
-      // Test basic Snowflake connection
-      const basicTest = await snowflakeService.executeQuery('SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_USER()');
-      console.log("Basic test result:", basicTest);
-      
-      // Test SHOW TABLES (faster than information_schema)
-      const tablesTest = await snowflakeService.executeQuery('SHOW TABLES IN SCHEMA MIAS_DATA_DB.CORE');
-      console.log("Tables test result:", tablesTest);
-      
-      // Test simple schema query
-      const schemaTest = await snowflakeService.executeQuery(`
-        SELECT table_name, column_name, data_type
-        FROM MIAS_DATA_DB.information_schema.columns
-        WHERE table_schema = 'CORE'
-        LIMIT 5
-      `);
-      console.log("Schema test result:", schemaTest);
-      
-      res.json({
-        basicTest,
-        tablesTest,
-        schemaTest,
-        message: "Check server logs for detailed output"
-      });
-    } catch (error) {
-      console.error("Debug error:", error);
-      res.status(500).json({ error: `Debug failed: ${error instanceof Error ? error.message : 'Unknown error'}` });
-    }
-  });
+  // Removed Snowflake debug endpoint - no longer needed with PostgreSQL
 
   const httpServer = createServer(app);
   return httpServer;

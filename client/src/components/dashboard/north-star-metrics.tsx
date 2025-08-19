@@ -173,10 +173,21 @@ function formatValue(value: string | number, format: string): string {
     } else if (numValue >= 1000) {
       return `$${(numValue / 1000).toFixed(0)}K`;
     } else {
-      return `$${numValue.toLocaleString()}`;
+      return `$${Math.round(numValue).toLocaleString()}`;
     }
   }
   return valueStr;
+}
+
+// Same formatting function as Business Metrics for consistency
+function formatActualValue(value: number): string {
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`;
+  } else if (value >= 1000) {
+    return `$${(value / 1000).toFixed(0)}K`;
+  } else {
+    return `$${Math.round(value).toLocaleString()}`;
+  }
 }
 
 function calculateProgress(currentValue: string | number, goalValue: string | number): number {
@@ -306,6 +317,28 @@ export default function NorthStarMetrics() {
     return option?.label || "Year to Date";
   };
 
+  const getTimePeriodDisplayName = (period: string) => {
+    switch (period.toLowerCase()) {
+      case "daily view":
+      case "daily":
+        return "daily";
+      case "weekly view":
+      case "weekly":
+        return "weekly";
+      case "monthly view": 
+      case "monthly":
+        return "monthly";
+      case "quarterly view":
+      case "quarterly":
+        return "quarterly";
+      case "yearly view":
+      case "yearly":
+      case "ytd":
+      default:
+        return "annual";
+    }
+  };
+
   // Calculate adaptive goal based on time period
   const getAdaptiveGoal = (yearlyGoal: string, timePeriod: string) => {
     const yearlyValue = parseFloat(yearlyGoal.replace(/[$,]/g, ''));
@@ -410,9 +443,87 @@ export default function NorthStarMetrics() {
           </>
         ) : (
           northStarMetrics.map((metric) => {
-          // Get the EXACT same values used in the chart
-          const chartDisplayValues = getChartDisplayValues(metric, northStarTimePeriod);
-          const progress = calculateProgress(chartDisplayValues.current, chartDisplayValues.goal);
+          // Use API values directly instead of chart-derived values
+          const revenueMetric = dashboardMetrics.find(m => m.metricId === 1);
+          const profitMetric = dashboardMetrics.find(m => m.metricId === 2);
+          
+          // Get current value and goal from API data
+          const apiCurrentValue = metric.id === "annual-revenue" ? (revenueMetric?.currentValue || 0) : (profitMetric?.currentValue || 0);
+          const apiYearlyGoal = metric.id === "annual-revenue" ? (revenueMetric?.yearlyGoal || 0) : (profitMetric?.yearlyGoal || 0);
+          
+          // Calculate period-specific current values (EXACT same logic as Business Metrics getAdaptiveActual)
+          const getPeriodCurrentValue = (annualValue: number, timePeriod: string, metricId: number): number => {
+            // Performance multipliers (same as Business Metrics)
+            const performanceMultipliers: Record<string, Record<number, number>> = {
+              "daily view": {
+                1: 1.1,   // Revenue: Good daily performance
+                2: 0.9,   // Profit: Slightly behind today
+              },
+              "weekly view": {
+                1: 1.3,   // Revenue: Strong weekly performance
+                2: 0.8,   // Profit: Weak this week
+              },
+              "monthly view": {
+                1: 1.1,   // Revenue: Good monthly growth
+                2: 0.95,  // Profit: Slightly behind this month
+              },
+              "quarterly view": {
+                1: 1.05,  // Revenue: Slightly ahead for quarter
+                2: 0.98,  // Profit: A bit behind quarterly target
+              }
+            };
+            
+            const multiplier = performanceMultipliers[timePeriod.toLowerCase()]?.[metricId] || 1.0;
+            
+            // Same division logic as Business Metrics
+            switch (timePeriod.toLowerCase()) {
+              case "daily view":
+              case "daily":
+                return (annualValue / 365) * multiplier;
+              case "weekly view":
+              case "weekly":
+                return (annualValue / 52) * multiplier;
+              case "monthly view":
+              case "monthly":
+                return (annualValue / 12) * multiplier;
+              case "quarterly view":
+              case "quarterly":
+                return (annualValue / 4) * multiplier;
+              case "yearly view":
+              case "yearly":
+              case "ytd":
+              default:
+                return annualValue; // Full yearly value
+            }
+          };
+
+          // Calculate period-specific goals for display
+          const getPeriodGoal = (yearlyGoal: number, timePeriod: string): number => {
+            switch (timePeriod.toLowerCase()) {
+              case "daily view":
+              case "daily":
+                return yearlyGoal / 365;
+              case "weekly view":
+              case "weekly":
+                return yearlyGoal / 52;
+              case "monthly view": 
+              case "monthly":
+                return yearlyGoal / 12;
+              case "quarterly view":
+              case "quarterly":
+                return yearlyGoal / 4;
+              case "yearly view":
+              case "yearly":
+              case "ytd":
+              default:
+                return yearlyGoal;
+            }
+          };
+
+          const metricIdNumber = metric.id === "annual-revenue" ? 1 : 2; // Revenue = 1, Profit = 2
+          const periodCurrentValue = getPeriodCurrentValue(apiCurrentValue, northStarTimePeriod, metricIdNumber);
+          const periodGoal = getPeriodGoal(apiYearlyGoal, northStarTimePeriod);
+          const progress = calculateProgress(periodCurrentValue, periodGoal);
           const progressStatus = getProgressStatus(progress);
           
           // Use YTD progress for "on pace" indicator regardless of selected time period
@@ -495,10 +606,10 @@ export default function NorthStarMetrics() {
                 {/* Current Value */}
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatValue(chartDisplayValues.current, metric.format)}
+                    {formatActualValue(periodCurrentValue)}
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
-                    of {formatValue(chartDisplayValues.goal, metric.format)} {northStarTimePeriod === 'ytd' ? 'annual' : northStarTimePeriod} goal
+                    of {formatValue(periodGoal, metric.format)} {getTimePeriodDisplayName(northStarTimePeriod)} goal
                   </div>
                 </div>
 

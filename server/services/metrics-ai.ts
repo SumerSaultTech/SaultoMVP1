@@ -1,5 +1,6 @@
 import OpenAI from "openai";
-import { snowflakeService } from "./snowflake.ts";
+import { postgresAnalytics } from "./postgres-analytics.ts";
+import { storage } from "../storage.ts";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const apiKey = process.env.OPENAI_API_KEY;
@@ -28,28 +29,91 @@ interface SchemaInfo {
   }>;
 }
 
+interface DataSourceInfo {
+  type: string;
+  name: string;
+  tables: string[];
+  status: string;
+}
+
+interface CompanyContext {
+  companyId: number;
+  dataSources: DataSourceInfo[];
+  schemaInfo: SchemaInfo;
+}
+
 export class MetricsAIService {
-  async getSchemaInfo(): Promise<SchemaInfo> {
+  async getCompanyContext(companyId: number): Promise<CompanyContext> {
     try {
-      console.log('🔄 Starting comprehensive schema discovery...');
-      const { snowflakeSchemaDiscovery } = await import('./snowflake-schema-discovery.js');
+      console.log(`🔄 Building context for company ${companyId}...`);
       
-      const result = await snowflakeSchemaDiscovery.discoverSchema();
+      // Get company's connected data sources
+      const dataSources = await storage.getDataSources(companyId);
+      const dataSourceInfo: DataSourceInfo[] = dataSources.map(ds => ({
+        type: ds.type,
+        name: ds.name,
+        tables: ds.syncTables || [],
+        status: ds.status
+      }));
       
-      if (result.tables.length > 0) {
-        console.log(`✅ Successfully discovered ${result.tables.length} tables`);
-        result.tables.forEach(table => {
-          console.log(`📋 Table: ${table.name} (${table.columns.length} columns${table.rowCount ? `, ${table.rowCount} rows` : ''})`);
-        });
-        return result;
+      // Get schema info for company's analytics schema
+      const schemaInfo = await this.getSchemaInfoForCompany(companyId);
+      
+      console.log(`✅ Found ${dataSourceInfo.length} data sources for company ${companyId}`);
+      console.log(`✅ Found ${schemaInfo.tables.length} tables in analytics schema`);
+      
+      return {
+        companyId,
+        dataSources: dataSourceInfo,
+        schemaInfo
+      };
+    } catch (error) {
+      console.error(`❌ Error building context for company ${companyId}:`, error);
+      // Return minimal context to allow graceful degradation
+      return {
+        companyId,
+        dataSources: [],
+        schemaInfo: { tables: [] }
+      };
+    }
+  }
+
+  async getSchemaInfoForCompany(companyId: number): Promise<SchemaInfo> {
+    try {
+      console.log(`🔄 Starting PostgreSQL schema discovery for company ${companyId}...`);
+      const tables = await postgresAnalytics.getAvailableTables(companyId);
+      
+      if (tables.length > 0) {
+        console.log(`✅ Successfully discovered ${tables.length} tables for company ${companyId}`);
+        
+        // Get detailed schema info for each table
+        const tableSchemas = await Promise.all(
+          tables.map(async (tableName) => {
+            const columns = await postgresAnalytics.getTableSchema(tableName, companyId);
+            return {
+              name: tableName,
+              columns: columns.map(col => ({
+                name: col.column_name,
+                type: col.data_type.toUpperCase()
+              }))
+            };
+          })
+        );
+        
+        return { tables: tableSchemas };
       }
       
       throw new Error('No tables discovered');
     } catch (error) {
-      console.error('❌ Schema discovery failed:', error);
+      console.error(`❌ PostgreSQL schema discovery failed for company ${companyId}:`, error);
       console.log('🔄 Falling back to static schema information...');
       return this.getStaticSchemaInfo();
     }
+  }
+
+  async getSchemaInfo(): Promise<SchemaInfo> {
+    // Legacy method - falls back to static schema
+    return this.getStaticSchemaInfo();
   }
 
   private getStaticSchemaInfo(): SchemaInfo {
@@ -119,11 +183,25 @@ export class MetricsAIService {
     };
   }
 
-  async defineMetric(metricName: string, businessContext?: string): Promise<MetricDefinition> {
-    const schema = await this.getSchemaInfo();
-    const formattedSchema = this.formatSchemaForPrompt(schema);
+  async defineMetric(metricName: string, businessContext?: string, companyId?: number): Promise<MetricDefinition> {
+    let companyContext: CompanyContext;
+    
+    if (companyId) {
+      companyContext = await this.getCompanyContext(companyId);
+    } else {
+      // Fallback to legacy behavior
+      const schema = await this.getSchemaInfo();
+      companyContext = {
+        companyId: 0,
+        dataSources: [],
+        schemaInfo: schema
+      };
+    }
 
-    const systemPrompt = `You are a senior data analyst and business intelligence expert. Based on the provided database schema, define business metrics and write SQL queries to calculate them.
+    const formattedSchema = this.formatSchemaForPrompt(companyContext.schemaInfo);
+    const dataSourceContext = this.formatDataSourceContext(companyContext.dataSources);
+
+    const systemPrompt = `You are a senior data analyst and business intelligence expert. Based on the provided database schema and connected data sources, define business metrics and write SQL queries to calculate them.
 
 Your response must be a valid JSON object with this exact structure:
 {
@@ -136,22 +214,37 @@ Your response must be a valid JSON object with this exact structure:
   "rationale": "explanation of why this metric matters and how it's calculated"
 }
 
-Rules:
-- SQL must be valid and executable using ONLY the tables provided in the schema
+CRITICAL MULTI-SOURCE INTELLIGENCE RULES:
+- When multiple data sources contain similar data (e.g., Salesforce + HubSpot for revenue), AGGREGATE across sources
+- For revenue metrics: combine Salesforce opportunities + HubSpot deals + QuickBooks invoices where available
+- For customer metrics: deduplicate customers across CRM systems using email or company name
+- Use UNION or JOIN operations to combine data from multiple sources
+- Include proper schema prefix: analytics_company_{companyId}.table_name
+- Always prefer actual data aggregation over single-source queries when multiple sources exist
+
+SQL CONSTRUCTION RULES:
+- SQL must be valid PostgreSQL and executable using ONLY the tables provided
 - Use appropriate aggregation functions (SUM, COUNT, AVG, etc.)
 - Include proper date filtering for current period calculations
-- For revenue metrics, prefer core_revenue_analytics or stg_quickbooks_transactions
-- For customer metrics, use core_customer_metrics or int_subscription_events
-- Always include DATE filtering (e.g., WHERE event_date >= DATEADD('month', -1, CURRENT_DATE))
+- Always include WHERE clauses with date ranges (e.g., WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE))
+- For multi-source queries, use COALESCE to handle NULL values
 - Focus on actionable business metrics that executives care about
 - Ensure queries are optimized and meaningful
 - Do NOT use tables that aren't listed in the provided schema`;
 
-    const userPrompt = `Database Schema:
+    const userPrompt = `Company Data Sources:
+${dataSourceContext}
+
+Database Schema:
 ${formattedSchema}
 
 Metric to define: ${metricName}
 ${businessContext ? `Business context: ${businessContext}` : ''}
+
+IMPORTANT: If this company has multiple data sources that contain relevant data for this metric, write SQL that aggregates across ALL relevant sources. For example:
+- Revenue metrics should combine Salesforce + HubSpot + QuickBooks data where available
+- Customer counts should deduplicate across CRM systems
+- Lead/contact metrics should aggregate marketing and sales data
 
 Please define this metric and provide the SQL query to calculate it.`;
 
@@ -246,7 +339,7 @@ Please suggest the most important metrics this business should track.`;
 
   async calculateMetric(sqlQuery: string): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
-      const result = await snowflakeService.executeQuery(sqlQuery);
+      const result = await postgresAnalytics.executeQuery(sqlQuery);
       return {
         success: result.success,
         result: result.data,
@@ -307,6 +400,19 @@ Keep responses concise, actionable, and business-focused. Focus on metric concep
         return `Table: ${table.name}\n${columns}`;
       })
       .join('\n\n');
+  }
+
+  private formatDataSourceContext(dataSources: DataSourceInfo[]): string {
+    if (dataSources.length === 0) {
+      return "No connected data sources available.";
+    }
+
+    return dataSources
+      .map(ds => {
+        const tables = ds.tables.length > 0 ? ds.tables.join(', ') : 'No specific tables configured';
+        return `- ${ds.name} (${ds.type}): Status: ${ds.status}, Tables: ${tables}`;
+      })
+      .join('\n');
   }
 }
 

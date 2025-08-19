@@ -12,9 +12,9 @@ import time
 from datetime import datetime
 
 # Add the project root to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from python_connectors.connector_manager import connector_manager
+from python_connectors.simple_connector_manager import simple_connector_manager as connector_manager
 
 def test_connector_manager():
     """Test the connector manager without external APIs"""
@@ -130,42 +130,29 @@ def test_mock_connector():
         print(f"✗ Mock connector test failed: {str(e)}")
         return False
 
-def test_snowflake_dependencies():
-    """Test if Snowflake dependencies are available"""
-    print("\nTesting Snowflake Dependencies...")
+def test_postgres_dependencies():
+    """Test if PostgreSQL dependencies are available"""
+    print("\nTesting PostgreSQL Dependencies...")
     
     try:
-        import snowflake.connector
-        from snowflake.connector.pandas_tools import write_pandas
-        print("✓ Snowflake connector imported successfully")
-        
-        import pandas as pd
-        print("✓ Pandas imported successfully")
+        import psycopg2
+        print("✓ psycopg2 imported successfully")
         
         # Test environment variables
-        required_env_vars = [
-            'SNOWFLAKE_ACCOUNT',
-            'SNOWFLAKE_USER', 
-            'SNOWFLAKE_PASSWORD'
-        ]
+        database_url = os.getenv('DATABASE_URL')
         
-        missing_vars = []
-        for var in required_env_vars:
-            if not os.getenv(var):
-                missing_vars.append(var)
-        
-        if missing_vars:
-            print(f"⚠️  Missing environment variables: {', '.join(missing_vars)}")
-            print("   Snowflake connections will fail without these")
+        if not database_url:
+            print("⚠️  Missing DATABASE_URL environment variable")
+            print("   PostgreSQL connections will fail without this")
         else:
-            print("✓ All required Snowflake environment variables are set")
+            print("✓ DATABASE_URL environment variable is set")
         
-        print("Snowflake Dependencies tests passed!")
+        print("PostgreSQL Dependencies tests passed!")
         return True
         
     except ImportError as e:
         print(f"✗ Missing required dependency: {str(e)}")
-        print("  Run: pip install -r requirements_connectors.txt")
+        print("  Run: pip install -r requirements_simple_connectors.txt")
         return False
 
 def main():
@@ -176,7 +163,7 @@ def main():
     
     tests = [
         ("Connector Manager", test_connector_manager),
-        ("Snowflake Dependencies", test_snowflake_dependencies),
+        ("PostgreSQL Dependencies", test_postgres_dependencies),
         ("API Service", test_api_service),
         ("Mock Connector", test_mock_connector)
     ]

@@ -146,7 +146,7 @@ export default function MetricsManagement() {
 
     setIsRunningSQL(true);
     try {
-      const response = await fetch("/api/snowflake/execute", {
+      const response = await fetch("/api/postgres/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sql: formData.sqlQuery }),

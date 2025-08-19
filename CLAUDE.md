@@ -12,35 +12,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run db:push` - Push database schema changes to PostgreSQL (use after schema updates)
 
 ### Multi-Service Orchestration
-- `npm run start:all` - Start all services via shell script (Node.js + Python connectors + Snowflake)
+- `npm run start:all` - Start all services via shell script (Node.js + Python connectors)
 - `npm run start:replit` - Replit-optimized startup with automatic dependency installation
 - `npm run start:connectors` - Start Python connector service only (port 5002)
 - `npm run start:connectors:quick` - Quick start connector service via Python script
-- `npm run start:snowflake` - Start Snowflake Python service only (port 5001)
 
 ### Python Services
-- `python start_python_service.py` - Start Snowflake query service on port 5001
 - `python start_simple_connector_service.py` - Start Python connector API service on port 5002
 - `python quick_start_connectors.py` - Fast connector service startup
-- `python test_snowflake_connection.py` - Test Snowflake connectivity and credentials
 - `python test_jira_connector.py` - Test Jira connector specifically
 - `python test_python_connectors.py` - Test all Python connectors
 
 ### Service Health & Monitoring
-- Visit `/api/health` - Real-time status of all services (Node.js, Snowflake, connectors)
-- `curl http://localhost:5001/health` - Check Snowflake Python service
+- Visit `/api/health` - Real-time status of all services (Node.js, connectors)
 - `curl http://localhost:5002/health` - Check connector Python service
 
 ## Architecture
 
-This is a **Business Metrics Dashboard** - a sophisticated multi-service business intelligence platform with AI-powered insights, real-time KPI tracking, and Snowflake data warehouse integration.
+This is a **Business Metrics Dashboard** - a sophisticated multi-service business intelligence platform with AI-powered insights, real-time KPI tracking, and PostgreSQL analytics integration.
 
 ### Tech Stack
 - **Frontend**: React 18 + TypeScript, Vite, Wouter routing, Tailwind CSS + shadcn/ui
 - **Backend**: Node.js + Express + TypeScript (primary application server)
-- **Database**: PostgreSQL with Drizzle ORM (application data)
-- **Data Warehouse**: Snowflake (analytics data) 
-- **Python Services**: Flask services for Snowflake queries and data connectors
+- **Database**: PostgreSQL with Drizzle ORM (application data + analytics schemas)
+- **Python Services**: Flask service for data connectors
 - **AI**: Azure OpenAI + OpenAI GPT-4 for chat and business insights
 - **State Management**: TanStack React Query for server state
 - **UI Components**: shadcn/ui with Radix UI primitives
@@ -48,28 +43,22 @@ This is a **Business Metrics Dashboard** - a sophisticated multi-service busines
 
 ### Multi-Service Architecture
 
-The application runs as **3 coordinated services**:
+The application runs as **2 coordinated services**:
 
 1. **Main Node.js App (Port 5000)**: 
    - Express server with 100+ API endpoints
    - React frontend serving
-   - PostgreSQL database operations
+   - PostgreSQL database operations (application + analytics data)
    - AI chat and insights
    - Session management and authentication
 
-2. **Snowflake Python Service (Port 5001)**:
-   - Handles all Snowflake data warehouse queries
-   - Query execution and result processing
-   - Schema discovery and table browsing
-   - Metric calculations from warehouse data
-
-3. **Python Connector Service (Port 5002)**:
+2. **Python Connector Service (Port 5002)**:
    - Custom data pipeline replacing Airbyte
    - Salesforce, Jira, HubSpot integrations
-   - Real-time data sync to Snowflake
+   - Real-time data sync to PostgreSQL analytics schemas
    - Connector health monitoring and management
 
-**Service Communication**: Node.js app communicates with Python services via HTTP APIs. Services can run independently with graceful fallback to mock data when Python services are unavailable.
+**Service Communication**: Node.js app communicates with Python connector service via HTTP APIs. The service can run independently with graceful fallback to mock data when Python service is unavailable.
 
 ### Service Orchestration Patterns
 
@@ -81,11 +70,11 @@ The application runs as **3 coordinated services**:
 
 ## Database Architecture
 
-### PostgreSQL (Application Database)
-Uses **Drizzle ORM** with complete TypeScript type safety:
+### PostgreSQL (Unified Database)
+Uses **Drizzle ORM** with complete TypeScript type safety for application data, and company-specific analytics schemas for warehouse data:
 
-**Core Tables** (`shared/schema.ts`):
-- `companies` - Multi-tenant company management with Snowflake database mapping
+**Application Tables** (`shared/schema.ts` in `public` schema):
+- `companies` - Multi-tenant company management
 - `users` - Authentication and role-based access (admin, user, viewer)
 - `kpiMetrics` - KPI definitions with goals, categories, formatting, and time periods
 - `metricHistory` - Time-series metric values with period tracking and calculations
@@ -95,11 +84,10 @@ Uses **Drizzle ORM** with complete TypeScript type safety:
 - `pipelineActivities` - System activity logs and data sync monitoring  
 - `setupStatus` - Application setup progress and configuration state
 
-### Snowflake Data Warehouse
-- **Database**: MIAS_DATA_DB
+**Analytics Schemas** (per company: `analytics_company_{id}`):
 - **Schema Layers**: RAW → STG → INT → CORE (dbt-style data modeling)
-- **Company Isolation**: Each company gets dedicated database schemas
-- **Data Flow**: Python connectors → RAW tables → SQL transformations → analytics
+- **Company Isolation**: Each company gets dedicated analytics schema
+- **Data Flow**: Python connectors → Company analytics schema → SQL transformations → metrics
 
 ### Schema Management Patterns
 1. **Schema-First Development**: Define tables in `shared/schema.ts`
@@ -195,9 +183,9 @@ The application includes **11 specialized services**:
 - `POST /api/ai/generate-sql` - Natural language to SQL conversion
 
 **Data Warehouse**:
-- `GET/POST /api/snowflake/*` - Data warehouse queries and schema browsing
-- `GET /api/snowflake/tables` - Live table and schema discovery
-- `POST /api/snowflake/query` - Execute custom SQL queries
+- `GET/POST /api/postgres/*` - PostgreSQL analytics queries and schema browsing
+- `GET /api/postgres/tables` - Live table and schema discovery from analytics schemas
+- `POST /api/postgres/query` - Execute custom SQL queries against PostgreSQL
 
 **Data Pipeline**:
 - `POST /api/connectors/create` - Configure new data connectors
@@ -260,21 +248,13 @@ The application includes **11 specialized services**:
 
 ### Required Environment Variables
 ```env
-# Database
+# Database (PostgreSQL for both application and analytics data)
 DATABASE_URL=postgresql://username:password@localhost:5432/database
 
 # AI Services  
 OPENAI_API_KEY=sk-...
 AZURE_OPENAI_KEY=your-azure-key
 AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
-
-# Snowflake Data Warehouse
-SNOWFLAKE_ACCOUNT=your-account
-SNOWFLAKE_USER=your-user
-SNOWFLAKE_ACCESS_TOKEN=your-token
-SNOWFLAKE_WAREHOUSE=your-warehouse
-SNOWFLAKE_DATABASE=MIAS_DATA_DB
-SNOWFLAKE_SCHEMA=CORE
 
 # Application
 SESSION_SECRET=your-secret-key
@@ -283,9 +263,8 @@ WORKSPACE_ID=your-workspace-id
 
 ### Service Dependencies
 - **Node.js 18+** - Main application runtime
-- **Python 3.8+** - Python services (Flask, Snowflake SDK)
-- **PostgreSQL** - Application database
-- **Snowflake Account** - Data warehouse (optional, has fallback)
+- **Python 3.8+** - Python connector services (Flask, psycopg2)
+- **PostgreSQL** - Unified database for application and analytics data
 
 ### Development Setup
 1. Clone repository and run `npm install`

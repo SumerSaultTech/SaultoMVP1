@@ -18,7 +18,7 @@ revenue_by_month AS (
         COUNT(CASE WHEN event_type = 'subscription_started' THEN 1 END) as new_subscriptions,
         COUNT(CASE WHEN event_type = 'subscription_lost' THEN 1 END) as churned_subscriptions
     FROM {{ ref('int_subscription_events') }}
-    WHERE event_date >= DATEADD('month', -24, CURRENT_DATE)
+    WHERE event_date >= CURRENT_DATE - INTERVAL '24 months'
     GROUP BY DATE_TRUNC('month', event_date)
 ),
 
@@ -33,7 +33,7 @@ churn_analysis AS (
             0
         ) as churn_rate
     FROM monthly_cohorts
-    WHERE cohort_month >= DATEADD('month', -12, CURRENT_DATE)
+    WHERE cohort_month >= CURRENT_DATE - INTERVAL '12 months'
     GROUP BY cohort_month
 ),
 
