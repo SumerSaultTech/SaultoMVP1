@@ -101,6 +101,65 @@
       "isNorthStar": false,
       "id": 3,
       "lastCalculatedAt": null
+    },
+    "4": {
+      "companyId": 1748544793859,
+      "name": "Annual Revenue",
+      "description": "Total revenue YTD",
+      "sqlQuery": "SELECT SUM(amount) as metric_value FROM analytics_company_1748544793859.int_won_opportunities",
+      "yearlyGoal": "3000000",
+      "category": "revenue",
+      "format": "currency",
+      "isNorthStar": false,
+      "id": 4,
+      "lastCalculatedAt": null,
+      "value": "0",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "isIncreasing": true
+    },
+    "5": {
+      "companyId": 1748544793859,
+      "name": "Annual Profit",
+      "description": "Net profit YTD (70% margin)",
+      "sqlQuery": "SELECT SUM(amount * 0.7) as metric_value FROM analytics_company_1748544793859.int_won_opportunities",
+      "yearlyGoal": "2000000",
+      "category": "profit",
+      "format": "currency",
+      "isNorthStar": true,
+      "id": 5,
+      "lastCalculatedAt": null,
+      "value": "0"
+    },
+    "6": {
+      "companyId": 1748544793859,
+      "name": "Customer Satisfaction Score",
+      "description": "Average customer satisfaction rating",
+      "sqlQuery": "SELECT 85 as current_value, 85 as yearly_goal",
+      "yearlyGoal": "85",
+      "category": "retention",
+      "format": "number",
+      "id": 6,
+      "lastCalculatedAt": null
     }
   }
 }

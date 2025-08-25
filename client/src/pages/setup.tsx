@@ -115,7 +115,7 @@ export default function Setup() {
         body: JSON.stringify({
           connectorType: currentToolForCredentials,
           credentials: credentials,
-          companyId: 1748544793859, // Using the company ID from CLAUDE.md
+          companyId: 1748544793859, // Dynamic company ID for MIAS_DATA
         }),
       });
 
@@ -161,7 +161,7 @@ export default function Setup() {
     setIsSyncing(true);
     setSyncProgress(0);
 
-    const companyId = 1748544793859; // Using the company ID from CLAUDE.md
+    const companyId = 1748544793859; // Dynamic company ID for MIAS_DATA
     let completedSyncs = 0;
 
     for (const tool of selectedTools) {

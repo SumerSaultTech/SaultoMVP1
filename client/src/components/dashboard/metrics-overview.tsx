@@ -434,78 +434,80 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
   };
 
+  // Performance multipliers for realistic business variations
+  const performanceMultipliers: Record<string, Record<number, number>> = {
+    "daily view": {
+      1: 1.1,   // ARR: Good daily performance
+      2: 0.9,   // MRR: Slightly behind today
+      3: 1.05,  // CAC: A bit higher today
+      4: 1.0,   // LTV: On track today
+      5: 1.3,   // Churn: Higher churn today
+      6: 1.1,   // NRR: Strong daily retention
+      7: 0.95,  // DAU: Slower today
+      8: 1.2,   // Conversion: Strong conversion today
+      9: 0.8,   // Deal size: Smaller deals today
+      10: 0.9,  // Sales cycle: Faster today
+      11: 1.02, // CSAT: Slightly better today
+      12: 1.1   // Adoption: Good daily progress
+    },
+    "weekly view": {
+      1: 1.3,   // ARR: Strong weekly performance
+      2: 0.8,   // MRR: Weak this week
+      3: 1.1,   // CAC: Slightly higher cost this week
+      4: 0.9,   // LTV: Lower this week
+      5: 1.4,   // Churn: Much worse this week
+      6: 1.2,   // NRR: Strong weekly retention
+      7: 1.1,   // DAU: Good week for users
+      8: 1.5,   // Conversion: Excellent week
+      9: 0.7,   // Deal size: Smaller deals this week
+      10: 0.8,  // Sales cycle: Faster this week (better)
+      11: 0.9,  // CSAT: Lower this week
+      12: 1.3   // Adoption: Great weekly adoption
+    },
+    "monthly view": {
+      1: 1.1,   // ARR: Good monthly growth
+      2: 0.95,  // MRR: Slightly behind this month
+      3: 1.05,  // CAC: A bit higher this month
+      4: 1.0,   // LTV: On track this month
+      5: 1.2,   // Churn: Bad month for retention
+      6: 1.1,   // NRR: Strong month
+      7: 0.9,   // DAU: Slower month
+      8: 1.2,   // Conversion: Strong conversion month
+      9: 0.85,  // Deal size: Smaller deals this month
+      10: 0.9,  // Sales cycle: Faster this month
+      11: 1.05, // CSAT: Slightly better
+      12: 1.1   // Adoption: Good monthly progress
+    },
+    "quarterly view": {
+      1: 1.05,  // ARR: Slightly ahead for quarter
+      2: 0.98,  // MRR: A bit behind quarterly target
+      3: 1.08,  // CAC: Higher costs this quarter
+      4: 0.95,  // LTV: Lower this quarter
+      5: 1.1,   // Churn: Higher churn this quarter
+      6: 1.08,  // NRR: Good quarterly retention
+      7: 0.95,  // DAU: Behind quarterly target
+      8: 1.15,  // Conversion: Excellent quarter
+      9: 0.9,   // Deal size: Smaller average deals
+      10: 0.85, // Sales cycle: Much faster quarter
+      11: 1.02, // CSAT: Slightly up
+      12: 1.05  // Adoption: Steady quarterly growth
+    }
+  };
+
   const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number, metric?: any) => {
-    // Use raw current value if available, otherwise parse formatted value
-    let yearly: number;
+    // If we have rawCurrentValue, use it directly - it's already period-specific from the API!
     if (metric?.rawCurrentValue) {
-      yearly = metric.rawCurrentValue;
-    } else {
-      // Add null safety check and fallback
-      if (!yearlyValue || typeof yearlyValue !== 'string') {
-        return 0;
-      }
-      yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+      const periodValue = metric.rawCurrentValue;
+      // Return raw API value directly for consistency with North Star Metrics
+      return periodValue;
     }
     
-    // Create realistic business scenarios where short-term performance differs from yearly
-    const performanceMultipliers: Record<string, Record<number, number>> = {
-      "daily view": {
-        1: 1.1,   // ARR: Good daily performance
-        2: 0.9,   // MRR: Slightly behind today
-        3: 1.05,  // CAC: A bit higher today
-        4: 1.0,   // LTV: On track today
-        5: 1.3,   // Churn: Higher churn today
-        6: 1.1,   // NRR: Strong daily retention
-        7: 0.95,  // DAU: Slower today
-        8: 1.2,   // Conversion: Strong conversion today
-        9: 0.8,   // Deal size: Smaller deals today
-        10: 0.9,  // Sales cycle: Faster today
-        11: 1.02, // CSAT: Slightly better today
-        12: 1.1   // Adoption: Good daily progress
-      },
-      "weekly view": {
-        1: 1.3,   // ARR: Strong weekly performance
-        2: 0.8,   // MRR: Weak this week
-        3: 1.1,   // CAC: Slightly higher cost this week
-        4: 0.9,   // LTV: Lower this week
-        5: 1.4,   // Churn: Much worse this week
-        6: 1.2,   // NRR: Strong weekly retention
-        7: 1.1,   // DAU: Good week for users
-        8: 1.5,   // Conversion: Excellent week
-        9: 0.7,   // Deal size: Smaller deals this week
-        10: 0.8,  // Sales cycle: Faster this week (better)
-        11: 0.9,  // CSAT: Lower this week
-        12: 1.3   // Adoption: Great weekly adoption
-      },
-      "monthly view": {
-        1: 1.1,   // ARR: Good monthly growth
-        2: 0.95,  // MRR: Slightly behind this month
-        3: 1.05,  // CAC: A bit higher this month
-        4: 1.0,   // LTV: On track this month
-        5: 1.2,   // Churn: Bad month for retention
-        6: 1.1,   // NRR: Strong month
-        7: 0.9,   // DAU: Slower month
-        8: 1.2,   // Conversion: Strong conversion month
-        9: 0.85,  // Deal size: Smaller deals this month
-        10: 0.9,  // Sales cycle: Faster this month
-        11: 1.05, // CSAT: Slightly better
-        12: 1.1   // Adoption: Good monthly progress
-      },
-      "quarterly view": {
-        1: 1.05,  // ARR: Slightly ahead for quarter
-        2: 0.98,  // MRR: A bit behind quarterly target
-        3: 1.08,  // CAC: Higher costs this quarter
-        4: 0.95,  // LTV: Lower this quarter
-        5: 1.1,   // Churn: Higher churn this quarter
-        6: 1.08,  // NRR: Good quarterly retention
-        7: 0.95,  // DAU: Behind quarterly target
-        8: 1.15,  // Conversion: Excellent quarter
-        9: 0.9,   // Deal size: Smaller average deals
-        10: 0.85, // Sales cycle: Much faster quarter
-        11: 1.02, // CSAT: Slightly up
-        12: 1.05  // Adoption: Steady quarterly growth
-      }
-    };
+    // Fallback: parse formatted value and apply time period division (legacy path)
+    let yearly: number;
+    if (!yearlyValue || typeof yearlyValue !== 'string') {
+      return 0;
+    }
+    yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
     
     const multiplier = performanceMultipliers[timePeriod.toLowerCase()]?.[metricId] || 1.0;
     
@@ -723,7 +725,15 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
                   {/* Chart */}
                   <div className="h-32 -mx-2">
-                    <MetricProgressChart metric={metric} timePeriod={timePeriod} />
+                    <MetricProgressChart 
+                      metric={{
+                        ...metric,
+                        // Pass raw values if available, so chart can handle yearly calculations
+                        rawCurrentValue: metric.rawCurrentValue,
+                        rawYearlyGoal: metric.rawYearlyGoal
+                      }} 
+                      timePeriod={timePeriod} 
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -828,7 +838,15 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
                     {/* Chart */}
                     <div className="h-32 -mx-2">
-                      <MetricProgressChart metric={metric} timePeriod={timePeriod} />
+                      <MetricProgressChart 
+                        metric={{
+                          ...metric,
+                          // Pass raw values if available, so chart can handle yearly calculations
+                          rawCurrentValue: metric.rawCurrentValue,
+                          rawYearlyGoal: metric.rawYearlyGoal
+                        }} 
+                        timePeriod={timePeriod} 
+                      />
                     </div>
                   </CardContent>
                 </Card>

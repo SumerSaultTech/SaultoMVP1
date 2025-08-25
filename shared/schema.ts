@@ -14,13 +14,13 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
-  companyId: integer("company_id").references(() => companies.id),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id),
   role: text("role").default("user"), // 'admin', 'user', 'viewer'
 });
 
 export const dataSources = pgTable("data_sources", {
   id: serial("id").primaryKey(),
-  companyId: integer("company_id").references(() => companies.id).notNull(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(), // 'salesforce', 'hubspot', 'quickbooks'
   status: text("status").notNull().default("disconnected"), // 'connected', 'syncing', 'error', 'disconnected'
@@ -39,13 +39,20 @@ export const dataSources = pgTable("data_sources", {
 
 export const sqlModels = pgTable("sql_models", {
   id: serial("id").primaryKey(),
-  companyId: integer("company_id").references(() => companies.id).notNull(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   name: text("name").notNull().unique(),
   layer: text("layer").notNull(), // 'stg', 'int', 'core'
   sqlContent: text("sql_content").notNull(),
   status: text("status").notNull().default("pending"), // 'deployed', 'pending', 'error'
   deployedAt: timestamp("deployed_at"),
   dependencies: text("dependencies").array().default([]),
+  sourceTable: text("source_table"), // Table this model reads from (for STG layer)
+  targetTable: text("target_table"), // Materialized table/view name this model creates
+  refreshFrequency: text("refresh_frequency").default("daily"), // 'real-time', 'hourly', 'daily', 'weekly'
+  lastRefreshedAt: timestamp("last_refreshed_at"),
+  executionOrder: integer("execution_order").default(100), // For dependency resolution
+  description: text("description"),
+  tags: text("tags").array().default([]), // For categorization and filtering
 });
 
 export const kpiMetrics = pgTable("kpi_metrics", {

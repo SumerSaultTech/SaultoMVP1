@@ -141,33 +141,61 @@ class OpenAIService {
     }
   }
 
-  async generateSQL(kpiDescription: string, availableTables: string[] = []): Promise<SqlGenerationResponse> {
+  async generateSQL(kpiDescription: string, availableTables: string[] = [], companyId?: number): Promise<SqlGenerationResponse> {
     try {
       if (!process.env.OPENAI_API_KEY) {
-        return this.getFallbackSQL(kpiDescription);
+        return this.getFallbackSQL(kpiDescription, companyId);
       }
 
       const tablesContext = availableTables.length > 0 
         ? `Available tables: ${availableTables.join(", ")}`
-        : `Available tables: core_customer_metrics, core_revenue_analytics, int_customer_unified, int_subscription_events, stg_salesforce__accounts, stg_hubspot__contacts, stg_quickbooks__customers`;
+        : `Available tables: core_metrics_dashboard, core_user_metrics (fallback - no dynamic discovery available)`;
+      
+      // Create dynamic table schema context based on available tables
+      let tableSchemaContext = "Table schemas (key fields):";
+      if (availableTables.length > 0) {
+        tableSchemaContext = this.buildTableSchemaContext(availableTables);
+      } else {
+        tableSchemaContext = `Table schemas (key fields):
+CORE LAYER (fallback):
+- core_metrics_dashboard: close_date, daily_revenue, daily_profit, cumulative_revenue (RUNNING SUM), cumulative_profit (RUNNING SUM), revenue_progress_pct, profit_progress_pct, day_label, week_label, month_label
+- core_user_metrics: metric_name, category, format, yearly_goal, current_value, progress_pct, calculated_at
+
+TIME-PERIOD QUERY PATTERNS:
+- Daily Running Sum: SUM(daily_column) OVER (ORDER BY close_date) 
+- Weekly Aggregation: SUM(daily_column) GROUP BY DATE_TRUNC('week', close_date)
+- Monthly Totals: SUM(daily_column) GROUP BY DATE_TRUNC('month', close_date)
+- Year-to-Date: WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)`;
+      }
 
       const prompt = `Generate a SQL query to calculate the KPI: "${kpiDescription}"
 
       Context:
-      - Data warehouse: Snowflake
+      - Data warehouse: PostgreSQL
+      - Company schema: analytics_company_${companyId}
       - ${tablesContext}
       
-      Table schemas (key fields):
-      - core_customer_metrics: customer_identifier, total_revenue, customer_segment, customer_status, health_score
-      - core_revenue_analytics: current_arr, current_mrr, avg_monthly_churn_rate, avg_customer_ltv
-      - int_customer_unified: unified_customer_id, source_system, customer_name, created_at
-      - int_subscription_events: customer_identifier, event_type, amount, event_date
+      ${tableSchemaContext}
 
       Requirements:
-      1. Write efficient, readable SQL
-      2. Use appropriate aggregations and filters
-      3. Include comments explaining the logic
-      4. Return the query, explanation, dependencies, and complexity level
+      1. Use table names with company schema prefix: analytics_company_${companyId}
+      2. Write efficient PostgreSQL queries with proper aggregations
+      3. For time-based metrics, use appropriate date filters and DATE_TRUNC functions
+      4. Include comments explaining business logic
+      5. Follow the layered architecture: prefer CORE layer for final metrics, INT layer for business logic, STG layer for cleaned source data
+      6. Only use tables that are available in the provided table list
+      
+      TIME-PERIOD AWARE CALCULATIONS:
+      7. For metrics like "annual revenue", "total profit", etc., generate RUNNING SUM queries using window functions
+      8. Use cumulative patterns: SUM(column) OVER (ORDER BY date_column) for running totals
+      9. Support dashboard time period switching (Daily/Weekly/Monthly/Yearly views)
+      10. For period-based queries, group by appropriate time periods using DATE_TRUNC
+      
+      EXAMPLE PATTERNS:
+      - Running Annual Revenue: SUM(daily_revenue) OVER (ORDER BY close_date) as cumulative_revenue
+      - Time Period Filtering: WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
+      - Period Grouping: GROUP BY DATE_TRUNC('month', close_date)
+      - Prefer existing cumulative columns when available (cumulative_revenue, cumulative_profit, etc.)
 
       Respond in JSON format with: sql, explanation, dependencies (array), complexity (Simple/Moderate/Complex)`;
 
@@ -190,7 +218,7 @@ class OpenAIService {
       };
     } catch (error) {
       console.error("OpenAI SQL generation error:", error);
-      return this.getFallbackSQL(kpiDescription);
+      return this.getFallbackSQL(kpiDescription, companyId);
     }
   }
 
@@ -224,6 +252,87 @@ class OpenAIService {
     }
 
     return undefined;
+  }
+
+  private buildTableSchemaContext(availableTables: string[]): string {
+    const tableSchemas = {
+      // STAGING LAYER
+      'stg_salesforce_opportunity': 'id, opportunity_name, amount, stage_name, close_date, probability, account_id, owner_id, opportunity_type, lead_source, created_date, source_system, company_id, is_valid_record',
+      'stg_hubspot_deal': 'id, opportunity_name, amount, stage_name, close_date, probability, pipeline, opportunity_type, lead_source, created_date, source_system, company_id, is_valid_record',
+      'stg_salesforce_lead': 'id, firstname, lastname, email, company, status, lead_source, created_date, converted_date, source_system, company_id, is_valid_record',
+      'stg_hubspot_contact': 'id, email, firstname, lastname, company, lead_source, created_date, source_system, company_id, is_valid_record',
+      
+      // INTERMEDIATE LAYER
+      'int_won_opportunities': 'id, opportunity_name, amount, stage_name, close_date, probability, opportunity_type, lead_source, created_date, source_system, company_id',
+      'int_revenue_by_period': 'close_date, day_period, week_period, month_period, quarter_period, year_period, daily_revenue, daily_deal_count, cumulative_revenue (RUNNING SUM), cumulative_deals (RUNNING SUM)',
+      'int_profit_by_period': 'close_date, daily_revenue, daily_profit, cumulative_revenue (RUNNING SUM), cumulative_profit (RUNNING SUM), daily_revenue_goal, daily_profit_goal',
+      'int_lead_conversion': 'month_period, total_leads, converted_leads, qualified_leads, conversion_rate_pct, qualification_rate_pct',
+      
+      // CORE LAYER
+      'core_metrics_dashboard': 'close_date, daily_revenue, daily_profit, cumulative_revenue (RUNNING SUM), cumulative_profit (RUNNING SUM), revenue_progress_pct, profit_progress_pct, day_label, week_label, month_label',
+      'core_current_metrics': 'period_type (daily/weekly/monthly/yearly), current_revenue, revenue_goal, current_profit, profit_goal, revenue_progress_pct, profit_progress_pct, total_deals, avg_deal_size',
+      'core_user_metrics': 'metric_name, category, format, yearly_goal, current_value, progress_pct, calculated_at',
+      'core_timeseries_data': 'time_period (daily/weekly/monthly), period_date, period_label, revenue_actual, revenue_goal, profit_actual, profit_goal, revenue_progress_pct, profit_progress_pct'
+    };
+
+    const layers = {
+      staging: [] as string[],
+      intermediate: [] as string[],
+      core: [] as string[]
+    };
+
+    // Categorize tables by layer
+    availableTables.forEach(table => {
+      if (table.startsWith('stg_')) {
+        layers.staging.push(table);
+      } else if (table.startsWith('int_')) {
+        layers.intermediate.push(table);
+      } else if (table.startsWith('core_')) {
+        layers.core.push(table);
+      }
+    });
+
+    let context = "Table schemas (key fields):";
+    
+    if (layers.staging.length > 0) {
+      context += "\nSTAGING LAYER:";
+      layers.staging.forEach(table => {
+        const schema = tableSchemas[table as keyof typeof tableSchemas];
+        if (schema) {
+          context += `\n- ${table}: ${schema}`;
+        }
+      });
+    }
+    
+    if (layers.intermediate.length > 0) {
+      context += "\nINTERMEDIATE LAYER:";
+      layers.intermediate.forEach(table => {
+        const schema = tableSchemas[table as keyof typeof tableSchemas];
+        if (schema) {
+          context += `\n- ${table}: ${schema}`;
+        }
+      });
+    }
+    
+    if (layers.core.length > 0) {
+      context += "\nCORE LAYER:";
+      layers.core.forEach(table => {
+        const schema = tableSchemas[table as keyof typeof tableSchemas];
+        if (schema) {
+          context += `\n- ${table}: ${schema}`;
+        }
+      });
+    }
+
+    // Add time-period query patterns to dynamic context
+    context += "\n\nTIME-PERIOD QUERY PATTERNS:";
+    context += "\n- Daily Running Sum: SUM(daily_column) OVER (ORDER BY close_date)";
+    context += "\n- Weekly Aggregation: SUM(daily_column) GROUP BY DATE_TRUNC('week', close_date)";
+    context += "\n- Monthly Totals: SUM(daily_column) GROUP BY DATE_TRUNC('month', close_date)";
+    context += "\n- Year-to-Date: WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)";
+    context += "\n- Cumulative calculations are preferred for dashboard metrics";
+
+    return context;
   }
 
   private getFallbackResponse(userMessage: string): ChatResponse {
@@ -340,70 +449,100 @@ class OpenAIService {
     };
   }
 
-  private getFallbackSQL(kpiDescription: string): SqlGenerationResponse {
+  private getFallbackSQL(kpiDescription: string, companyId?: number): SqlGenerationResponse {
     const lowerDesc = kpiDescription.toLowerCase();
 
-    if (lowerDesc.includes("arr") || lowerDesc.includes("annual recurring revenue")) {
+    if (lowerDesc.includes("arr") || lowerDesc.includes("annual recurring revenue") || lowerDesc.includes("revenue")) {
       return {
-        sql: `-- Annual Recurring Revenue (ARR) calculation
+        sql: `-- Annual Recurring Revenue (ARR) with running sum calculation
 SELECT 
-    current_arr as annual_recurring_revenue,
-    current_mrr * 12 as calculated_arr,
-    DATE_TRUNC('month', calculated_at) as calculation_month
-FROM core_revenue_analytics
-ORDER BY calculation_month DESC
-LIMIT 1;`,
-        explanation: "This query calculates ARR by retrieving the current annual recurring revenue from the core revenue analytics table.",
-        dependencies: ["core_revenue_analytics"],
+    close_date,
+    daily_revenue,
+    SUM(daily_revenue) OVER (ORDER BY close_date) as cumulative_annual_revenue,
+    COUNT(*) OVER (ORDER BY close_date) as cumulative_deals,
+    -- Time period groupings for dashboard flexibility
+    DATE_TRUNC('month', close_date) as month_period,
+    DATE_TRUNC('week', close_date) as week_period
+FROM analytics_company_${companyId}.int_revenue_by_period
+WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
+  AND close_date <= CURRENT_DATE
+ORDER BY close_date;`,
+        explanation: "This query calculates annual recurring revenue as a running sum of daily revenue throughout the current year. It provides cumulative totals that work with dashboard time period switching and follows the layered architecture by using the intermediate revenue table.",
+        dependencies: ["int_revenue_by_period"],
         complexity: "Simple"
       };
     }
 
-    if (lowerDesc.includes("churn") || lowerDesc.includes("churn rate")) {
+    if (lowerDesc.includes("churn") || lowerDesc.includes("churn rate") || lowerDesc.includes("conversion")) {
       return {
-        sql: `-- Monthly churn rate calculation
+        sql: `-- Lead conversion rate calculation
 SELECT 
-    avg_monthly_churn_rate * 100 as churn_rate_percentage,
-    DATE_TRUNC('month', calculated_at) as calculation_month
-FROM core_revenue_analytics
-ORDER BY calculation_month DESC
-LIMIT 1;`,
-        explanation: "This query retrieves the average monthly churn rate from the core revenue analytics table.",
-        dependencies: ["core_revenue_analytics"],
+    month_period,
+    total_leads,
+    converted_leads,
+    CASE 
+        WHEN total_leads > 0 
+        THEN ROUND((converted_leads::NUMERIC / total_leads::NUMERIC) * 100, 2)
+        ELSE 0 
+    END as conversion_rate_pct
+FROM analytics_company_${companyId}.int_lead_conversion
+WHERE month_period >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '12 months'
+ORDER BY month_period DESC;`,
+        explanation: "This query calculates lead conversion rates by month using the intermediate lead conversion table.",
+        dependencies: ["int_lead_conversion"],
         complexity: "Simple"
       };
     }
 
-    if (lowerDesc.includes("ltv") || lowerDesc.includes("lifetime value")) {
+    if (lowerDesc.includes("ltv") || lowerDesc.includes("lifetime value") || lowerDesc.includes("profit")) {
       return {
-        sql: `-- Customer Lifetime Value calculation
+        sql: `-- Profit analysis with running sum and time period support
 SELECT 
-    AVG(total_revenue) as average_ltv,
-    customer_segment,
-    COUNT(*) as customer_count
-FROM core_customer_metrics
-WHERE customer_status = 'active'
-GROUP BY customer_segment
-ORDER BY average_ltv DESC;`,
-        explanation: "This query calculates average customer lifetime value by segment for active customers.",
-        dependencies: ["core_customer_metrics"],
+    close_date,
+    daily_profit,
+    SUM(daily_profit) OVER (ORDER BY close_date) as cumulative_profit,
+    daily_revenue,
+    -- Calculate running profit margin
+    CASE 
+        WHEN SUM(daily_revenue) OVER (ORDER BY close_date) > 0 
+        THEN ROUND((SUM(daily_profit) OVER (ORDER BY close_date) / SUM(daily_revenue) OVER (ORDER BY close_date)) * 100, 2)
+        ELSE 0 
+    END as cumulative_profit_margin_pct,
+    -- Time period groupings
+    DATE_TRUNC('month', close_date) as month_period,
+    DATE_TRUNC('quarter', close_date) as quarter_period
+FROM analytics_company_${companyId}.int_profit_by_period
+WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
+  AND close_date <= CURRENT_DATE
+ORDER BY close_date;`,
+        explanation: "This query calculates profit metrics with running sums and profit margin analysis. It provides cumulative totals and percentages that work across different dashboard time periods, following the layered architecture pattern.",
+        dependencies: ["int_profit_by_period"],
         complexity: "Moderate"
       };
     }
 
     // Generic fallback
     return {
-      sql: `-- Generic KPI calculation for: ${kpiDescription}
--- Please modify this query based on your specific requirements
+      sql: `-- Generic KPI calculation with running sum for: ${kpiDescription}
+-- Adaptable template for most cumulative metrics
 
 SELECT 
-    COUNT(*) as total_records,
-    DATE_TRUNC('month', created_at) as period
-FROM int_customer_unified
-GROUP BY period
-ORDER BY period DESC;`,
-      explanation: `This is a template query for "${kpiDescription}". You may need to modify it based on your specific requirements and available data columns.`,
-      dependencies: ["int_customer_unified"],
+    close_date,
+    daily_revenue as daily_value,
+    SUM(daily_revenue) OVER (ORDER BY close_date) as cumulative_value,
+    -- Time period groupings for dashboard flexibility
+    DATE_TRUNC('day', close_date) as day_period,
+    DATE_TRUNC('week', close_date) as week_period,
+    DATE_TRUNC('month', close_date) as month_period,
+    DATE_TRUNC('quarter', close_date) as quarter_period,
+    -- Running averages
+    AVG(daily_revenue) OVER (ORDER BY close_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) as seven_day_avg
+FROM analytics_company_${companyId}.core_metrics_dashboard
+WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
+  AND close_date <= CURRENT_DATE
+ORDER BY close_date;`,
+      explanation: `This is a generic template query for "${kpiDescription}" that provides running sum calculations and time period groupings. It can be adapted for most cumulative business metrics and supports dashboard time period switching.`,
+      dependencies: ["core_metrics_dashboard"],
       complexity: "Simple"
     };
   }

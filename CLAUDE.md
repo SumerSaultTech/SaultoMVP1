@@ -171,7 +171,7 @@ The application includes **11 specialized services**:
 2. **Standardized Interface**: `extract()`, `transform()`, `load()` methods
 3. **Configuration Management**: JSON-based connector configurations
 4. **Error Handling**: Built-in retry logic and error reporting
-5. **Data Validation**: Schema validation before Snowflake loading
+5. **Data Validation**: Schema validation before PostgreSQL loading
 
 ### Connector Workflow
 1. **Setup**: `/api/connectors/create` configures new connectors with credentials

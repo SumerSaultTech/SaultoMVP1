@@ -6,6 +6,7 @@ import { postgresAnalyticsService } from "./services/postgres-analytics";
 import { openaiService } from "./services/openai";
 import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
+import { sqlModelEngine } from "./services/sql-model-engine";
 import { spawn } from 'child_process';
 import multer from 'multer';
 import path from 'path';
@@ -87,15 +88,6 @@ const readFileContent = (filename: string): string => {
 // Global company storage to persist across hot reloads
 const companiesArray: any[] = [
   {
-    id: 1,
-    name: "Demo Company", 
-    slug: "demo_company",
-    databaseName: "DEMO_COMPANY_DB",
-    createdAt: "2024-01-15",
-    userCount: 5,
-    status: "active"
-  },
-  {
     id: 1748544793859,
     name: "MIAS_DATA",
     slug: "mias_data", 
@@ -103,8 +95,38 @@ const companiesArray: any[] = [
     createdAt: "2025-05-29",
     userCount: 0,
     status: "active"
+  },
+  {
+    id: 1,
+    name: "Demo Company", 
+    slug: "demo_company",
+    databaseName: "DEMO_COMPANY_DB",
+    createdAt: "2024-01-15",
+    userCount: 5,
+    status: "active"
   }
 ];
+
+// Helper function to get company ID dynamically
+async function getCompanyId(req: any): Promise<number> {
+  // First try to get from session
+  if (req.session?.selectedCompany?.id) {
+    return req.session.selectedCompany.id;
+  }
+  
+  // If no session company, get the first available company
+  try {
+    if (companiesArray && companiesArray.length > 0) {
+      const companyId = companiesArray[0].id;
+      console.log(`🏢 Using first available company: ${companiesArray[0].name} (ID: ${companyId})`);
+      return companyId;
+    }
+  } catch (error) {
+    console.error("❌ Failed to get companies:", error);
+  }
+  
+  throw new Error("No companies available. Please create a company first.");
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -320,8 +342,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Deploy models
   app.post("/api/sql-models/deploy", async (req, res) => {
     try {
-      // TODO: Replace with working SQL deployment service
-      const result = { success: true, modelsDeployed: 0, message: "SQL deployment service temporarily disabled" };
+      const companyId = req.body.companyId ? parseInt(req.body.companyId) : await getCompanyId(req);
+      console.log(`🏗️ Starting SQL model deployment for company ${companyId}`);
+      
+      // Import the SQL model engine
+      const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+      
+      // Execute all models for the company
+      const results = await sqlModelEngine.executeModelsForCompany(companyId);
+      
+      const successfulDeployments = results.filter(r => r.success).length;
+      const failedDeployments = results.filter(r => !r.success).length;
+      
+      console.log(`✅ SQL deployment completed: ${successfulDeployments} successful, ${failedDeployments} failed`);
       
       // Update setup status
       const models = await storage.getSqlModels();
@@ -330,6 +363,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         modelsDeployed: deployedCount,
         totalModels: models.length,
       });
+
+      const result = { 
+        success: failedDeployments === 0, 
+        modelsDeployed: successfulDeployments,
+        modelsTotal: results.length,
+        failures: failedDeployments,
+        message: failedDeployments === 0 
+          ? `Successfully deployed ${successfulDeployments} SQL models` 
+          : `Deployed ${successfulDeployments} models with ${failedDeployments} failures`,
+        results: results
+      };
 
       res.json(result);
     } catch (error) {
@@ -345,7 +389,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // KPI Metrics
   app.get("/api/kpi-metrics", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const companyId = await getCompanyId(req);
+      const metrics = await storage.getKpiMetrics(companyId);
       res.json(metrics);
     } catch (error) {
       res.status(500).json({ message: "Failed to get KPI metrics" });
@@ -356,10 +401,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/dashboard/metrics-data", async (req, res) => {
     try {
       console.log("=== Dashboard metrics data request ===");
-      const timePeriod = req.query.timePeriod as string || 'ytd';
-      console.log(`Time period filter: ${timePeriod}`);
+      const rawTimePeriod = req.query.timePeriod as string || 'ytd';
       
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      // Map frontend time period names to database time period names
+      const timePeriodMap: Record<string, string> = {
+        'Monthly View': 'monthly',
+        'Weekly View': 'weekly', 
+        'Quarterly View': 'quarterly',
+        'Yearly View': 'yearly',
+        'Daily View': 'daily',
+        'ytd': 'yearly',
+        'monthly': 'monthly',
+        'weekly': 'weekly',
+        'quarterly': 'quarterly',
+        'yearly': 'yearly',
+        'daily': 'daily'
+      };
+      
+      const timePeriod = timePeriodMap[rawTimePeriod] || 'monthly';
+      console.log(`Time period filter: ${rawTimePeriod} -> ${timePeriod}`);
+      
+      const companyId = await getCompanyId(req);
+      const metrics = await storage.getKpiMetrics(companyId);
       console.log(`Found ${metrics.length} metrics for dashboard`);
       
       const dashboardData = [];
@@ -369,7 +432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (metric.sqlQuery) {
           try {
             // Use calculateMetric with the time period parameter and metric ID
-            const companyId = req.session?.selectedCompany?.id || 1748544793859;
+            const companyId = await getCompanyId(req);
             const dashboardResult = await postgresAnalyticsService.calculateMetric(metric.name, companyId, timePeriod, metric.id, metric.sqlQuery);
             
             if (dashboardResult) {
@@ -402,11 +465,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/kpi-metrics", async (req, res) => {
     try {
       // Use MIAS_DATA company ID for metric creation
-      const dataWithCompanyId = { ...req.body, companyId: 1748544793859 };
+      const companyId = await getCompanyId(req);
+      const dataWithCompanyId = { ...req.body, companyId: companyId };
       console.log("Creating metric for MIAS_DATA company:", JSON.stringify(dataWithCompanyId, null, 2));
       const validatedData = insertKpiMetricSchema.parse(dataWithCompanyId);
       const metric = await storage.createKpiMetric(validatedData);
       console.log("Successfully saved metric:", metric.name);
+
+      // If metric has SQL query, create corresponding SQL model in INT layer and execute it
+      if (metric.sqlQuery && metric.sqlQuery.trim()) {
+        try {
+          console.log(`🔄 Creating INT layer SQL model for metric: ${metric.name}`);
+          
+          // Create SQL model for INT layer
+          const sqlModelName = `int_metric_${metric.name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
+          const sqlModel = await storage.createSqlModel({
+            companyId: metric.companyId,
+            name: sqlModelName,
+            layer: 'int',
+            sqlContent: metric.sqlQuery,
+            sourceTable: 'stg_*', // Assumes it can read from staging tables
+            targetTable: sqlModelName,
+            executionOrder: 200, // INT layer execution order
+            description: `User-defined metric: ${metric.description || metric.name}`,
+            tags: ['int', 'user_metric', 'auto_generated']
+          });
+
+          console.log(`✅ Created SQL model: ${sqlModelName}`);
+
+          // Execute the SQL model immediately
+          console.log(`🚀 Executing SQL model for metric: ${metric.name}`);
+          const executionResult = await sqlModelEngine.executeModel(metric.companyId, sqlModel);
+          
+          if (executionResult.success) {
+            console.log(`✅ Successfully executed SQL model for metric: ${metric.name}`);
+            
+            // Note: lastCalculatedAt is updated automatically during SQL model execution
+
+            // Update CORE layer user metrics to include new metric
+            console.log(`🔄 Updating CORE layer user metrics to include new metric`);
+            await sqlModelEngine.updateCoreUserMetrics(metric.companyId);
+            
+            // Trigger CORE layer refresh to include new metric
+            console.log(`🔄 Refreshing CORE layer to include new metric`);
+            await sqlModelEngine.executeModelsForCompany(metric.companyId, 'core');
+            
+          } else {
+            console.error(`❌ Failed to execute SQL model for metric: ${metric.name}`, executionResult.error);
+          }
+
+        } catch (sqlError) {
+          console.error(`❌ Error creating/executing SQL model for metric: ${metric.name}`, sqlError);
+          // Don't fail the metric creation, just log the SQL execution failure
+        }
+      }
+
       res.json(metric);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -461,7 +574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const metricId = parseInt(req.params.id);
       const metric = await storage.getKpiMetric(metricId);
-      const companyId = req.session?.selectedCompany?.id || 1;
+      const companyId = await getCompanyId(req);
       const result = await postgresAnalyticsService.calculateMetric(metric.name, companyId, 'monthly', metric.id);
       res.json(result);
     } catch (error) {
@@ -472,7 +585,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/kpi-metrics/calculate-all", async (req, res) => {
     try {
-      const companyId = 1748544793859; // MIAS_DATA company ID
+      const companyId = await getCompanyId(req);
       // For now, return empty results - would need to implement calculateAllMetrics in PostgreSQL service
       const results = [];
       res.json(results);
@@ -484,7 +597,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/kpi-metrics/stale", async (req, res) => {
     try {
-      const companyId = 1748544793859; // MIAS_DATA company ID
+      const companyId = await getCompanyId(req);
       // For now, return empty stale metrics - would need to implement in PostgreSQL service
       const staleMetrics = [];
       res.json({ staleMetrics });
@@ -527,7 +640,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get list of tables from PostgreSQL analytics schemas
   app.get("/api/postgres/tables", async (req, res) => {
     try {
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = await getCompanyId(req); // Use MIAS_DATA company ID
       const tables = await postgresAnalyticsService.getAvailableTables(companyId);
       
       res.json(tables.map(tableName => ({
@@ -548,7 +661,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/postgres/columns/:tableName", async (req, res) => {
     try {
       const { tableName } = req.params;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = await getCompanyId(req); // Use MIAS_DATA company ID
       
       const columns = await postgresAnalyticsService.getTableSchema(tableName, companyId);
       res.json(columns);
@@ -567,7 +680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { tableName } = req.params;
       const { limit } = req.query;
       const limitValue = limit ? parseInt(limit as string) : 100;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = await getCompanyId(req); // Use MIAS_DATA company ID
       
       const data = await postgresAnalyticsService.getTableData(tableName, companyId, limitValue);
       
@@ -590,7 +703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/postgres/query", async (req, res) => {
     try {
       const { sql } = req.body;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = await getCompanyId(req); // Use MIAS_DATA company ID
       
       if (!sql) {
         return res.status(400).json({
@@ -645,7 +758,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Metric has no SQL query defined" });
       }
 
-      const companyId = req.session?.selectedCompany?.id || 1;
+      const companyId = await getCompanyId(req);
       const dashboardData = await postgresAnalyticsService.calculateMetric(metric.name, companyId, 'monthly', metric.id);
       
       if (!dashboardData) {
@@ -661,13 +774,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const companyId = await getCompanyId(req);
+      const metrics = await storage.getKpiMetrics(companyId);
       const results = [];
 
       for (const metric of metrics) {
         if (metric.sqlQuery) {
           try {
-            const companyId = req.session?.selectedCompany?.id || 1748544793859;
+            const companyId = await getCompanyId(req);
             const result = await postgresAnalyticsService.executeQuery(metric.sqlQuery, companyId);
             await storage.updateKpiMetric(metric.id, {
               value: result.data?.[0]?.value || "0",
@@ -688,7 +802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chat Messages
   app.get("/api/chat-messages", async (req, res) => {
     try {
-      const companyId = 1748544793859; // MIAS_DATA company ID
+      const companyId = await getCompanyId(req);
       const allMessages = await storage.getChatMessages(companyId);
       
       console.log(`📥 Raw messages from DB: ${allMessages.length}`);
@@ -792,7 +906,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Try to get conversation history from storage
       let conversationHistory: any[] = [];
       try {
-        const companyId = 1748544793859; // MIAS_DATA company ID
+        const companyId = await getCompanyId(req);
         const recentMessages = await storage.getChatMessages(companyId);
         
         // Convert to format expected by AI service
@@ -813,14 +927,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createChatMessage({
           role: "user",
           content: message,
-          metadata: { companyId: 1748544793859, userId: 1 }
+          metadata: { companyId: await getCompanyId(req), userId: 1 }
         });
         
         // Save AI response
         await storage.createChatMessage({
           role: "assistant", 
           content: aiResponse.content,
-          metadata: { companyId: 1748544793859, userId: 1, source: aiResponse.metadata?.source || "openai" }
+          metadata: { companyId: await getCompanyId(req), userId: 1, source: aiResponse.metadata?.source || "openai" }
         });
       } catch (storageError) {
         console.warn("Could not save chat message to storage:", storageError);
@@ -876,7 +990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get conversation history from storage
       let conversationHistory: any[] = [];
       try {
-        const companyId = 1748544793859; // MIAS_DATA company ID
+        const companyId = await getCompanyId(req);
         const recentMessages = await storage.getChatMessages(companyId);
         
         // Convert to format expected by AI service
@@ -988,9 +1102,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/assistant/generate-sql", async (req, res) => {
     try {
       const { kpiDescription, tables } = req.body;
-      const sql = await openaiService.generateSQL(kpiDescription, tables);
+      const companyId = await getCompanyId(req); // Use default company ID
+      
+      // Dynamically fetch available tables for this company if none provided
+      let availableTables = tables;
+      if (!availableTables || availableTables.length === 0) {
+        console.log(`🔍 Discovering available tables for company ${companyId}`);
+        availableTables = await postgresAnalyticsService.getAvailableTables(companyId);
+        console.log(`✅ Found ${availableTables.length} tables:`, availableTables);
+      }
+      
+      const sql = await openaiService.generateSQL(kpiDescription, availableTables, companyId);
       res.json({ sql });
     } catch (error) {
+      console.error("SQL generation error:", error);
       res.status(500).json({ message: "Failed to generate SQL" });
     }
   });
@@ -1064,8 +1189,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Metric ID and time period are required" });
       }
 
-      const companyId = req.session?.selectedCompany?.id || 1;
-      const timeSeriesData = await postgresAnalyticsService.getTimeSeriesData("Sample Metric", companyId, timePeriod);
+      const companyId = await getCompanyId(req);
+      
+      // Map metric ID to metric name
+      const metricNameMap: Record<number, string> = {
+        1: "Annual Revenue",
+        2: "Annual Profit"
+      };
+      
+      const metricName = metricNameMap[metricId] || "Annual Revenue";
+      console.log(`Fetching time series for metric: ${metricName} (ID: ${metricId}), period: ${timePeriod}`);
+      
+      const timeSeriesData = await postgresAnalyticsService.getTimeSeriesData(metricName, companyId, timePeriod);
       res.json(timeSeriesData);
     } catch (error) {
       console.error("Error fetching time series data:", error);
@@ -1163,7 +1298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/metrics/ai/define", async (req, res) => {
     try {
       const { metricName, businessContext } = req.body;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID as default
+      const companyId = await getCompanyId(req); // Use MIAS_DATA company ID as default
       
       if (!metricName) {
         return res.status(400).json({ error: "Metric name is required" });
@@ -1467,6 +1602,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Removed Snowflake debug endpoint - no longer needed with PostgreSQL
+
+  // Execute pipeline for a specific company
+  app.post("/api/pipeline/execute/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { layer } = req.body; // Optional: execute specific layer only
+      
+      const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+      
+      let result;
+      if (layer) {
+        // Execute specific layer only
+        const layerResults = await sqlModelEngine.executeModelsForCompany(companyId, layer);
+        result = {
+          success: layerResults.every(r => r.success),
+          results: layerResults,
+          totalTime: layerResults.reduce((sum, r) => sum + (r.executionTime || 0), 0)
+        };
+      } else {
+        // Execute complete pipeline: STG → INT → CORE
+        result = await sqlModelEngine.executeCompletePipeline(companyId);
+      }
+      
+      // Log pipeline activity
+      await storage.createPipelineActivity({
+        type: "deploy",
+        description: `Pipeline execution ${result.success ? 'completed' : 'failed'} for company ${companyId}${layer ? ` (${layer} layer)` : ''}`,
+        status: result.success ? "success" : "error",
+        metadata: { companyId, layer, executionTime: result.totalTime, modelCount: result.results.length }
+      });
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Pipeline execution failed:', error);
+      await storage.createPipelineActivity({
+        type: "error",
+        description: `Pipeline execution failed: ${error.message}`,
+        status: "error",
+      });
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get current metrics from CORE layer
+  app.get("/api/metrics/core/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const timePeriod = req.query.timePeriod as string || 'monthly';
+      
+      const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+      const metrics = await sqlModelEngine.getCurrentMetrics(companyId, timePeriod);
+      
+      res.json(metrics);
+    } catch (error) {
+      console.error('Failed to get CORE metrics:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get time series from CORE layer
+  app.get("/api/timeseries/core/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const timePeriod = req.query.timePeriod as string || 'monthly';
+      
+      const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+      const timeseries = await sqlModelEngine.getTimeSeriesData(companyId, timePeriod);
+      
+      res.json(timeseries);
+    } catch (error) {
+      console.error('Failed to get CORE time series:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get lifetime metrics for historical context
+  app.get("/api/metrics/lifetime/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+      const lifetimeMetrics = await sqlModelEngine.getLifetimeMetrics(companyId);
+      
+      res.json(lifetimeMetrics);
+    } catch (error) {
+      console.error('Failed to get lifetime metrics:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get year-over-year growth data
+  app.get("/api/metrics/growth/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+      const growthData = await sqlModelEngine.getYearOverYearGrowth(companyId);
+      
+      res.json(growthData);
+    } catch (error) {
+      console.error('Failed to get YoY growth data:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
