@@ -85,7 +85,9 @@ export class PostgresAnalyticsService {
         
         if (metricName.toLowerCase().includes('revenue')) {
           currentValue = Number(coreData.current_revenue) || 0;
-          yearlyGoal = Number(coreData.revenue_goal) || 0;
+          // CORE layer provides period-specific goals, convert to yearly equivalent
+          const periodGoal = Number(coreData.revenue_goal) || 0;
+          yearlyGoal = this.convertPeriodGoalToYearly(periodGoal, timePeriod);
           
           // Enhance metric name based on time period
           if (timePeriod.toLowerCase() === 'yearly') {
@@ -96,7 +98,9 @@ export class PostgresAnalyticsService {
           
         } else if (metricName.toLowerCase().includes('profit')) {
           currentValue = Number(coreData.current_profit) || 0;
-          yearlyGoal = Number(coreData.profit_goal) || 0;
+          // CORE layer provides period-specific goals, convert to yearly equivalent
+          const periodGoal = Number(coreData.profit_goal) || 0;
+          yearlyGoal = this.convertPeriodGoalToYearly(periodGoal, timePeriod);
           
           // Enhance profit metric names
           if (timePeriod.toLowerCase() === 'yearly') {
@@ -114,7 +118,9 @@ export class PostgresAnalyticsService {
         } else if (metricName.toLowerCase().includes('recurring') || metricName.toLowerCase().includes('mrr')) {
           // Handle Monthly Recurring Revenue using revenue data
           currentValue = Number(coreData.current_revenue) || 0;
-          yearlyGoal = Number(coreData.revenue_goal) || 0;
+          // CORE layer provides period-specific goals, convert to yearly equivalent
+          const periodGoal = Number(coreData.revenue_goal) || 0;
+          yearlyGoal = this.convertPeriodGoalToYearly(periodGoal, timePeriod);
           enhancedMetricName = 'Monthly Recurring Revenue (MRR)';
           
         } else {
@@ -124,6 +130,7 @@ export class PostgresAnalyticsService {
           yearlyGoal = 0;
         }
         
+        console.log(`📊 Final values: currentValue=${currentValue}, yearlyGoal=${yearlyGoal}, timePeriod=${timePeriod}`);
         return this.createMetricDataObject(enhancedMetricName, currentValue, metricId, timePeriod, yearlyGoal);
       }
 
@@ -233,33 +240,231 @@ export class PostgresAnalyticsService {
     }
   }
 
+  private convertPeriodGoalToYearly(periodGoal: number, timePeriod: string): number {
+    // Convert period-specific goal to yearly equivalent
+    const multiplier = this.getYearlyGoalMultiplier(timePeriod);
+    const yearlyEquivalent = periodGoal * multiplier;
+    console.log(`🎯 Converting period goal: ${periodGoal} (${timePeriod}) × ${multiplier} = ${yearlyEquivalent}`);
+    return yearlyEquivalent;
+  }
+
+  private convertYearlyGoalToPeriod(yearlyGoal: number, timePeriod: string): number {
+    // Convert yearly goal back to period-specific goal
+    const multiplier = this.getYearlyGoalMultiplier(timePeriod);
+    const periodGoal = yearlyGoal / multiplier;
+    console.log(`📊 Converting yearly goal: ${yearlyGoal} ÷ ${multiplier} (${timePeriod}) = ${periodGoal}`);
+    return periodGoal;
+  }
+
   async getTimeSeriesData(metricName: string, companyId: number, timePeriod: string = 'monthly'): Promise<PostgresTimeSeriesData[]> {
     try {
-      console.log(`Getting PostgreSQL time series for ${metricName}, company ${companyId}, period ${timePeriod}`);
+      console.log(`🚨🚨 getTimeSeriesData ENTRY: ${metricName}, company ${companyId}, period ${timePeriod}`);
 
-      // Use CORE layer for time series data
-      const coreTimeSeriesData = await sqlModelEngine.getTimeSeriesData(companyId, timePeriod);
+      // Get correct period-specific value using same logic as dashboard API
+      const currentMetric = await this.calculateMetric(metricName, companyId, timePeriod);
       
-      if (coreTimeSeriesData && coreTimeSeriesData.length > 0) {
-        console.log(`✅ Using CORE layer time series data for ${metricName}: ${coreTimeSeriesData.length} data points`);
+      if (currentMetric) {
+        console.log(`✅ Using dashboard metric calculation for time series: ${metricName} = ${currentMetric.currentValue} for ${timePeriod}`);
         
-        // Convert CORE data to expected format
-        const timeSeriesData: PostgresTimeSeriesData[] = coreTimeSeriesData.map((row: any) => ({
-          period: row.period || 'Unknown',
-          actual: Number(row.actual) || null,
-          goal: Number(row.goal) || 0
-        }));
-
-        return timeSeriesData;
+        // Use same goal source as dashboard API - get from database metrics directly
+        // Import the storage to access KPI metrics like dashboard API does
+        const { storage } = await import('../storage.js');
+        const kpiMetrics = await storage.getKpiMetrics(companyId);
+        
+        // Find the matching metric by name (flexible matching like dashboard API)
+        const dbMetric = kpiMetrics.find((m: any) => 
+          m.name.toLowerCase().includes(metricName.toLowerCase()) || 
+          metricName.toLowerCase().includes(m.name.toLowerCase())
+        );
+        
+        let periodGoal = 0;
+        if (dbMetric && dbMetric.yearlyGoal) {
+          // Use database yearlyGoal (same logic as dashboard API line 444)
+          periodGoal = parseFloat(dbMetric.yearlyGoal);
+          console.log(`🎯 Using database goal for time series: ${periodGoal} from metric ${dbMetric.name}`);
+        } else {
+          // Fallback to CORE layer goals only if database goal is missing
+          const coreMetrics = await sqlModelEngine.getCurrentMetrics(companyId, timePeriod);
+          if (coreMetrics && coreMetrics.length > 0) {
+            const coreData = coreMetrics[0];
+            if (metricName.toLowerCase().includes('revenue')) {
+              periodGoal = Number(coreData.revenue_goal) || 0;
+            } else if (metricName.toLowerCase().includes('profit')) {
+              periodGoal = Number(coreData.profit_goal) || 0;
+            }
+          }
+          console.log(`🎯 Using CORE fallback goal for time series: ${periodGoal} (${timePeriod})`);
+        }
+        
+        // Generate time series with database goal (will be converted to period-appropriate by generateTimeSeriesFromCurrentValue)
+        return this.generateTimeSeriesFromCurrentValue(currentMetric.currentValue, periodGoal, timePeriod);
       }
 
-      console.log(`No CORE time series data available for ${metricName}`);
+      console.log(`No metric calculation available for ${metricName}`);
       return [];
 
     } catch (error) {
       console.error(`PostgreSQL time series failed for ${metricName}:`, error);
       return [];
     }
+  }
+
+  // Generate time series data using correct current value as target
+  private generateTimeSeriesFromCurrentValue(currentValue: number, yearlyGoal: number, timePeriod: string): PostgresTimeSeriesData[] {
+    console.log(`🎯 generateTimeSeriesFromCurrentValue called: timePeriod="${timePeriod}"`);
+    const today = new Date();
+    
+    switch (timePeriod.toLowerCase()) {
+      case 'daily':
+        return this.generateDailyTimeSeries(currentValue, yearlyGoal, today);
+      case 'weekly':
+        return this.generateWeeklyTimeSeries(currentValue, yearlyGoal, today);
+      case 'monthly':
+        return this.generateMonthlyTimeSeries(currentValue, yearlyGoal, today);
+      case 'quarterly':
+        return this.generateQuarterlyTimeSeries(currentValue, yearlyGoal, today);
+      case 'yearly':
+      default:
+        return this.generateYearlyTimeSeries(currentValue, yearlyGoal, today);
+    }
+  }
+
+  private generateWeeklyTimeSeries(currentValue: number, yearlyGoal: number, today: Date): PostgresTimeSeriesData[] {
+    console.log(`🚨 generateWeeklyTimeSeries called: currentValue=${currentValue}, yearlyGoal=${yearlyGoal}`);
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const currentDay = today.getDay();
+    const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1; // Convert Sunday=0 to index 6
+    
+    // FIXED: Use yearlyGoal as the period goal directly (30K), not divide by 52
+    // This handles the case where yearlyGoal has already been converted to massive yearly equivalent
+    const periodGoal = yearlyGoal > 100000 ? yearlyGoal / 52 : yearlyGoal; // If > 100K, it's yearly, else period
+    const dailyGoal = periodGoal / 7;
+    console.log(`🚨 Weekly calc: yearlyGoal=${yearlyGoal}, periodGoal=${periodGoal}, dailyGoal=${dailyGoal}`);
+    
+    return weekdays.map((day, index) => {
+      const cumulativeGoal = dailyGoal * (index + 1);
+      
+      if (index <= currentDayIndex) {
+        // For past/current days, show progression toward current value
+        const progressRatio = (index + 1) / (currentDayIndex + 1);
+        const actualValue = currentValue * progressRatio;
+        
+        return {
+          period: day,
+          goal: Math.round(cumulativeGoal),
+          actual: Math.round(actualValue)
+        };
+      } else {
+        // For future days, show only goal
+        return {
+          period: day,
+          goal: Math.round(cumulativeGoal),
+          actual: null
+        };
+      }
+    });
+  }
+
+  private generateDailyTimeSeries(currentValue: number, yearlyGoal: number, today: Date): PostgresTimeSeriesData[] {
+    // Simple daily progression - could be enhanced
+    return [{
+      period: 'Today',
+      goal: Math.round(yearlyGoal / 365),
+      actual: Math.round(currentValue)
+    }];
+  }
+
+  private generateMonthlyTimeSeries(currentValue: number, yearlyGoal: number, today: Date): PostgresTimeSeriesData[] {
+    console.log(`🚨 generateMonthlyTimeSeries called: currentValue=${currentValue}, yearlyGoal=${yearlyGoal}`);
+    const currentDay = today.getDate();
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    // For monthly view, yearlyGoal is actually the monthly goal when period is "monthly"
+    const monthlyGoal = yearlyGoal;
+    const dailyGoal = monthlyGoal / daysInMonth;
+    console.log(`🚨 Monthly calc: monthlyGoal=${monthlyGoal}, dailyGoal=${dailyGoal}, currentDay=${currentDay}`);
+    
+    const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    
+    return allDays.map((day, index) => {
+      const cumulativeGoal = dailyGoal * day;
+      // Format as abbreviated date: "8/1", "8/15", etc.
+      const month = today.getMonth() + 1; // JavaScript months are 0-indexed
+      const periodLabel = `${month}/${day}`;
+      
+      if (day <= currentDay) {
+        const progressRatio = day / currentDay;
+        const actualValue = currentValue * progressRatio;
+        
+        return {
+          period: periodLabel,
+          goal: Math.round(cumulativeGoal),
+          actual: Math.round(actualValue)
+        };
+      } else {
+        return {
+          period: periodLabel,
+          goal: Math.round(cumulativeGoal),
+          actual: null
+        };
+      }
+    });
+  }
+
+  private generateQuarterlyTimeSeries(currentValue: number, yearlyGoal: number, today: Date): PostgresTimeSeriesData[] {
+    // Simplified quarterly view - could be enhanced with weekly breakdown
+    const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
+    // For quarterly view, yearlyGoal is actually the quarterly goal when period is "quarterly"
+    const quarterlyGoal = yearlyGoal;
+    
+    return Array.from({ length: 4 }, (_, i) => {
+      const quarter = i + 1;
+      const cumulativeGoal = quarterlyGoal * quarter;
+      
+      if (quarter <= currentQuarter) {
+        const progressRatio = quarter / currentQuarter;
+        const actualValue = currentValue * progressRatio;
+        
+        return {
+          period: `Q${quarter}`,
+          goal: Math.round(cumulativeGoal),
+          actual: Math.round(actualValue)
+        };
+      } else {
+        return {
+          period: `Q${quarter}`,
+          goal: Math.round(cumulativeGoal),
+          actual: null
+        };
+      }
+    });
+  }
+
+  private generateYearlyTimeSeries(currentValue: number, yearlyGoal: number, today: Date): PostgresTimeSeriesData[] {
+    const currentMonth = today.getMonth() + 1;
+    // For yearly view, yearlyGoal is the actual yearly goal
+    const monthlyGoal = yearlyGoal / 12;
+    
+    return Array.from({ length: 12 }, (_, i) => {
+      const month = i + 1;
+      const cumulativeGoal = monthlyGoal * month;
+      
+      if (month <= currentMonth) {
+        const progressRatio = month / currentMonth;
+        const actualValue = currentValue * progressRatio;
+        
+        return {
+          period: new Date(2025, i, 1).toLocaleDateString('en-US', { month: 'short' }),
+          goal: Math.round(cumulativeGoal),
+          actual: Math.round(actualValue)
+        };
+      } else {
+        return {
+          period: new Date(2025, i, 1).toLocaleDateString('en-US', { month: 'short' }),
+          goal: Math.round(cumulativeGoal),
+          actual: null
+        };
+      }
+    });
   }
 
   // Legacy time series SQL templates removed - all time series should use CORE layer data

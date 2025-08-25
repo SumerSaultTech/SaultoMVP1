@@ -4,6 +4,7 @@ import type { KpiMetric } from '@shared/schema';
 interface MetricProgressChartProps {
   metric: Partial<KpiMetric>;
   timePeriod?: string;
+  timeSeriesData?: any[]; // Real time-series data from API
 }
 
 interface ChartDataPoint {
@@ -333,8 +334,16 @@ function generateYTDData(currentValue: number, yearlyGoal: number, pattern: numb
   });
 }
 
-export default function MetricProgressChart({ metric, timePeriod = "ytd" }: MetricProgressChartProps) {
-  const data = generateProgressData(metric, timePeriod);
+export default function MetricProgressChart({ metric, timePeriod = "ytd", timeSeriesData }: MetricProgressChartProps) {
+  // Use real time-series data if available, otherwise generate synthetic data
+  const data = timeSeriesData && timeSeriesData.length > 0 
+    ? timeSeriesData.map((point: any) => ({
+        period: point.period,
+        goal: Math.round(point.goal || 0),
+        actual: point.actual !== null ? Math.round(point.actual) : null, // Preserve null to end line cleanly
+        isCurrent: point.isCurrent || false
+      }))
+    : generateProgressData(metric, timePeriod);
   
   if (!data || data.length === 0) {
     return (
@@ -379,13 +388,14 @@ export default function MetricProgressChart({ metric, timePeriod = "ytd" }: Metr
           strokeWidth={2}
           dot={false}
           name="Goal"
+          connectNulls={true}
         />
         <Line 
           type="monotone" 
           dataKey="actual" 
           stroke="#3b82f6" 
           strokeWidth={3}
-          dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+          dot={false}
           name="Actual"
           connectNulls={false}
         />

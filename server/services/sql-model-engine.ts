@@ -849,10 +849,10 @@ export class SqlModelEngine {
       console.log(`🔍 Generating dashboard time series for period: ${timePeriod}`);
       
       // Get actual metric values from CORE layer to anchor our progression
-      const coreMetrics = await this.getCoreMetricValues(companyId);
+      const coreMetrics = await this.getCoreMetricValues(companyId, timePeriod);
       
       if (coreMetrics && coreMetrics.revenue_actual) {
-        console.log(`✅ Using CORE layer anchor values: revenue=${coreMetrics.revenue_actual}, goal=${coreMetrics.revenue_goal}`);
+        console.log(`✅ Using CORE layer anchor values for ${timePeriod}: revenue=${coreMetrics.revenue_actual}, goal=${coreMetrics.revenue_goal}`);
         return this.generateTimeSeriesWithCoreAnchor(timePeriod, coreMetrics);
       }
       
@@ -868,11 +868,16 @@ export class SqlModelEngine {
   }
 
   // Get actual metric values from CORE layer to anchor chart progression
-  private async getCoreMetricValues(companyId: number): Promise<any> {
+  private async getCoreMetricValues(companyId: number, timePeriod?: string): Promise<any> {
     try {
       const schema = this.getAnalyticsSchema(companyId);
       
-      // Query current metrics from CORE layer
+      // Use appropriate period type based on requested time period
+      const periodType = timePeriod === 'weekly' ? 'weekly' : 
+                        timePeriod === 'daily' ? 'daily' : 
+                        timePeriod === 'yearly' ? 'yearly' : 'monthly';
+      
+      // Query current metrics from CORE layer for the appropriate period
       const query = `
         SELECT 
           current_revenue,
@@ -880,7 +885,7 @@ export class SqlModelEngine {
           current_profit,
           profit_goal
         FROM ${schema}.core_current_metrics
-        WHERE period_type = 'monthly'
+        WHERE period_type = '${periodType}'
         LIMIT 1
       `;
       

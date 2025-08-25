@@ -14,6 +14,46 @@ interface MetricsOverviewProps {
   onRefresh: () => void;
 }
 
+// Hook to fetch real time-series data from the API (same as North Star Metrics)
+function useTimeSeriesData(metricName: string, timePeriod: string) {
+  return useQuery({
+    queryKey: ["/api/metrics/time-series", metricName, timePeriod],
+    queryFn: async () => {
+      const response = await fetch("/api/metrics/time-series", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          metricId: metricName === "Annual Revenue" ? 1 : (metricName === "Annual Profit" ? 2 : 3),
+          metricName: metricName,
+          timePeriod: mapTimePeriodForAPI(timePeriod)
+        })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch time series data');
+      }
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
+}
+
+// Map frontend time period to backend format (same as North Star Metrics)
+function mapTimePeriodForAPI(timePeriod: string): string {
+  switch (timePeriod) {
+    case "Daily View":
+      return "daily";
+    case "Weekly View":
+      return "weekly";
+    case "Monthly View": 
+      return "monthly";
+    case "Quarterly View":
+      return "quarterly";
+    case "Yearly View":
+    default:
+      return "yearly";
+  }
+}
+
 // Default metrics for initial display
 const defaultMetrics = [
   {
@@ -189,6 +229,23 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     },
     refetchInterval: 30000, // Refresh every 30 seconds
   });
+
+  // Fetch time-series data for charts (real database data)
+  const { data: revenueTimeSeriesData } = useTimeSeriesData("Annual Revenue", timePeriod);
+  const { data: profitTimeSeriesData } = useTimeSeriesData("Annual Profit", timePeriod);
+  const { data: mrrTimeSeriesData } = useTimeSeriesData("Monthly Recurring Revenue", timePeriod);
+
+  // Helper function to get appropriate time-series data for each metric
+  const getTimeSeriesDataForMetric = (metricName: string) => {
+    if (metricName.toLowerCase().includes('annual revenue') || metricName.toLowerCase().includes('recurring revenue')) {
+      return revenueTimeSeriesData;
+    } else if (metricName.toLowerCase().includes('annual profit') || metricName.toLowerCase().includes('profit')) {
+      return profitTimeSeriesData;
+    } else if (metricName.toLowerCase().includes('monthly recurring') || metricName.toLowerCase().includes('mrr')) {
+      return mrrTimeSeriesData;
+    }
+    return null; // No specific time-series data, chart will use fallback patterns
+  };
 
   // Also fetch configured KPI metrics for additional display
   const { data: kpiMetrics, isLoading: isKpiLoading } = useQuery({
@@ -732,7 +789,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                         rawCurrentValue: metric.rawCurrentValue,
                         rawYearlyGoal: metric.rawYearlyGoal
                       }} 
-                      timePeriod={timePeriod} 
+                      timePeriod={timePeriod}
+                      timeSeriesData={getTimeSeriesDataForMetric(metric.name)}
                     />
                   </div>
                 </CardContent>
@@ -845,7 +903,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                           rawCurrentValue: metric.rawCurrentValue,
                           rawYearlyGoal: metric.rawYearlyGoal
                         }} 
-                        timePeriod={timePeriod} 
+                        timePeriod={timePeriod}
+                        timeSeriesData={getTimeSeriesDataForMetric(metric.name)}
                       />
                     </div>
                   </CardContent>

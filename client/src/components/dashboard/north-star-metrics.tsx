@@ -75,7 +75,7 @@ function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "yt
     return timeSeriesData.map((point) => ({
       period: point.period,
       goal: Math.round(point.goal || 0),
-      actual: Math.round(point.actual || 0),
+      actual: point.actual !== null ? Math.round(point.actual) : null, // Preserve null to end line cleanly
       isCurrent: true // We'll update this logic later
     }));
   }
@@ -480,7 +480,7 @@ export default function NorthStarMetrics() {
         id: "annual-profit", 
         name: "Annual Profit",
         value: formatLargeNumber(profitValue),
-        yearlyGoal: formatLargeNumber(profitGoal),
+        yearlyGoal: formatLargeNumber(profitMetric?.yearlyGoal || 0),
         changePercent: "+8.2",
         description: "Net profit after all expenses",
         format: "currency"
@@ -624,9 +624,33 @@ export default function NorthStarMetrics() {
           // The API returns daily/weekly/monthly values based on the time period parameter
           const periodCurrentValue = apiCurrentValue; // Already calculated by API for the correct period
           
-          // Calculate period goal based on the current value to maintain consistency
-          // This ensures goal matches the same calculation logic as current value
-          const periodGoal = apiCurrentValue * 1.2; // 20% growth target to match current value scale
+          // Calculate period goal using same logic as Business Metrics
+          // Convert yearly goal to period-specific goal based on time period
+          let periodGoal: number;
+          switch (northStarTimePeriod.toLowerCase()) {
+            case "daily view":
+            case "daily":
+              periodGoal = apiYearlyGoal / 365;
+              break;
+            case "weekly view":
+            case "weekly":
+              periodGoal = apiYearlyGoal / 52;
+              break;
+            case "monthly view":
+            case "monthly":
+              periodGoal = apiYearlyGoal / 12;
+              break;
+            case "quarterly view":
+            case "quarterly":
+              periodGoal = apiYearlyGoal / 4;
+              break;
+            case "yearly view":
+            case "yearly":
+            case "ytd":
+            default:
+              periodGoal = apiYearlyGoal; // No conversion needed for yearly
+              break;
+          }
           const progress = calculateProgress(periodCurrentValue, periodGoal);
           const progressStatus = getProgressStatus(progress);
           
@@ -776,7 +800,7 @@ export default function NorthStarMetrics() {
                         strokeDasharray="5 5"
                         dot={false}
                         name="goal"
-                        connectNulls={false}
+                        connectNulls={true}
                       />
                       <Line 
                         type="monotone" 
@@ -784,15 +808,7 @@ export default function NorthStarMetrics() {
                         stroke="#8b5cf6" 
                         strokeWidth={3}
                         connectNulls={false}
-                        dot={(props: any) => {
-                          const { cx, cy, payload } = props;
-                          if (!payload || payload.actual === null) return <g />;
-                          return payload?.isCurrent ? (
-                            <circle cx={cx} cy={cy} r={6} fill="#8b5cf6" stroke="#fff" strokeWidth={2} />
-                          ) : (
-                            <circle cx={cx} cy={cy} r={3} fill="#8b5cf6" />
-                          );
-                        }}
+                        dot={false}
                         name="actual"
                       />
                     </LineChart>
