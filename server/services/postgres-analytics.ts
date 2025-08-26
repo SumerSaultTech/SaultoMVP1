@@ -378,8 +378,8 @@ export class PostgresAnalyticsService {
     console.log(`🚨 generateMonthlyTimeSeries called: currentValue=${currentValue}, yearlyGoal=${yearlyGoal}`);
     const currentDay = today.getDate();
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    // For monthly view, yearlyGoal is actually the monthly goal when period is "monthly"
-    const monthlyGoal = yearlyGoal;
+    // Convert yearly goal to monthly goal for proper monthly view display
+    const monthlyGoal = yearlyGoal / 12;
     const dailyGoal = monthlyGoal / daysInMonth;
     console.log(`🚨 Monthly calc: monthlyGoal=${monthlyGoal}, dailyGoal=${dailyGoal}, currentDay=${currentDay}`);
     
