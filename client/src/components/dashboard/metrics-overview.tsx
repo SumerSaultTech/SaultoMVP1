@@ -371,9 +371,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   // Time period options matching Snowflake service
   const timePeriodOptions = [
-    { value: "Daily View", label: "Daily View" },
     { value: "Weekly View", label: "Weekly View" },
     { value: "Monthly View", label: "Monthly View" }, 
+    { value: "Quarterly View", label: "Quarterly View" },
     { value: "Yearly View", label: "Yearly View" }
   ];
 
@@ -589,13 +589,21 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     }
   };
 
-  const formatActualValue = (value: number) => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
+  const formatActualValue = (value: number, format?: string) => {
+    // Format based on the metric's format type
+    if (format === 'percentage') {
+      return `${value.toFixed(1)}%`;
+    } else if (format === 'number') {
+      return Math.round(value).toLocaleString();
     } else {
-      return `$${Math.round(value).toLocaleString()}`;
+      // Default to currency formatting for currency format or unspecified
+      if (value >= 1000000) {
+        return `$${(value / 1000000).toFixed(1)}M`;
+      } else if (value >= 1000) {
+        return `$${(value / 1000).toFixed(0)}K`;
+      } else {
+        return `$${Math.round(value).toLocaleString()}`;
+      }
     }
   };
 
@@ -771,7 +779,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   {/* Current Value */}
                   <div>
                     <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
+                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric), metric.format)}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
                       vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric)} {getTimePeriodLabelShort(timePeriod)} goal
@@ -885,7 +893,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     {/* Current Value */}
                     <div>
                       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
+                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric), metric.format)}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
                         vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric)} {getTimePeriodLabelShort(timePeriod)} goal

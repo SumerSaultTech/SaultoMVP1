@@ -231,13 +231,21 @@ function formatValue(value: string | number, format: string): string {
 }
 
 // Same formatting function as Business Metrics for consistency
-function formatActualValue(value: number): string {
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
+function formatActualValue(value: number, format?: string): string {
+  // Format based on the metric's format type
+  if (format === 'percentage') {
+    return `${value.toFixed(1)}%`;
+  } else if (format === 'number') {
+    return Math.round(value).toLocaleString();
   } else {
-    return `$${Math.round(value).toLocaleString()}`;
+    // Default to currency formatting for currency format or unspecified
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(1)}M`;
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(0)}K`;
+    } else {
+      return `$${Math.round(value).toLocaleString()}`;
+    }
   }
 }
 
@@ -439,9 +447,9 @@ export default function NorthStarMetrics() {
 
   // Time period options matching Snowflake service
   const northStarTimePeriodOptions = [
-    { value: "Daily View", label: "Daily View" },
     { value: "Weekly View", label: "Weekly View" },
     { value: "Monthly View", label: "Monthly View" }, 
+    { value: "Quarterly View", label: "Quarterly View" },
     { value: "Yearly View", label: "Yearly View" }
   ];
 
@@ -612,9 +620,10 @@ export default function NorthStarMetrics() {
             m.name.toLowerCase().includes("annual profit") || m.name.toLowerCase().includes("profit")
           );
           
-          // Get current value and goal from API data
+          // Get current value, goal, and format from API data
           const apiCurrentValue = metric.id === "annual-revenue" ? (revenueMetric?.currentValue || 0) : (profitMetric?.currentValue || 0);
           const apiYearlyGoal = metric.id === "annual-revenue" ? (revenueMetric?.yearlyGoal || 0) : (profitMetric?.yearlyGoal || 0);
+          const apiFormat = metric.id === "annual-revenue" ? (revenueMetric?.format || 'currency') : (profitMetric?.format || 'currency');
           
           // Get the appropriate time-series data for this metric
           const timeSeriesData = metric.id === "annual-revenue" ? revenueTimeSeriesData : profitTimeSeriesData;
@@ -733,10 +742,10 @@ export default function NorthStarMetrics() {
                 {/* Current Value */}
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatActualValue(periodCurrentValue)}
+                    {formatActualValue(periodCurrentValue, apiFormat)}
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
-                    of {formatActualValue(periodGoal)} {getTimePeriodDisplayName(northStarTimePeriod)} goal
+                    of {formatActualValue(periodGoal, apiFormat)} {getTimePeriodDisplayName(northStarTimePeriod)} goal
                   </div>
                 </div>
 

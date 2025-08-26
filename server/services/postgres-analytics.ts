@@ -4,6 +4,14 @@ import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { sqlModelEngine } from './sql-model-engine.js';
 
+// Currency parsing helper function to handle formatted values like "$1,200,000"
+const parseCurrency = (value: string | number): number => {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  // Remove $, commas, and other currency formatting, then parse
+  return parseFloat(String(value).replace(/[$,\s]/g, '')) || 0;
+};
+
 export interface PostgresMetricData {
   metricId: number;
   name: string;
@@ -279,8 +287,8 @@ export class PostgresAnalyticsService {
         
         let periodGoal = 0;
         if (dbMetric && dbMetric.yearlyGoal) {
-          // Use database yearlyGoal (same logic as dashboard API line 444)
-          periodGoal = parseFloat(dbMetric.yearlyGoal);
+          // Use database yearlyGoal with currency parsing to handle "$1,200,000" format
+          periodGoal = parseCurrency(dbMetric.yearlyGoal);
           console.log(`🎯 Using database goal for time series: ${periodGoal} from metric ${dbMetric.name}`);
         } else {
           // Fallback to CORE layer goals only if database goal is missing
@@ -413,8 +421,8 @@ export class PostgresAnalyticsService {
   private generateQuarterlyTimeSeries(currentValue: number, yearlyGoal: number, today: Date): PostgresTimeSeriesData[] {
     // Simplified quarterly view - could be enhanced with weekly breakdown
     const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-    // For quarterly view, yearlyGoal is actually the quarterly goal when period is "quarterly"
-    const quarterlyGoal = yearlyGoal;
+    // Convert yearly goal to quarterly goal for proper quarterly view display (same logic as monthly)
+    const quarterlyGoal = yearlyGoal / 4;
     
     return Array.from({ length: 4 }, (_, i) => {
       const quarter = i + 1;

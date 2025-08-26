@@ -20,6 +20,14 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
+// Currency parsing helper function to handle formatted values like "$1,200,000"
+const parseCurrency = (value: string | number): number => {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  // Remove $, commas, and other currency formatting, then parse
+  return parseFloat(String(value).replace(/[$,\s]/g, '')) || 0;
+};
+
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
@@ -437,11 +445,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             if (dashboardResult) {
               console.log(`Dashboard data for metric ${metric.name}: ${dashboardResult.currentValue} from real PostgreSQL analytics (${timePeriod})`);
+              console.log(`🎯 Goal sources: database yearlyGoal="${metric.yearlyGoal}", calculated yearlyGoal=${dashboardResult.yearlyGoal}`);
+              
+              const finalYearlyGoal = parseCurrency(metric.yearlyGoal || String(dashboardResult.yearlyGoal));
+              console.log(`🎯 Final parsed yearlyGoal: ${finalYearlyGoal}`);
+              
               // Add the calculated result with proper structure
               dashboardData.push({
                 ...dashboardResult,
                 metricId: metric.id,
-                yearlyGoal: parseFloat(metric.yearlyGoal || String(dashboardResult.yearlyGoal)),
+                yearlyGoal: finalYearlyGoal,
                 format: metric.format || dashboardResult.format
               });
             } else {
