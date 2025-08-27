@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c:*)",
+      "Bash(npx cross-env:*)",
+      "Bash(del \"C:\\Users\\nphil\\SaultoMVP1\\client\\src\\pages\\integrations.tsx\")",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(kill:*)",
+      "Bash(powershell:*)",
+      "Bash(copy:*)",
+      "Bash(git restore:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm i:*)",
+      "Bash(npm run:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\Users\\nphil\\Downloads"
+    ]
+  }
+}

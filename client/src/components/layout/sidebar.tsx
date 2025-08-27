@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Database, BarChart3, Settings, Table, Shield, Target, Building2, LogOut, Users, MessageCircle, Zap } from "lucide-react";
+import { Database, BarChart3, Settings, Table, Shield, Target, Building2, LogOut, Users, MessageCircle, Zap, Link as LinkIcon, GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ export default function Sidebar() {
     { path: "/", icon: BarChart3, label: "Dashboard" },
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/data-browser", icon: Database, label: "Data Browser" },
+    { path: "/integrations-canvas", icon: GitBranch, label: "Integration Canvas" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
     { path: "/users", icon: Users, label: "User Management" },
     { path: "/admin", icon: Shield, label: "Admin Panel" },
@@ -45,22 +46,24 @@ export default function Sidebar() {
   const systemStatus = getSystemStatus();
 
   return (
-    <div className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col">
+    <div className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col h-screen">
       {/* Header */}
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-            <Database className="text-white text-sm" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">DataSync Pro</h1>
-            <p className="text-xs text-gray-500">Data Warehouse Platform</p>
-          </div>
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-start">
+          <Link href="/">
+            <a className="cursor-pointer hover:opacity-80 transition-opacity">
+              <img 
+                src="/assets/logo.png" 
+                alt="Logo" 
+                className="w-48 h-20 object-contain max-w-full"
+              />
+            </a>
+          </Link>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -76,11 +79,11 @@ export default function Sidebar() {
 
       {/* Company Switcher */}
       <div className="p-4 border-t border-gray-200">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+        <div className="bg-saulto-50 border border-saulto-100 rounded-lg p-3 mb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Building2 className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-800">
+              <Building2 className="w-4 h-4 text-saulto-700" />
+              <span className="text-sm font-heading font-medium text-saulto-800">
                 {(() => {
                   const selectedCompany = localStorage.getItem("selectedCompany");
                   if (selectedCompany) {
@@ -98,12 +101,12 @@ export default function Sidebar() {
                 localStorage.removeItem("selectedCompany");
                 window.location.href = "/companies";
               }}
-              className="text-blue-600 hover:text-blue-800"
+              className="text-saulto-700 hover:text-saulto-800"
             >
               <LogOut className="w-3 h-3" />
             </Button>
           </div>
-          <p className="text-xs text-blue-600 mt-1">
+          <p className="text-xs text-saulto-700 mt-1">
             Switch company to test isolation
           </p>
         </div>
@@ -112,7 +115,7 @@ export default function Sidebar() {
         <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 ${systemStatus.color} rounded-full animate-pulse`} />
-            <span className="text-sm font-medium text-green-800">{systemStatus.text}</span>
+            <span className="text-sm font-heading font-medium text-green-800">{systemStatus.text}</span>
           </div>
           <p className="text-xs text-green-600 mt-1">
             System status

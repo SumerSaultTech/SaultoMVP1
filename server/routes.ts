@@ -16,6 +16,7 @@ import {
   insertKpiMetricSchema,
   insertChatMessageSchema,
   insertPipelineActivitySchema,
+  insertMetricReportSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -530,11 +531,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
       const tables = await postgresAnalyticsService.getAvailableTables(companyId);
       
-      res.json(tables.map(tableName => ({
-        table_name: tableName,
-        table_schema: `analytics_company_${companyId}`,
-        row_count: null // Can be added later if needed
-      })));
+      const tablesWithSource = tables.map(tableName => {
+        // Determine external app source from table name patterns
+        let external_source = "Unknown";
+        
+        if (tableName.toLowerCase().includes("salesforce") || tableName.toLowerCase().includes("sfdc")) {
+          external_source = "Salesforce";
+        } else if (tableName.toLowerCase().includes("jira") || tableName.toLowerCase().includes("atlassian")) {
+          external_source = "Jira";
+        } else if (tableName.toLowerCase().includes("hubspot")) {
+          external_source = "HubSpot";
+        } else if (tableName.toLowerCase().includes("stripe")) {
+          external_source = "Stripe";
+        } else if (tableName.toLowerCase().includes("slack")) {
+          external_source = "Slack";
+        } else if (tableName.toLowerCase().includes("zendesk")) {
+          external_source = "Zendesk";
+        } else if (tableName.toLowerCase().includes("shopify")) {
+          external_source = "Shopify";
+        } else if (tableName.toLowerCase().includes("google") || tableName.toLowerCase().includes("ga4")) {
+          external_source = "Google Analytics";
+        }
+
+        return {
+          table_name: tableName,
+          table_schema: `analytics_company_${companyId}`,
+          external_source: external_source,
+          row_count: null // Can be added later if needed
+        };
+      });
+      
+      res.json(tablesWithSource);
     } catch (error) {
       console.error("Error fetching tables:", error);
       res.status(500).json({

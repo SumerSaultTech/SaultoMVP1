@@ -15,6 +15,7 @@ import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
 import UserManagement from "@/pages/user-management";
 import SaultoChat from "@/pages/saultochat";
+import IntegrationsCanvas from "@/pages/integrations-canvas";
 import Sidebar from "@/components/layout/sidebar";
 
 function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean; selectedCompany: string | null }) {
@@ -36,6 +37,7 @@ function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean
       <Route path="/" component={Dashboard} />
       <Route path="/setup" component={Setup} />
       <Route path="/data-browser" component={DataBrowser} />
+      <Route path="/integrations-canvas" component={IntegrationsCanvas} />
       <Route path="/saultochat" component={SaultoChat} />
       <Route path="/metrics" component={MetricsManagement} />
       <Route path="/users" component={UserManagement} />
@@ -79,9 +81,9 @@ function App() {
         {!isAuthenticated ? (
           <Router isAuthenticated={isAuthenticated} selectedCompany={selectedCompany} />
         ) : (
-          <div className="min-h-screen flex bg-gray-50">
+          <div className="h-screen flex bg-gray-50 overflow-hidden">
             <Sidebar />
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col min-h-0">
               <Router isAuthenticated={isAuthenticated} selectedCompany={selectedCompany} />
             </div>
           </div>

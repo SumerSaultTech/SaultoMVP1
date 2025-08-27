@@ -478,7 +478,7 @@ export function CredentialDialog({
             <Button 
               type="submit" 
               disabled={isSubmitting}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-saulto-600 hover:bg-saulto-700"
             >
               {isSubmitting ? (
                 <>

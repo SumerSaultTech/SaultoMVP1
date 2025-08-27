@@ -318,12 +318,13 @@ export default function MetricsManagement() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 space-y-6 p-8 pt-6">
+      <>
         <Header 
           title="Metrics Management"
           subtitle="Configure your business metrics and yearly goals"
         />
-        <Card>
+        <main className="flex-1 overflow-y-auto p-6">
+          <Card>
           <CardContent className="p-6">
             <div className="space-y-4">
               {[...Array(5)].map((_, i) => (
@@ -337,12 +338,13 @@ export default function MetricsManagement() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </main>
+      </>
     );
   }
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <>
       <Header 
         title="Metrics Management"
         subtitle="Configure your business metrics and yearly goals"
@@ -669,17 +671,18 @@ export default function MetricsManagement() {
         }
       />
 
-      <div className="grid grid-cols-12 gap-6">
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="grid grid-cols-12 gap-6">
         {/* Metrics Table */}
         <div className="col-span-7">
-          <Card>
+          <Card className="h-[calc(100vh-12rem)] flex flex-col">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
                 Business Metrics Configuration
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 overflow-y-auto p-6">
               {metricsArray.length === 0 ? (
                 <div className="text-center py-12">
                   <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -773,7 +776,7 @@ export default function MetricsManagement() {
 
         {/* AI Assistant */}
         <div className="col-span-5">
-          <div className="sticky top-6">
+          <div className="h-[calc(100vh-12rem)]">
             <MetricsAssistant 
               onMetricCreate={(metric) => {
                 setFormData({
@@ -797,6 +800,7 @@ export default function MetricsManagement() {
           </div>
         </div>
       </div>
-    </div>
+      </main>
+    </>
   );
 }

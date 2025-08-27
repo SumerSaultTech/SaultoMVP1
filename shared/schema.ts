@@ -104,6 +104,22 @@ export const setupStatus = pgTable("setup_status", {
   lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
+export const metricReports = pgTable("metric_reports", {
+  id: serial("id").primaryKey(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  selectedMetrics: jsonb("selected_metrics").notNull(), // Array of metric IDs
+  customGroupings: jsonb("custom_groupings"), // Custom category groupings {groupName: [metricIds]}
+  reportConfig: jsonb("report_config"), // Report settings and preferences
+  generatedInsights: jsonb("generated_insights"), // AI-generated insights cache
+  shareToken: text("share_token").unique(), // For public sharing
+  isPublic: boolean("is_public").default(false),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertDataSourceSchema = createInsertSchema(dataSources).omit({
   id: true,
@@ -149,6 +165,17 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
   createdAt: true,
 });
 
+export const insertMetricReportSchema = createInsertSchema(metricReports).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  shareToken: true,
+}).partial({
+  companyId: true,
+}).extend({
+  companyId: z.number().optional(),
+});
+
 // Types
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Company = typeof companies.$inferSelect;
@@ -170,6 +197,9 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 
 export type InsertPipelineActivity = z.infer<typeof insertPipelineActivitySchema>;
 export type PipelineActivity = typeof pipelineActivities.$inferSelect;
+
+export type InsertMetricReport = z.infer<typeof insertMetricReportSchema>;
+export type MetricReport = typeof metricReports.$inferSelect;
 
 export type InsertSetupStatus = z.infer<typeof insertSetupStatusSchema>;
 export type SetupStatus = typeof setupStatus.$inferSelect;

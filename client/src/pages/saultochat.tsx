@@ -451,7 +451,7 @@ export default function SaultoChat() {
             <div className="p-4 border-b border-gray-200">
               <Button 
                 onClick={createNewChat}
-                className="w-full flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                className="w-full flex items-center gap-2 bg-saulto-600 hover:bg-saulto-700 text-white"
               >
                 <Plus className="w-4 h-4" />
                 New Chat
@@ -468,7 +468,7 @@ export default function SaultoChat() {
                       onClick={() => switchToSession(session.id)}
                       className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
                         currentSessionId === session.id
-                          ? "bg-blue-50 border border-blue-200"
+                          ? "bg-saulto-50 border border-saulto-100"
                           : "hover:bg-gray-50 border border-transparent"
                       }`}
                     >
@@ -506,7 +506,7 @@ export default function SaultoChat() {
       <div className="flex-1 flex flex-col p-4 min-h-0 max-h-screen overflow-hidden">
         <div className="mb-3">
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <MessageCircle className="w-6 h-6 text-blue-600" />
+            <MessageCircle className="w-6 h-6 text-saulto-700" />
             SaultoChat
           </h1>
           <p className="text-gray-600 text-sm mt-1">
@@ -518,7 +518,7 @@ export default function SaultoChat() {
           {/* Chat Header */}
           <div className="border-b border-gray-200 bg-white px-6 py-4">
             <div className="flex items-center gap-2">
-              <Bot className="w-5 h-5 text-blue-600" />
+              <Bot className="w-5 h-5 text-saulto-700" />
               <h2 className="text-lg font-semibold text-gray-900">Internal AI Chat</h2>
             </div>
           </div>
@@ -528,7 +528,7 @@ export default function SaultoChat() {
             <ScrollArea ref={scrollAreaRef} className="h-full p-6">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                    <Loader2 className="w-6 h-6 animate-spin text-saulto-600" />
                     <span className="ml-2 text-gray-600">Loading messages...</span>
                   </div>
                 ) : allMessages && allMessages.length > 0 ? (

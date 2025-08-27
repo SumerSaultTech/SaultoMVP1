@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import Header from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -93,14 +94,27 @@ function ColumnPreview({ tableName }: ColumnPreviewProps) {
 }
 
 export default function DataBrowser() {
+  // Check for table parameter in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const tableParam = urlParams.get('table');
+  
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTable, setSelectedTable] = useState<string>("");
+  const [selectedTable, setSelectedTable] = useState<string>(tableParam || "");
   const [filterColumn, setFilterColumn] = useState<string>("");
   const [filterValue, setFilterValue] = useState("");
+  const [collapsedSources, setCollapsedSources] = useState<Set<string>>(new Set());
 
   // Fetch available tables from PostgreSQL
-  const { data: tables, isLoading: tablesLoading, refetch: refetchTables } = useQuery({
+  const { data: tables, isLoading: tablesLoading, refetch: refetchTables, error: tablesError } = useQuery({
     queryKey: ["/api/postgres/tables"],
+    queryFn: async () => {
+      console.log('Fetching tables from /api/postgres/tables');
+      const response = await fetch("/api/postgres/tables");
+      if (!response.ok) throw new Error('Failed to fetch tables');
+      const data = await response.json();
+      console.log('Tables data:', data);
+      return data;
+    },
   });
 
   // Fetch data for selected table
@@ -126,8 +140,28 @@ export default function DataBrowser() {
   });
 
   const filteredTables = tables?.filter((table: any) =>
-    table.table_name.toLowerCase().includes(searchTerm.toLowerCase())
+    table.table_name?.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
+
+  // Group tables by external source
+  const groupedTables = filteredTables.reduce((groups: { [key: string]: any[] }, table: any) => {
+    const source = table.external_source || "Unknown";
+    if (!groups[source]) {
+      groups[source] = [];
+    }
+    groups[source].push(table);
+    return groups;
+  }, {});
+
+  const toggleSourceCollapse = (source: string) => {
+    const newCollapsed = new Set(collapsedSources);
+    if (newCollapsed.has(source)) {
+      newCollapsed.delete(source);
+    } else {
+      newCollapsed.add(source);
+    }
+    setCollapsedSources(newCollapsed);
+  };
 
   const handleTableSelect = (tableName: string) => {
     setSelectedTable(tableName);
@@ -157,19 +191,25 @@ export default function DataBrowser() {
   };
 
   return (
-    <div className="flex h-full bg-gray-50">
-      {/* Sidebar - Table List */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Database className="w-4 h-4 text-blue-600" />
+    <>
+      <Header 
+        title="Data Browser"
+        subtitle="PostgreSQL Analytics - Browse your data warehouse tables"
+      />
+      
+      <main className="flex-1 overflow-hidden bg-gray-50 flex">
+        {/* Sidebar - Table List */}
+        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-8 h-8 bg-saulto-50 rounded-lg flex items-center justify-center">
+                <Database className="w-4 h-4 text-saulto-700" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Tables</h2>
+                <p className="text-sm text-gray-500">Browse data sources</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900">Data Browser</h1>
-              <p className="text-sm text-gray-500">PostgreSQL Analytics</p>
-            </div>
-          </div>
           
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -189,30 +229,72 @@ export default function DataBrowser() {
                 <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />
               ))}
             </div>
+          ) : tablesError ? (
+            <div className="text-center py-8">
+              <div className="text-red-600 text-sm">Error loading tables: {tablesError.message}</div>
+              <Button onClick={() => refetchTables()} className="mt-2" size="sm">Retry</Button>
+            </div>
+          ) : !tables || tables.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-gray-500 text-sm">No tables found</div>
+              <Button onClick={() => refetchTables()} className="mt-2" size="sm">Refresh</Button>
+            </div>
           ) : (
-            <div className="space-y-2">
-              {filteredTables.map((table: any) => (
-                <Card
-                  key={table.table_name}
-                  className={`cursor-pointer transition-all hover:shadow-md ${
-                    selectedTable === table.table_name ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-                  }`}
-                  onClick={() => handleTableSelect(table.table_name)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-sm truncate">{table.table_name}</h3>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {table.table_schema} schema
+            <div className="space-y-3">
+              {Object.entries(groupedTables).map(([source, sourceTables]) => (
+                <div key={source} className="space-y-2">
+                  {/* Source Header */}
+                  <div
+                    className="flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
+                    onClick={() => toggleSourceCollapse(source)}
+                  >
+                    <div className="flex items-center space-x-2">
+                      {collapsedSources.has(source) ? (
+                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      )}
+                      <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center">
+                        <Database className="w-3 h-3 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-sm text-gray-900">{source}</h3>
+                        <p className="text-xs text-gray-500">
+                          {sourceTables.length} table{sourceTables.length !== 1 ? 's' : ''}
                         </p>
                       </div>
-                      <Badge variant="secondary" className="text-xs">
-                        {table.row_count || 0} rows
-                      </Badge>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  {/* Tables in Source */}
+                  {!collapsedSources.has(source) && (
+                    <div className="space-y-1 ml-6">
+                      {sourceTables.map((table: any) => (
+                        <Card
+                          key={table.table_name}
+                          className={`cursor-pointer transition-all hover:shadow-md ${
+                            selectedTable === table.table_name ? 'ring-2 ring-saulto-600 bg-saulto-50' : ''
+                          }`}
+                          onClick={() => handleTableSelect(table.table_name)}
+                        >
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm truncate">{table.table_name}</h4>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {table.table_schema} schema
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className="text-xs">
+                                {table.row_count || 0} rows
+                              </Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -332,6 +414,7 @@ export default function DataBrowser() {
           </div>
         )}
       </div>
-    </div>
+      </main>
+    </>
   );
 }
