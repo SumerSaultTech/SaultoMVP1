@@ -194,7 +194,7 @@ export default function DataBrowser() {
     <>
       <Header 
         title="Data Browser"
-        subtitle="PostgreSQL Analytics - Browse your data warehouse tables"
+        subtitle="Browse your analytics warehouse tables and data"
       />
       
       <main className="flex-1 overflow-hidden bg-gray-50 flex">

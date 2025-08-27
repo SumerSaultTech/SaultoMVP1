@@ -495,6 +495,398 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Metric Reports
+  app.get("/api/metric-reports", async (req, res) => {
+    try {
+      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      const reports = await storage.getMetricReports(companyId);
+      res.json(reports);
+    } catch (error) {
+      console.error("Error fetching metric reports:", error);
+      res.status(500).json({ message: "Failed to get metric reports" });
+    }
+  });
+
+  app.get("/api/metric-reports/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const report = await storage.getMetricReport(id);
+      
+      if (!report) {
+        return res.status(404).json({ message: "Metric report not found" });
+      }
+      
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching metric report:", error);
+      res.status(500).json({ message: "Failed to get metric report" });
+    }
+  });
+
+  app.get("/api/metric-reports/share/:shareToken", async (req, res) => {
+    try {
+      const { shareToken } = req.params;
+      const report = await storage.getMetricReportByShareToken(shareToken);
+      
+      if (!report || !report.isPublic) {
+        return res.status(404).json({ message: "Shared report not found or not public" });
+      }
+      
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching shared metric report:", error);
+      res.status(500).json({ message: "Failed to get shared metric report" });
+    }
+  });
+
+  app.post("/api/metric-reports", async (req, res) => {
+    try {
+      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      const createdBy = req.session?.user?.id || 1;
+      
+      const dataWithCompanyId = { 
+        ...req.body, 
+        companyId,
+        createdBy
+      };
+      
+      const validatedData = insertMetricReportSchema.parse(dataWithCompanyId);
+      const report = await storage.createMetricReport(validatedData);
+      
+      res.status(201).json(report);
+    } catch (error) {
+      console.error("Error creating metric report:", error);
+      res.status(500).json({ message: "Failed to create metric report" });
+    }
+  });
+
+  app.patch("/api/metric-reports/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertMetricReportSchema.partial().parse(req.body);
+      const report = await storage.updateMetricReport(id, validatedData);
+      
+      if (!report) {
+        return res.status(404).json({ message: "Metric report not found" });
+      }
+      
+      res.json(report);
+    } catch (error) {
+      console.error("Error updating metric report:", error);
+      res.status(500).json({ message: "Failed to update metric report" });
+    }
+  });
+
+  app.delete("/api/metric-reports/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteMetricReport(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Metric report not found" });
+      }
+      
+      res.json({ message: "Metric report deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting metric report:", error);
+      res.status(500).json({ message: "Failed to delete metric report" });
+    }
+  });
+
+  // Generate report data with real metric calculations
+  app.get("/api/metric-reports/:id/data", async (req, res) => {
+    console.log("🚨 ROUTE HIT: /api/metric-reports/:id/data");
+    console.log("📍 Request params:", req.params);
+    console.log("📍 Request query:", req.query);
+    try {
+      const reportId = parseInt(req.params.id);
+      const timePeriod = req.query.timePeriod as string || 'monthly';
+      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      
+      // Get the report
+      const report = await storage.getMetricReport(reportId);
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      
+      // Get all metrics to build metric lookup
+      const allMetrics = await storage.getKpiMetrics(companyId);
+      const metricsMap = new Map(allMetrics.map(m => [m.id, m]));
+      
+      // Calculate data for selected metrics
+      const reportData = {
+        report,
+        timePeriod,
+        generatedAt: new Date().toISOString(),
+        metrics: [],
+        summary: {
+          totalMetrics: 0,
+          calculatedMetrics: 0,
+          failedMetrics: 0,
+        }
+      };
+      
+      // Process each selected metric
+      for (const metricId of (report.selectedMetrics as number[] || [])) {
+        const metric = metricsMap.get(metricId);
+        if (!metric) {
+          console.log(`Metric ${metricId} not found, skipping`);
+          continue;
+        }
+        
+        reportData.summary.totalMetrics++;
+        
+        let metricData = {
+          id: metric.id,
+          name: metric.name,
+          description: metric.description,
+          category: metric.category,
+          format: metric.format,
+          yearlyGoal: metric.yearlyGoal,
+          isIncreasing: metric.isIncreasing,
+          currentValue: null,
+          goalProgress: null,
+          changePercent: null,
+          status: 'pending' as 'success' | 'error' | 'pending'
+        };
+        
+        // Calculate real metric value if SQL query exists
+        if (metric.sqlQuery) {
+          try {
+            const result = await postgresAnalyticsService.calculateMetric(
+              metric.name, 
+              companyId, 
+              timePeriod, 
+              metric.id, 
+              metric.sqlQuery
+            );
+            
+            if (result) {
+              metricData.currentValue = result.currentValue;
+              
+              // Calculate goal progress manually since PostgresMetricData doesn't include it
+              console.log(`🎯 Goal Progress Check - Metric: ${metric.name}, Goal: "${metric.yearlyGoal}", Type: ${typeof metric.yearlyGoal}`);
+              if (metric.yearlyGoal && parseFloat(metric.yearlyGoal) > 0) {
+                const yearlyGoal = parseFloat(metric.yearlyGoal);
+                const currentValue = result.currentValue || 0;
+                metricData.goalProgress = (currentValue / yearlyGoal) * 100;
+                
+                // Calculate "on-pace" status based on time period and progress
+                const currentMonth = new Date().getMonth() + 1; // 1-12
+                const expectedProgressByMonth = (currentMonth / 12) * 100;
+                const onPace = metricData.goalProgress >= expectedProgressByMonth * 0.8; // 80% threshold
+                
+                console.log(`🎯 Goal Calculation: ${currentValue} / ${yearlyGoal} = ${metricData.goalProgress.toFixed(2)}%`);
+                console.log(`🎯 On Pace Check: Expected ${expectedProgressByMonth.toFixed(1)}% by month ${currentMonth}, Actual ${metricData.goalProgress.toFixed(1)}%, On Pace: ${onPace}`);
+                
+                // Add pace status to metric data
+                (metricData as any).onPace = onPace;
+                (metricData as any).expectedProgress = expectedProgressByMonth;
+              } else {
+                metricData.goalProgress = null;
+                (metricData as any).onPace = null;
+                (metricData as any).expectedProgress = null;
+                console.log(`🎯 No goal set for ${metric.name} - yearlyGoal: "${metric.yearlyGoal}"`);
+              }
+              
+              // TODO: Calculate change percent (would need historical data)
+              metricData.changePercent = null;
+              
+              metricData.status = 'success';
+              reportData.summary.calculatedMetrics++;
+              
+              console.log(`✅ Report metric ${metric.name}: ${result.currentValue} (${timePeriod})`);
+            } else {
+              metricData.status = 'error';
+              reportData.summary.failedMetrics++;
+              console.log(`❌ Failed to calculate metric ${metric.name}`);
+            }
+          } catch (error) {
+            console.error(`Error calculating metric ${metric.name}:`, error);
+            metricData.status = 'error';
+            reportData.summary.failedMetrics++;
+          }
+        } else {
+          // No SQL query - use static data or mark as unavailable
+          metricData.status = 'error';
+          reportData.summary.failedMetrics++;
+        }
+        
+        reportData.metrics.push(metricData);
+      }
+      
+      console.log(`📊 Report ${report.title}: ${reportData.summary.calculatedMetrics}/${reportData.summary.totalMetrics} metrics calculated successfully`);
+      console.log("🔍 DEBUG: About to send JSON response for /api/metric-reports/:id/data");
+      console.log("📤 Response data sample:", JSON.stringify(reportData, null, 2).substring(0, 300) + "...");
+      res.json(reportData);
+      
+    } catch (error) {
+      console.error("Error generating report data:", error);
+      res.status(500).json({ message: "Failed to generate report data" });
+    }
+  });
+
+  // Helper function for fallback insights when AI services are unavailable
+  const generateFallbackInsights = (reportData: any) => {
+    const successfulMetrics = reportData.metrics.filter((m: any) => m.status === 'success');
+    const failedMetrics = reportData.summary.failedMetrics;
+    
+    let summary = `This ${reportData.timePeriod} business metrics report shows ${successfulMetrics.length} successfully calculated metrics out of ${reportData.summary.totalMetrics} total metrics.`;
+    
+    if (successfulMetrics.length > 0) {
+      const highPerformers = successfulMetrics.filter((m: any) => m.goalProgress && m.goalProgress > 80);
+      const lowPerformers = successfulMetrics.filter((m: any) => m.goalProgress && m.goalProgress < 50);
+      
+      summary += ` ${highPerformers.length} metrics are performing well (>80% of goal), while ${lowPerformers.length} metrics need attention (<50% of goal).`;
+    }
+    
+    // Generate per-metric forecasts
+    const metricForecasts = successfulMetrics.map((metric: any) => {
+      const progress = metric.goalProgress || 0;
+      const currentValue = metric.currentValue || 0;
+      const goal = metric.yearlyGoal ? parseFloat(metric.yearlyGoal) : 0;
+      
+      const performanceLevel = progress > 80 ? 'strong' : progress > 50 ? 'moderate' : 'weak';
+      const weeklyProjection = goal > 0 ? Math.round(currentValue * 1.02) : currentValue;
+      const monthlyProjection = goal > 0 ? Math.round(currentValue * 1.08) : currentValue;
+      const quarterlyProjection = goal > 0 ? Math.round(currentValue * 1.25) : currentValue;
+      const yearlyProjection = goal > 0 ? Math.round(currentValue * 4.2) : currentValue;
+      
+      return `## METRIC: ${metric.name}
+### Executive Summary
+Currently at ${progress.toFixed(1)}% of goal with ${performanceLevel} performance trajectory.
+
+### Outlook This Week
+Projected to reach ${weeklyProjection.toLocaleString()} based on current pace, maintaining ${performanceLevel} momentum.
+
+### Outlook This Month
+Monthly forecast: ${monthlyProjection.toLocaleString()}. ${progress > 70 ? 'Likely to achieve' : 'Risk of missing'} monthly targets.
+
+### Outlook This Quarter
+Quarterly projection: ${quarterlyProjection.toLocaleString()}. ${progress > 60 ? 'On track for' : 'May fall short of'} quarterly goals.
+
+### Outlook This Year
+Annual forecast: ${yearlyProjection.toLocaleString()}. ${progress > 50 ? 'Expected to meet' : 'Unlikely to achieve'} year-end objectives.`;
+    }).join('\n\n');
+
+    return metricForecasts + `\n\n*Note: These metric-specific forecasts were generated using fallback analysis due to AI service unavailability. Projections are based on current performance patterns.*`;
+  };
+
+  // Generate AI insights for a report
+  app.post("/api/metric-reports/:id/insights", async (req, res) => {
+    try {
+      const reportId = parseInt(req.params.id);
+      const timePeriod = req.body.timePeriod || 'monthly';
+      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      
+      // Get the report
+      const report = await storage.getMetricReport(reportId);
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      
+      // Get report data first
+      const reportDataResponse = await fetch(`http://localhost:${process.env.PORT || 5000}/api/metric-reports/${reportId}/data?timePeriod=${timePeriod}`);
+      const reportData = await reportDataResponse.json();
+      
+      if (!reportData || !reportData.metrics) {
+        return res.status(400).json({ message: "Unable to generate insights - no metric data available" });
+      }
+      
+      // Create insights prompt
+      const metricsContext = reportData.metrics
+        .filter((m: any) => m.status === 'success')
+        .map((m: any) => {
+          const progress = m.goalProgress ? `${m.goalProgress.toFixed(1)}% of goal` : 'no goal set';
+          const change = m.changePercent ? `${m.changePercent}% change` : 'no change data';
+          return `- ${m.name}: ${m.currentValue ? m.currentValue.toLocaleString() : 'N/A'} (${progress}, ${change})`;
+        }).join('\n');
+      
+      const insightsPrompt = `
+Analyze these key performance metrics and provide detailed insights about WHY each metric is performing the way it is:
+
+Report: ${report.title}
+Time Period: ${timePeriod}
+Generated: ${reportData.generatedAt}
+Current Date: ${new Date().toLocaleDateString()}
+
+CURRENT METRICS PERFORMANCE:
+${metricsContext}
+
+For each metric, provide a comprehensive analysis in this exact format:
+
+## METRIC: [Metric Name]
+### Executive Summary
+**Performance Status:** [On Track/Off Track/Exceeding Expectations] - Brief assessment with key numbers.
+**Root Cause Analysis:** Explain the primary reasons WHY this metric is performing at this level.
+
+### Outlook This Week  
+**Projection:** Weekly forecast with specific numbers.
+**Key Drivers:** What factors will most influence this week's performance?
+**Risk Factors:** What could cause this week to underperform?
+
+### Outlook This Month
+**Projection:** Monthly forecast with goal achievement probability.
+**Success Factors:** What needs to happen to hit monthly targets?
+**Warning Signs:** Early indicators that would signal potential problems.
+
+### Outlook This Quarter
+**Projection:** Quarterly forecast with strategic implications.
+**Market Factors:** External conditions that will impact performance.
+**Operational Levers:** Internal actions that could improve results.
+
+### Outlook This Year
+**Projection:** Annual forecast and year-end likelihood.
+**Strategic Recommendations:** Top 3 actions to optimize year-end performance.
+**Scenario Planning:** Best case, worst case, and most likely outcomes.
+
+CRITICAL REQUIREMENTS:
+- Focus heavily on ROOT CAUSE ANALYSIS - explain WHY metrics are performing this way
+- Include specific actionable recommendations for improvement
+- Identify leading indicators and early warning signs
+- Consider both internal factors (operations, team, processes) and external factors (market, competition, seasonality)
+- Be specific about what management should do differently for off-track metrics
+- For over-performing metrics, explain what's driving the success and how to sustain it`;
+
+      // Generate insights using AI
+      let insights;
+      try {
+        // Try Azure OpenAI first, fall back to OpenAI
+        insights = await azureOpenAIService.generateResponse(insightsPrompt);
+        console.log("✅ Generated insights using Azure OpenAI");
+      } catch (azureError) {
+        console.log("Azure OpenAI failed, trying OpenAI...", azureError.message);
+        try {
+          insights = await openaiService.generateResponse(insightsPrompt);
+          console.log("✅ Generated insights using OpenAI");
+        } catch (openaiError) {
+          console.log("Both AI services failed, using fallback insights");
+          insights = generateFallbackInsights(reportData);
+        }
+      }
+      
+      // Update the report with generated insights
+      const updatedReport = await storage.updateMetricReport(reportId, {
+        generatedInsights: {
+          content: insights,
+          generatedAt: new Date().toISOString(),
+          timePeriod: timePeriod,
+          version: '1.0'
+        }
+      });
+      
+      res.json({
+        insights,
+        generatedAt: new Date().toISOString(),
+        report: updatedReport
+      });
+      
+    } catch (error) {
+      console.error("Error generating AI insights:", error);
+      res.status(500).json({ message: "Failed to generate insights" });
+    }
+  });
+
   // Test PostgreSQL connection endpoint
   app.get("/api/postgres/test", async (req, res) => {
     try {

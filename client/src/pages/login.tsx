@@ -35,11 +35,11 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-saulto-600 rounded-xl mb-4">
-            <Database className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">DataSync Pro</h1>
-          <p className="text-gray-600">Data Warehouse Platform</p>
+          <img 
+            src="/assets/logo.png" 
+            alt="Saulto Logo" 
+            className="w-64 h-32 object-contain mx-auto"
+          />
         </div>
 
         {/* Login Form */}
@@ -47,7 +47,7 @@ export default function Login() {
           <CardHeader className="text-center">
             <CardTitle>Welcome Back</CardTitle>
             <CardDescription>
-              Sign in to access your data warehouse dashboard
+              Sign in to access Saulto
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -89,15 +89,12 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center text-sm text-gray-500">
-              <p>Demo credentials: any username/password</p>
-            </div>
           </CardContent>
         </Card>
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>© 2024 DataSync Pro. Enterprise Data Platform.</p>
+          <p>© 2025 Saulto by Sumersault</p>
         </div>
       </div>
     </div>

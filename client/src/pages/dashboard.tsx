@@ -52,8 +52,8 @@ export default function Dashboard() {
   return (
     <>
       <Header 
-        title="Data Pipeline Dashboard"
-        subtitle="Monitor your Snowflake warehouse and data pipelines"
+        title="Business Intelligence Dashboard"
+        subtitle="Monitor your metrics and data pipelines"
         actions={
           <Button onClick={handleManualSync} className="bg-primary-500 hover:bg-primary-600">
             <FolderSync className="mr-2 h-4 w-4" />
