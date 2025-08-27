@@ -311,6 +311,27 @@ export class SqlModelEngine {
     return `analytics_company_${companyId}`;
   }
 
+  // Wrap user SQL with INT layer metadata columns
+  wrapUserSQLForINTLayer(userSQL: string, metricName: string, category: string, format: string, yearlyGoal: number): string {
+    // Clean the metric name for SQL column value
+    const cleanMetricName = metricName.replace(/'/g, "''"); // Escape single quotes for SQL
+    
+    const wrappedSQL = `
+      SELECT 
+        '${cleanMetricName}' as metric_name,
+        '${category}' as category,
+        '${format}' as format,
+        ${yearlyGoal} as yearly_goal,
+        user_data.current_value,
+        user_data.calculated_at
+      FROM (
+        ${userSQL}
+      ) as user_data
+    `;
+    
+    return wrappedSQL.trim();
+  }
+
   // Create INT layer models from user-defined KPI metrics custom SQL
   async createMetricModelsFromKPI(companyId: number): Promise<SqlModelResult[]> {
     try {
@@ -362,6 +383,10 @@ export class SqlModelEngine {
           .replace(/\{companyId\}/g, companyId.toString())
           .replace(/\{company_schema\}/g, `analytics_company_${companyId}`);
 
+        // Extract the column name from the user's SQL to handle dynamic column names
+        const columnName = this.extractColumnNameFromSQL(processedSQL);
+        console.log(`📊 Extracted column name from user SQL: ${columnName}`);
+
         // Wrap user SQL to include metadata for CORE layer consumption
         const wrappedSQL = `
           SELECT 
@@ -370,7 +395,7 @@ export class SqlModelEngine {
             '${metric.format}' as format,
             ${metric.yearly_goal || 0} as yearly_goal,
             NOW() as calculated_at,
-            result.metric_value as current_value
+            result.${columnName} as current_value
           FROM (
             ${processedSQL}
           ) result
@@ -436,13 +461,13 @@ export class SqlModelEngine {
       
       // Get all deployed INT metric tables
       const metricTablesQuery = `
-        SELECT target_table, name
+        SELECT name, description
         FROM public.sql_models 
         WHERE company_id = ${companyId} 
         AND layer = 'int'
         AND name LIKE 'int_metric_%'
         AND status = 'deployed'
-        ORDER BY target_table
+        ORDER BY name
       `;
       
       const tablesResult = await this.db.execute(sql.raw(metricTablesQuery));
@@ -478,7 +503,7 @@ export class SqlModelEngine {
           yearly_goal,
           current_value,
           calculated_at
-        FROM ${schema}.${table.target_table}
+        FROM ${schema}.${table.name}
       `).join('\n  UNION ALL\n  ');
 
       const dynamicSQL = `
@@ -530,15 +555,32 @@ export class SqlModelEngine {
     try {
       const schema = this.getAnalyticsSchema(companyId);
       
-      // Find all user-defined metric tables
+      // First check what columns exist in sql_models table
+      console.log('🔍 Checking sql_models table structure...');
+      const columnCheckQuery = `
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'sql_models' 
+        AND table_schema = 'public'
+        ORDER BY ordinal_position
+      `;
+      
+      try {
+        const columnResult = await this.db.execute(sql.raw(columnCheckQuery));
+        console.log('📊 sql_models columns:', columnResult);
+      } catch (columnError) {
+        console.error('❌ Error checking columns:', columnError);
+      }
+      
+      // Find all user-defined metric tables - using name instead of target_table
       const metricTablesQuery = `
-        SELECT target_table, description
+        SELECT name, description, sql_content
         FROM public.sql_models 
         WHERE company_id = ${companyId} 
         AND layer = 'int'
         AND name LIKE 'int_metric_%'
         AND status = 'deployed'
-        ORDER BY target_table
+        ORDER BY name
       `;
       
       const tablesResult = await this.db.execute(sql.raw(metricTablesQuery));
@@ -554,6 +596,9 @@ export class SqlModelEngine {
       
       for (const table of metricTables) {
         try {
+          // Convert model name to table name (int_metric_annual_revenue -> int_metric_annual_revenue)
+          const tableName = table.name;
+          
           const metricQuery = `
             SELECT 
               metric_name,
@@ -562,7 +607,7 @@ export class SqlModelEngine {
               yearly_goal,
               current_value,
               calculated_at
-            FROM ${schema}.${table.target_table}
+            FROM ${schema}.${tableName}
             ORDER BY calculated_at DESC
             LIMIT 1
           `;
@@ -575,7 +620,7 @@ export class SqlModelEngine {
           }
           
         } catch (tableError) {
-          console.warn(`⚠️ Could not query metric table ${table.target_table}:`, tableError);
+          console.warn(`⚠️ Could not query metric table ${tableName}:`, tableError);
         }
       }
 
@@ -1177,6 +1222,48 @@ export class SqlModelEngine {
       
     } catch (error) {
       console.error(`❌ Failed to update CORE user metrics for company ${companyId}:`, error);
+    }
+  }
+
+  // Helper method to extract column name from user's SQL query
+  private extractColumnNameFromSQL(sqlQuery: string): string {
+    try {
+      // Remove comments and normalize whitespace
+      const cleanSQL = sqlQuery.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim();
+      
+      // Look for SELECT ... AS column_name pattern, but stop at FROM to avoid subquery matches
+      const selectToFromPattern = /SELECT\s+(.+?)\s+FROM/i;
+      const selectToFromMatch = cleanSQL.match(selectToFromPattern);
+      
+      if (selectToFromMatch && selectToFromMatch[1]) {
+        const selectClause = selectToFromMatch[1].trim();
+        
+        // Look for AS column_name in the main SELECT clause only
+        const asPattern = /\s+AS\s+(\w+)(?:\s*,|$)/i;
+        const asMatch = selectClause.match(asPattern);
+        
+        if (asMatch && asMatch[1]) {
+          console.log(`📊 Found AS column name: ${asMatch[1]}`);
+          return asMatch[1];
+        }
+        
+        // If no AS found, try to extract last word from the expression
+        const lastWordPattern = /(\w+)(?:\s*,\s*|\s*$)/;
+        const lastWordMatch = selectClause.match(lastWordPattern);
+        
+        if (lastWordMatch && lastWordMatch[1] && lastWordMatch[1].toLowerCase() !== 'from') {
+          console.log(`📊 Inferred column name from SELECT: ${lastWordMatch[1]}`);
+          return lastWordMatch[1];
+        }
+      }
+      
+      // Fallback: assume metric_value for backward compatibility
+      console.log(`⚠️ Could not parse column name from SQL, using default: metric_value`);
+      return 'metric_value';
+      
+    } catch (error) {
+      console.error(`❌ Error parsing SQL column name:`, error);
+      return 'metric_value';
     }
   }
 }

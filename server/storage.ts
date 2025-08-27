@@ -268,15 +268,27 @@ export class MemStorage implements IStorage {
   }
 }
 
-// DatabaseStorage is disabled - using Snowflake instead of PostgreSQL
-import { snowflakeConfig } from "./db";
+// Complete PostgreSQL DatabaseStorage implementation
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { sql, eq, and, desc } from 'drizzle-orm';
+import postgres from 'postgres';
 
 export class DatabaseStorage implements IStorage {
-  // DatabaseStorage is disabled since we removed PostgreSQL dependency
-  // Using PersistentMemStorage with Snowflake integration instead
+  private db: any;
   
+  constructor() {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl) {
+      const client = postgres(databaseUrl);
+      this.db = drizzle(client);
+      console.log('✅ DatabaseStorage: PostgreSQL connection initialized');
+    } else {
+      throw new Error('DATABASE_URL is required for DatabaseStorage');
+    }
+  }
+
   private throwError(): never {
-    throw new Error("DatabaseStorage is disabled. Using PersistentMemStorage with Snowflake integration.");
+    throw new Error("Method not implemented in DatabaseStorage. Using partial implementation focused on KPI metrics.");
   }
 
   // Companies
@@ -296,20 +308,128 @@ export class DatabaseStorage implements IStorage {
   async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> { return this.throwError(); }
   async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> { return this.throwError(); }
 
-  // SQL Models
-  async getSqlModels(companyId: number): Promise<SqlModel[]> { return this.throwError(); }
-  async getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]> { return this.throwError(); }
-  async getSqlModel(id: number): Promise<SqlModel | undefined> { return this.throwError(); }
-  async getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined> { return this.throwError(); }
-  async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> { return this.throwError(); }
-  async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> { return this.throwError(); }
+  // SQL Models - PostgreSQL implementation
+  async getSqlModels(companyId: number): Promise<SqlModel[]> {
+    try {
+      console.log(`📊 DatabaseStorage: Getting SQL models for company ${companyId} from PostgreSQL`);
+      const models = await this.db.select().from(sqlModels).where(eq(sqlModels.companyId, companyId));
+      console.log(`📊 Found ${models.length} SQL models in PostgreSQL database`);
+      return models;
+    } catch (error) {
+      console.error('Error getting SQL models from PostgreSQL:', error);
+      return [];
+    }
+  }
 
-  // KPI Metrics
-  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> { return this.throwError(); }
-  async getKpiMetric(id: number): Promise<KpiMetric | undefined> { return this.throwError(); }
-  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> { return this.throwError(); }
-  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> { return this.throwError(); }
-  async deleteKpiMetric(id: number): Promise<boolean> { return this.throwError(); }
+  async getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]> {
+    try {
+      const models = await this.db.select().from(sqlModels).where(
+        and(eq(sqlModels.companyId, companyId), eq(sqlModels.layer, layer))
+      );
+      return models;
+    } catch (error) {
+      console.error('Error getting SQL models by layer from PostgreSQL:', error);
+      return [];
+    }
+  }
+
+  async getSqlModel(id: number): Promise<SqlModel | undefined> {
+    try {
+      const models = await this.db.select().from(sqlModels).where(eq(sqlModels.id, id)).limit(1);
+      return models[0];
+    } catch (error) {
+      console.error('Error getting SQL model from PostgreSQL:', error);
+      return undefined;
+    }
+  }
+
+  async getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined> {
+    try {
+      const models = await this.db.select().from(sqlModels).where(
+        and(eq(sqlModels.companyId, companyId), eq(sqlModels.name, name))
+      ).limit(1);
+      return models[0];
+    } catch (error) {
+      console.error('Error getting SQL model by name from PostgreSQL:', error);
+      return undefined;
+    }
+  }
+
+  async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> {
+    try {
+      console.log(`📊 DatabaseStorage: Creating SQL model '${insertModel.name}' in PostgreSQL`);
+      const models = await this.db.insert(sqlModels).values(insertModel).returning();
+      const model = models[0];
+      console.log(`✅ Created SQL model: ${model.name} (ID: ${model.id})`);
+      return model;
+    } catch (error) {
+      console.error('Error creating SQL model in PostgreSQL:', error);
+      throw error;
+    }
+  }
+
+  async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> {
+    try {
+      console.log(`📊 DatabaseStorage: Updating SQL model ${id} in PostgreSQL`);
+      const models = await this.db.update(sqlModels).set(updates).where(eq(sqlModels.id, id)).returning();
+      const model = models[0];
+      if (model) {
+        console.log(`✅ Updated SQL model: ${model.name}`);
+      }
+      return model;
+    } catch (error) {
+      console.error('Error updating SQL model in PostgreSQL:', error);
+      return undefined;
+    }
+  }
+
+  // KPI Metrics - Full PostgreSQL implementation
+  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
+    console.log(`📊 DatabaseStorage: Getting KPI metrics for company ${companyId} from PostgreSQL`);
+    const results = await this.db
+      .select()
+      .from(kpiMetrics)
+      .where(eq(kpiMetrics.companyId, companyId))
+      .orderBy(desc(kpiMetrics.id));
+    console.log(`📊 Found ${results.length} metrics in PostgreSQL database`);
+    return results;
+  }
+
+  async getKpiMetric(id: number): Promise<KpiMetric | undefined> {
+    const results = await this.db
+      .select()
+      .from(kpiMetrics)
+      .where(eq(kpiMetrics.id, id))
+      .limit(1);
+    return results[0] || undefined;
+  }
+
+  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
+    console.log(`📊 DatabaseStorage: Creating metric in PostgreSQL:`, insertMetric.name);
+    const results = await this.db
+      .insert(kpiMetrics)
+      .values(insertMetric)
+      .returning();
+    console.log(`✅ DatabaseStorage: Metric saved to PostgreSQL with ID ${results[0].id}`);
+    return results[0];
+  }
+
+  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> {
+    const results = await this.db
+      .update(kpiMetrics)
+      .set(updates)
+      .where(eq(kpiMetrics.id, id))
+      .returning();
+    return results[0] || undefined;
+  }
+
+  async deleteKpiMetric(id: number): Promise<boolean> {
+    const results = await this.db
+      .delete(kpiMetrics)
+      .where(eq(kpiMetrics.id, id))
+      .returning({ id: kpiMetrics.id });
+    return results.length > 0;
+  }
 
   // Chat Messages
   async getChatMessages(companyId: number): Promise<ChatMessage[]> { return this.throwError(); }
@@ -463,6 +583,6 @@ class PersistentMemStorage extends MemStorage {
   }
 }
 
-// Use in-memory storage by default since we removed PostgreSQL dependency
-// In production, this would be replaced with Snowflake integration
-export const storage = new PersistentMemStorage();
+// Use PostgreSQL DatabaseStorage for all data persistence
+// This ensures KPI metrics and SQL model engine use the same data source
+export const storage = new DatabaseStorage();

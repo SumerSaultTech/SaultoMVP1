@@ -275,10 +275,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
             rawYearlyGoal: dashboardMetric.yearlyGoal,
             // Keep formatted values for compatibility
             value: dashboardMetric.format === 'currency' 
-              ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
+              ? `$${(dashboardMetric.currentValue / 1000000).toFixed(2)}M`
               : `${dashboardMetric.currentValue.toLocaleString()}`,
             yearlyGoal: dashboardMetric.format === 'currency' 
-              ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
+              ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(2)}M`
               : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
             // Calculate progress based on real values
             goalProgress: dashboardMetric.yearlyGoal > 0 
@@ -416,9 +416,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   const formatGoalValue = (value: number) => {
     if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
+      return `$${(value / 1000000).toFixed(2)}M`;
     } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
+      return `$${(value / 1000).toFixed(1)}K`;
     } else {
       return `$${Math.round(value).toLocaleString()}`;
     }
@@ -598,9 +598,9 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     } else {
       // Default to currency formatting for currency format or unspecified
       if (value >= 1000000) {
-        return `$${(value / 1000000).toFixed(1)}M`;
+        return `$${(value / 1000000).toFixed(2)}M`;
       } else if (value >= 1000) {
-        return `$${(value / 1000).toFixed(0)}K`;
+        return `$${(value / 1000).toFixed(1)}K`;
       } else {
         return `$${Math.round(value).toLocaleString()}`;
       }

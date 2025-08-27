@@ -20,9 +20,9 @@ interface NorthStarMetric {
 // Format large numbers as millions for display
 const formatLargeNumber = (value: number): string => {
   if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
+    return `$${(value / 1000000).toFixed(2)}M`;
   } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
+    return `$${(value / 1000).toFixed(1)}K`;
   } else {
     return `$${Math.round(value).toLocaleString()}`;
   }
@@ -220,9 +220,9 @@ function formatValue(value: string | number, format: string): string {
   if (format === 'currency') {
     const numValue = parseFloat(valueStr.replace(/[$,]/g, '')) || 0;
     if (numValue >= 1000000) {
-      return `$${(numValue / 1000000).toFixed(1)}M`;
+      return `$${(numValue / 1000000).toFixed(2)}M`;
     } else if (numValue >= 1000) {
-      return `$${(numValue / 1000).toFixed(0)}K`;
+      return `$${(numValue / 1000).toFixed(1)}K`;
     } else {
       return `$${Math.round(numValue).toLocaleString()}`;
     }
@@ -240,9 +240,9 @@ function formatActualValue(value: number, format?: string): string {
   } else {
     // Default to currency formatting for currency format or unspecified
     if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
+      return `$${(value / 1000000).toFixed(2)}M`;
     } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
+      return `$${(value / 1000).toFixed(1)}K`;
     } else {
       return `$${Math.round(value).toLocaleString()}`;
     }

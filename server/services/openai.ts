@@ -147,55 +147,51 @@ class OpenAIService {
         return this.getFallbackSQL(kpiDescription, companyId);
       }
 
-      const tablesContext = availableTables.length > 0 
-        ? `Available tables: ${availableTables.join(", ")}`
-        : `Available tables: core_metrics_dashboard, core_user_metrics (fallback - no dynamic discovery available)`;
+      // Get detailed schema context for this specific company
+      const { postgresAnalyticsService } = await import('./postgres-analytics.js');
+      let schemaContext = '';
       
-      // Create dynamic table schema context based on available tables
-      let tableSchemaContext = "Table schemas (key fields):";
-      if (availableTables.length > 0) {
-        tableSchemaContext = this.buildTableSchemaContext(availableTables);
+      if (companyId) {
+        try {
+          schemaContext = await postgresAnalyticsService.getSchemaContextForCompany(companyId);
+          console.log(`✅ Got detailed schema context for company ${companyId}`);
+        } catch (error) {
+          console.warn(`⚠️ Could not get schema context for company ${companyId}, using fallback:`, error);
+          schemaContext = this.getFallbackSchemaContext(availableTables, companyId);
+        }
       } else {
-        tableSchemaContext = `Table schemas (key fields):
-CORE LAYER (fallback):
-- core_metrics_dashboard: close_date, daily_revenue, daily_profit, cumulative_revenue (RUNNING SUM), cumulative_profit (RUNNING SUM), revenue_progress_pct, profit_progress_pct, day_label, week_label, month_label
-- core_user_metrics: metric_name, category, format, yearly_goal, current_value, progress_pct, calculated_at
-
-TIME-PERIOD QUERY PATTERNS:
-- Daily Running Sum: SUM(daily_column) OVER (ORDER BY close_date) 
-- Weekly Aggregation: SUM(daily_column) GROUP BY DATE_TRUNC('week', close_date)
-- Monthly Totals: SUM(daily_column) GROUP BY DATE_TRUNC('month', close_date)
-- Year-to-Date: WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)`;
+        schemaContext = this.getFallbackSchemaContext(availableTables, companyId);
       }
 
       const prompt = `Generate a SQL query to calculate the KPI: "${kpiDescription}"
 
-      Context:
-      - Data warehouse: PostgreSQL
-      - Company schema: analytics_company_${companyId}
-      - ${tablesContext}
-      
-      ${tableSchemaContext}
+      ${schemaContext}
 
       Requirements:
-      1. Use table names with company schema prefix: analytics_company_${companyId}
-      2. Write efficient PostgreSQL queries with proper aggregations
-      3. For time-based metrics, use appropriate date filters and DATE_TRUNC functions
-      4. Include comments explaining business logic
-      5. Follow the layered architecture: prefer CORE layer for final metrics, INT layer for business logic, STG layer for cleaned source data
-      6. Only use tables that are available in the provided table list
+      1. ONLY use tables and columns that exist in the schema provided above
+      2. Use EXACT table names and column names as shown in the schema
+      3. Write efficient PostgreSQL queries with proper aggregations
+      4. For time-based metrics, use appropriate date filters and DATE_TRUNC functions
+      5. Include comments explaining business logic
+      6. Handle NULL values properly with COALESCE
+      7. For averages, use: COALESCE(SUM(amount), 0) / NULLIF(COUNT(*), 0)
+      8. Use {companyId} placeholder in table references (it will be replaced automatically)
       
-      TIME-PERIOD AWARE CALCULATIONS:
-      7. For metrics like "annual revenue", "total profit", etc., generate RUNNING SUM queries using window functions
-      8. Use cumulative patterns: SUM(column) OVER (ORDER BY date_column) for running totals
-      9. Support dashboard time period switching (Daily/Weekly/Monthly/Yearly views)
-      10. For period-based queries, group by appropriate time periods using DATE_TRUNC
+      CRITICAL SQL STRUCTURE REQUIREMENTS:
+      - Your SQL must return ONLY these two columns: current_value, calculated_at
+      - Do NOT include metric_name, category, format, yearly_goal - these will be added automatically
+      - Return format: SELECT [your_calculation] as current_value, NOW() as calculated_at
+      - Do NOT assume table or column names - use EXACT names from schema above
+      - If metric requires data from multiple tables, use UNION ALL to combine them
+      - Pay attention to stage/status values (some systems use 'Closed Won', others use 'closedwon')
       
-      EXAMPLE PATTERNS:
-      - Running Annual Revenue: SUM(daily_revenue) OVER (ORDER BY close_date) as cumulative_revenue
-      - Time Period Filtering: WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
-      - Period Grouping: GROUP BY DATE_TRUNC('month', close_date)
-      - Prefer existing cumulative columns when available (cumulative_revenue, cumulative_profit, etc.)
+      EXAMPLE PATTERNS for different metrics:
+      - Deal Size: SELECT COALESCE(AVG(amount), 0) as current_value, NOW() as calculated_at FROM ...
+      - Revenue: SELECT COALESCE(SUM(amount), 0) as current_value, NOW() as calculated_at FROM ...
+      - Customer Count: SELECT COUNT(DISTINCT customer_field) as current_value, NOW() as calculated_at FROM ...
+      - Time Periods: Use closedate, created_date, or similar date fields for filtering
+
+      The query result will be wrapped automatically with metadata columns. Focus ONLY on calculating the metric value.
 
       Respond in JSON format with: sql, explanation, dependencies (array), complexity (Simple/Moderate/Complex)`;
 
@@ -252,6 +248,34 @@ TIME-PERIOD QUERY PATTERNS:
     }
 
     return undefined;
+  }
+
+  private getFallbackSchemaContext(availableTables: string[] = [], companyId?: number): string {
+    const tablesContext = availableTables.length > 0 
+      ? `Available tables: ${availableTables.join(", ")}`
+      : `Available tables: core_metrics_dashboard, core_user_metrics (fallback - no dynamic discovery available)`;
+    
+    return `Context:
+- Data warehouse: PostgreSQL
+- Company schema: analytics_company_${companyId || '{companyId}'}
+- ${tablesContext}
+
+Table schemas (key fields):
+CORE LAYER (fallback):
+- core_metrics_dashboard: close_date, daily_revenue, daily_profit, cumulative_revenue (RUNNING SUM), cumulative_profit (RUNNING SUM), revenue_progress_pct, profit_progress_pct, day_label, week_label, month_label
+- core_user_metrics: metric_name, category, format, yearly_goal, current_value, progress_pct, calculated_at
+
+TIME-PERIOD QUERY PATTERNS:
+- Daily Running Sum: SUM(daily_column) OVER (ORDER BY close_date) 
+- Weekly Aggregation: SUM(daily_column) GROUP BY DATE_TRUNC('week', close_date)
+- Monthly Totals: SUM(daily_column) GROUP BY DATE_TRUNC('month', close_date)
+- Year-to-Date: WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
+
+Important Notes for SQL Generation:
+- Use {companyId} placeholder for company ID in table references
+- Handle NULL values with COALESCE
+- For averages: COALESCE(SUM(amount), 0) / NULLIF(COUNT(*), 0)
+- Join with UNION ALL for combining similar data from multiple sources`;
   }
 
   private buildTableSchemaContext(availableTables: string[]): string {
@@ -454,20 +478,14 @@ TIME-PERIOD QUERY PATTERNS:
 
     if (lowerDesc.includes("arr") || lowerDesc.includes("annual recurring revenue") || lowerDesc.includes("revenue")) {
       return {
-        sql: `-- Annual Recurring Revenue (ARR) with running sum calculation
+        sql: `-- Annual Recurring Revenue calculation
 SELECT 
-    close_date,
-    daily_revenue,
-    SUM(daily_revenue) OVER (ORDER BY close_date) as cumulative_annual_revenue,
-    COUNT(*) OVER (ORDER BY close_date) as cumulative_deals,
-    -- Time period groupings for dashboard flexibility
-    DATE_TRUNC('month', close_date) as month_period,
-    DATE_TRUNC('week', close_date) as week_period
+    COALESCE(SUM(daily_revenue), 0) as current_value,
+    NOW() as calculated_at
 FROM analytics_company_${companyId}.int_revenue_by_period
 WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
-  AND close_date <= CURRENT_DATE
-ORDER BY close_date;`,
-        explanation: "This query calculates annual recurring revenue as a running sum of daily revenue throughout the current year. It provides cumulative totals that work with dashboard time period switching and follows the layered architecture by using the intermediate revenue table.",
+  AND close_date <= CURRENT_DATE;`,
+        explanation: "This query calculates annual recurring revenue by summing daily revenue throughout the current year. Metadata columns (metric_name, category, etc.) will be added automatically by the pipeline.",
         dependencies: ["int_revenue_by_period"],
         complexity: "Simple"
       };
@@ -477,18 +495,17 @@ ORDER BY close_date;`,
       return {
         sql: `-- Lead conversion rate calculation
 SELECT 
-    month_period,
-    total_leads,
-    converted_leads,
     CASE 
         WHEN total_leads > 0 
         THEN ROUND((converted_leads::NUMERIC / total_leads::NUMERIC) * 100, 2)
         ELSE 0 
-    END as conversion_rate_pct
+    END as current_value,
+    NOW() as calculated_at
 FROM analytics_company_${companyId}.int_lead_conversion
-WHERE month_period >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '12 months'
-ORDER BY month_period DESC;`,
-        explanation: "This query calculates lead conversion rates by month using the intermediate lead conversion table.",
+WHERE month_period = DATE_TRUNC('month', CURRENT_DATE)
+ORDER BY month_period DESC
+LIMIT 1;`,
+        explanation: "This query calculates the current month's lead conversion rate using the intermediate lead conversion table. Metadata columns will be added automatically.",
         dependencies: ["int_lead_conversion"],
         complexity: "Simple"
       };
@@ -496,52 +513,29 @@ ORDER BY month_period DESC;`,
 
     if (lowerDesc.includes("ltv") || lowerDesc.includes("lifetime value") || lowerDesc.includes("profit")) {
       return {
-        sql: `-- Profit analysis with running sum and time period support
+        sql: `-- Profit calculation
 SELECT 
-    close_date,
-    daily_profit,
-    SUM(daily_profit) OVER (ORDER BY close_date) as cumulative_profit,
-    daily_revenue,
-    -- Calculate running profit margin
-    CASE 
-        WHEN SUM(daily_revenue) OVER (ORDER BY close_date) > 0 
-        THEN ROUND((SUM(daily_profit) OVER (ORDER BY close_date) / SUM(daily_revenue) OVER (ORDER BY close_date)) * 100, 2)
-        ELSE 0 
-    END as cumulative_profit_margin_pct,
-    -- Time period groupings
-    DATE_TRUNC('month', close_date) as month_period,
-    DATE_TRUNC('quarter', close_date) as quarter_period
+    COALESCE(SUM(daily_profit), 0) as current_value,
+    NOW() as calculated_at
 FROM analytics_company_${companyId}.int_profit_by_period
 WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
-  AND close_date <= CURRENT_DATE
-ORDER BY close_date;`,
-        explanation: "This query calculates profit metrics with running sums and profit margin analysis. It provides cumulative totals and percentages that work across different dashboard time periods, following the layered architecture pattern.",
+  AND close_date <= CURRENT_DATE;`,
+        explanation: "This query calculates cumulative profit for the current year. Metadata columns will be added automatically by the pipeline.",
         dependencies: ["int_profit_by_period"],
-        complexity: "Moderate"
+        complexity: "Simple"
       };
     }
 
     // Generic fallback
     return {
-      sql: `-- Generic KPI calculation with running sum for: ${kpiDescription}
--- Adaptable template for most cumulative metrics
-
+      sql: `-- Generic KPI calculation for: ${kpiDescription}
 SELECT 
-    close_date,
-    daily_revenue as daily_value,
-    SUM(daily_revenue) OVER (ORDER BY close_date) as cumulative_value,
-    -- Time period groupings for dashboard flexibility
-    DATE_TRUNC('day', close_date) as day_period,
-    DATE_TRUNC('week', close_date) as week_period,
-    DATE_TRUNC('month', close_date) as month_period,
-    DATE_TRUNC('quarter', close_date) as quarter_period,
-    -- Running averages
-    AVG(daily_revenue) OVER (ORDER BY close_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) as seven_day_avg
+    COALESCE(SUM(daily_revenue), 0) as current_value,
+    NOW() as calculated_at
 FROM analytics_company_${companyId}.core_metrics_dashboard
 WHERE close_date >= DATE_TRUNC('year', CURRENT_DATE)
-  AND close_date <= CURRENT_DATE
-ORDER BY close_date;`,
-      explanation: `This is a generic template query for "${kpiDescription}" that provides running sum calculations and time period groupings. It can be adapted for most cumulative business metrics and supports dashboard time period switching.`,
+  AND close_date <= CURRENT_DATE;`,
+      explanation: `This is a generic template query for "${kpiDescription}" that calculates a cumulative value. Metadata columns will be added automatically by the pipeline.`,
       dependencies: ["core_metrics_dashboard"],
       complexity: "Simple"
     };

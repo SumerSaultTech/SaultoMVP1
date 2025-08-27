@@ -490,13 +490,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           console.log(`🔄 Creating INT layer SQL model for metric: ${metric.name}`);
           
+          // Import SQL Model Engine to access wrapper function
+          const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+          
+          // Wrap user SQL with metadata columns
+          const wrappedSQL = sqlModelEngine.wrapUserSQLForINTLayer(
+            metric.sqlQuery,
+            metric.name,
+            metric.category || 'operational',
+            metric.format || 'number',
+            parseInt(metric.yearlyGoal) || 0
+          );
+          
+          console.log(`✅ Wrapped user SQL with metadata columns`);
+          
           // Create SQL model for INT layer
           const sqlModelName = `int_metric_${metric.name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
           const sqlModel = await storage.createSqlModel({
             companyId: metric.companyId,
             name: sqlModelName,
             layer: 'int',
-            sqlContent: metric.sqlQuery,
+            sqlContent: wrappedSQL,
             sourceTable: 'stg_*', // Assumes it can read from staging tables
             targetTable: sqlModelName,
             executionOrder: 200, // INT layer execution order
@@ -548,12 +562,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/kpi-metrics/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      console.log(`📝 PATCH /api/kpi-metrics/${id} - Request body:`, JSON.stringify(req.body, null, 2));
+      
       const validatedData = insertKpiMetricSchema.partial().parse(req.body);
+      console.log(`✅ Validated data:`, JSON.stringify(validatedData, null, 2));
+      
       const metric = await storage.updateKpiMetric(id, validatedData);
+      console.log(`📊 Updated metric:`, metric ? metric.name : 'NOT FOUND');
       
       if (!metric) {
         res.status(404).json({ message: "Metric not found" });
         return;
+      }
+
+      // If SQL query was updated, update the corresponding SQL model and execute pipeline
+      console.log(`🔍 Checking pipeline execution condition:`, {
+        hasSqlQuery: !!validatedData.sqlQuery,
+        sqlQueryLength: validatedData.sqlQuery?.length || 0,
+        sqlQueryTrimmed: validatedData.sqlQuery?.trim().length || 0
+      });
+      
+      if (validatedData.sqlQuery && validatedData.sqlQuery.trim()) {
+        try {
+          console.log(`🔄 SQL updated for metric: ${metric.name}, re-executing pipeline`);
+          
+          // Import SQL Model Engine to access wrapper function
+          const { sqlModelEngine } = await import('./services/sql-model-engine.js');
+          
+          // Wrap user SQL with metadata columns
+          const wrappedSQL = sqlModelEngine.wrapUserSQLForINTLayer(
+            validatedData.sqlQuery,
+            metric.name,
+            metric.category || 'operational',
+            metric.format || 'number',
+            parseInt(metric.yearlyGoal) || 0
+          );
+          
+          console.log(`✅ Wrapped updated SQL with metadata columns`);
+          
+          // Find and update existing SQL model for this metric
+          const sqlModelName = `int_metric_${metric.name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
+          const sqlModels = await storage.getSqlModels(metric.companyId);
+          const existingModel = sqlModels.find(model => model.name === sqlModelName);
+          
+          if (existingModel) {
+            // Update existing SQL model
+            await storage.updateSqlModel(existingModel.id, {
+              sqlContent: wrappedSQL,
+              status: 'draft', // Reset to draft so it gets executed
+              description: `User-defined metric: ${metric.description || metric.name} (updated)`
+            });
+            console.log(`✅ Updated SQL model: ${sqlModelName}`);
+          } else {
+            // Create new SQL model if it doesn't exist
+            await storage.createSqlModel({
+              companyId: metric.companyId,
+              name: sqlModelName,
+              layer: 'int',
+              sqlContent: wrappedSQL,
+              sourceTable: 'stg_*',
+              targetTable: sqlModelName,
+              executionOrder: 200,
+              description: `User-defined metric: ${metric.description || metric.name}`,
+              tags: ['int', 'user_metric', 'auto_generated']
+            });
+            console.log(`✅ Created new SQL model: ${sqlModelName}`);
+          }
+
+          // Execute the SQL model immediately
+          console.log(`🚀 Executing updated SQL model for metric: ${metric.name}`);
+          const executionResult = await sqlModelEngine.executeModelsForCompany(metric.companyId, 'int');
+          
+          const modelSuccess = executionResult.every(result => result.success);
+          if (modelSuccess) {
+            console.log(`✅ Successfully executed updated SQL model for metric: ${metric.name}`);
+            
+            // Update CORE layer user metrics to include updated metric
+            console.log(`🔄 Updating CORE layer user metrics to include updated metric`);
+            await sqlModelEngine.updateCoreUserMetrics(metric.companyId);
+            
+            // Trigger CORE layer refresh to include updated metric
+            console.log(`🔄 Refreshing CORE layer to include updated metric`);
+            await sqlModelEngine.executeModelsForCompany(metric.companyId, 'core');
+            
+          } else {
+            console.error(`❌ Failed to execute updated SQL model for metric: ${metric.name}`);
+          }
+
+        } catch (sqlError) {
+          console.error(`❌ Error updating/executing SQL model for metric: ${metric.name}`, sqlError);
+          // Don't fail the metric update, just log the SQL execution failure
+        }
       }
       
       res.json(metric);

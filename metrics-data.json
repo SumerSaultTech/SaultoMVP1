@@ -116,6 +116,40 @@
       "id": 6,
       "lastCalculatedAt": null,
       "value": "0"
+    },
+    "8": {
+      "companyId": 1748544793859,
+      "name": "Customer Acquisition Cost (CAC)",
+      "description": "The cost associated with acquiring a new customer.",
+      "sqlQuery": "WITH total_expenses AS (SELECT SUM(amount) AS total_amount FROM (SELECT amount FROM analytics_company_{companyId}.hubspot_deal WHERE closedate >= DATE_TRUNC('year', CURRENT_DATE) AND dealstage = 'Closed Won' UNION ALL SELECT amount FROM analytics_company_{companyId}.salesforce_opportunity WHERE closedate >= DATE_TRUNC('year', CURRENT_DATE) AND stagename = 'Closed Won') AS combined_deals), new_customers AS (SELECT COUNT(DISTINCT email) AS customer_count FROM (SELECT email FROM analytics_company_{companyId}.hubspot_contact WHERE created_date >= DATE_TRUNC('year', CURRENT_DATE) UNION SELECT email FROM analytics_company_{companyId}.salesforce_contact WHERE created_date >= DATE_TRUNC('year', CURRENT_DATE)) AS combined_contacts) SELECT COALESCE(total_amount / NULLIF(customer_count, 0), 0) AS customer_acquisition_cost FROM total_expenses, new_customers;",
+      "yearlyGoal": "Decrease by 10% annually",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "efficiency",
+      "format": "currency",
+      "isIncreasing": true,
+      "isNorthStar": false,
+      "id": 8,
+      "lastCalculatedAt": null
     }
   }
 }

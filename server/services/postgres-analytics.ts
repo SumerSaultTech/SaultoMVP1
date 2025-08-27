@@ -649,6 +649,133 @@ export class PostgresAnalyticsService {
       return [];
     }
   }
+
+  async getSchemaContextForCompany(companyId: number): Promise<string> {
+    try {
+      console.log(`🔍 Getting schema context for company ${companyId}`);
+      
+      const schema = this.getAnalyticsSchemaName(companyId);
+      
+      // Query for tables and columns in this company's analytics schema
+      const schemaQuery = `
+        SELECT 
+          t.table_name,
+          c.column_name,
+          c.data_type,
+          c.is_nullable,
+          CASE 
+            WHEN c.column_name IN ('amount', 'total', 'value', 'price') THEN 'monetary'
+            WHEN c.column_name LIKE '%date%' OR c.column_name LIKE '%time%' THEN 'date'
+            WHEN c.column_name IN ('stage', 'status', 'stagename', 'dealstage') THEN 'status'
+            WHEN c.column_name IN ('id', 'owner', 'contact', 'account') THEN 'identifier'
+            ELSE 'other'
+          END as business_context
+        FROM information_schema.tables t
+        JOIN information_schema.columns c ON t.table_name = c.table_name 
+        WHERE t.table_schema = '${schema}' 
+        AND t.table_type = 'BASE TABLE'
+        AND c.table_schema = '${schema}'
+        ORDER BY t.table_name, c.ordinal_position
+      `;
+      
+      const result = await this.executeQuery(schemaQuery);
+      
+      if (!result.success || !result.data) {
+        return 'No analytics tables found for this company. Please run data connectors first.';
+      }
+      
+      // Group columns by table
+      const tableSchemas = new Map<string, Array<any>>();
+      result.data.forEach((row: any) => {
+        if (!tableSchemas.has(row.table_name)) {
+          tableSchemas.set(row.table_name, []);
+        }
+        tableSchemas.get(row.table_name)!.push(row);
+      });
+      
+      // Build schema context string for AI
+      let schemaContext = `Database Schema for Company ${companyId}:\n\n`;
+      schemaContext += `Schema: ${schema}\n\n`;
+      
+      for (const [tableName, columns] of tableSchemas.entries()) {
+        schemaContext += `Table: ${schema}.${tableName}\n`;
+        schemaContext += `Purpose: ${this.getTablePurpose(tableName)}\n`;
+        schemaContext += `Columns:\n`;
+        
+        columns.forEach(col => {
+          schemaContext += `  - ${col.column_name} (${col.data_type}) - ${this.getColumnDescription(col.column_name, col.business_context)}\n`;
+        });
+        schemaContext += '\n';
+      }
+      
+      // Add sample data context
+      schemaContext += this.getSampleDataContext(companyId);
+      
+      console.log(`✅ Generated schema context for company ${companyId}`);
+      return schemaContext;
+      
+    } catch (error) {
+      console.error(`Error getting schema context for company ${companyId}:`, error);
+      return 'Error retrieving schema information.';
+    }
+  }
+
+  private getTablePurpose(tableName: string): string {
+    const purposes: Record<string, string> = {
+      'salesforce_opportunity': 'Salesforce sales opportunities and deals',
+      'salesforce_contact': 'Salesforce customer contact information', 
+      'salesforce_lead': 'Salesforce sales leads and prospects',
+      'hubspot_deal': 'HubSpot sales deals and opportunities',
+      'hubspot_contact': 'HubSpot customer contact information',
+      'hubspot_company': 'HubSpot company and account data',
+      'jira_issues': 'Jira project issues and tasks',
+      'core_current_metrics': 'Pre-calculated business metrics by time period',
+      'stg_salesforce_opportunity': 'Cleaned Salesforce opportunity data',
+      'stg_hubspot_deal': 'Cleaned HubSpot deal data',
+      'int_revenue_by_period': 'Revenue aggregated by time periods',
+      'int_profit_by_period': 'Profit calculations by time periods'
+    };
+    
+    return purposes[tableName] || 'Business data table';
+  }
+
+  private getColumnDescription(columnName: string, businessContext: string): string {
+    const descriptions: Record<string, string> = {
+      'amount': 'Monetary value or deal amount',
+      'stagename': 'Sales stage (e.g. "Closed Won", "Closed Lost", "Proposal")',
+      'dealstage': 'Deal stage (e.g. "closedwon", "closedlost", "proposal")', 
+      'closedate': 'Date when deal/opportunity was closed',
+      'probability': 'Probability of closing (0-100)',
+      'created_date': 'Record creation date',
+      'last_modified_date': 'Last update date',
+      'source_system': 'Origin system (salesforce, hubspot, etc)',
+      'company_id': 'Company identifier for multi-tenant data'
+    };
+    
+    if (descriptions[columnName]) {
+      return descriptions[columnName];
+    }
+    
+    switch (businessContext) {
+      case 'monetary': return 'Financial/monetary value';
+      case 'date': return 'Date/time field';
+      case 'status': return 'Status or stage field';
+      case 'identifier': return 'ID or reference field';
+      default: return 'Business data field';
+    }
+  }
+
+  private getSampleDataContext(companyId: number): string {
+    return `
+Important Notes for SQL Generation:
+- Use {companyId} placeholder for company ID in table references
+- Common stage values: 'Closed Won', 'closedwon' (varies by system)
+- Date filtering: Use DATE_TRUNC for period-based queries
+- Always handle NULL values with COALESCE
+- For averages: COALESCE(SUM(amount), 0) / NULLIF(COUNT(*), 0)
+- Join with UNION ALL for combining similar data from multiple sources
+`;
+  }
 }
 
 // Export singleton instance
