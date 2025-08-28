@@ -102,5 +102,124 @@
       "id": 3,
       "lastCalculatedAt": null
     }
+  },
+  "metricReports": {
+    "24": {
+      "companyId": 1748544793859,
+      "title": "test",
+      "description": "",
+      "selectedMetrics": [
+        2,
+        1
+      ],
+      "customGroupings": {},
+      "reportConfig": {
+        "timePeriod": "monthly",
+        "includeInsights": true
+      },
+      "isPublic": false,
+      "createdBy": 1,
+      "id": 24,
+      "shareToken": "3uanunxmfepo4kuv70kzg",
+      "createdAt": "2025-08-27T19:31:02.084Z",
+      "updatedAt": "2025-08-28T17:18:33.438Z",
+      "generatedInsights": {
+        "content": "## METRIC: Annual Profit\n### Executive Summary\nCurrently at 250.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 1,275,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 1,350,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 1,562,500. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 5,250,000. Expected to meet year-end objectives.\n\n## METRIC: Annual Revenue\n### Executive Summary\nCurrently at 1840.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 18,768,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 19,872,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 23,000,000. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 77,280,000. Expected to meet year-end objectives.\n\n*Note: These metric-specific forecasts were generated using fallback analysis due to AI service unavailability. Projections are based on current performance patterns.*",
+        "generatedAt": "2025-08-28T17:18:33.438Z",
+        "timePeriod": "monthly",
+        "version": "1.0"
+      }
+    },
+    "25": {
+      "companyId": 1748544793859,
+      "title": "test",
+      "description": "test",
+      "selectedMetrics": [
+        1,
+        2
+      ],
+      "customGroupings": {},
+      "reportConfig": {
+        "timePeriod": "monthly",
+        "includeInsights": true
+      },
+      "isPublic": false,
+      "createdBy": 1,
+      "id": 25,
+      "shareToken": "wfraumye6oom6kt0lhdtf",
+      "createdAt": "2025-08-28T15:47:22.331Z",
+      "updatedAt": "2025-08-28T15:47:23.335Z",
+      "generatedInsights": {
+        "content": "## METRIC: Annual Revenue\n### Executive Summary\nCurrently at 1840.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 18,768,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 19,872,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 23,000,000. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 77,280,000. Expected to meet year-end objectives.\n\n## METRIC: Annual Profit\n### Executive Summary\nCurrently at 250.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 1,275,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 1,350,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 1,562,500. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 5,250,000. Expected to meet year-end objectives.\n\n*Note: These metric-specific forecasts were generated using fallback analysis due to AI service unavailability. Projections are based on current performance patterns.*",
+        "generatedAt": "2025-08-28T15:47:23.335Z",
+        "timePeriod": "monthly",
+        "version": "1.0"
+      }
+    },
+    "26": {
+      "companyId": 1748544793859,
+      "title": "test",
+      "description": "test",
+      "selectedMetrics": [
+        1,
+        2,
+        3
+      ],
+      "customGroupings": {},
+      "reportConfig": {
+        "timePeriod": "monthly",
+        "includeInsights": true,
+        "timeFrames": {
+          "week": true,
+          "month": false,
+          "quarter": true,
+          "year": false
+        }
+      },
+      "isPublic": false,
+      "createdBy": 1,
+      "id": 26,
+      "shareToken": "62e5cgpqns3qb6vxzjg77m",
+      "createdAt": "2025-08-28T15:57:57.404Z",
+      "updatedAt": "2025-08-28T15:57:59.207Z",
+      "generatedInsights": {
+        "content": "## METRIC: Annual Revenue\n### Executive Summary\nCurrently at 1840.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 18,768,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 19,872,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 23,000,000. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 77,280,000. Expected to meet year-end objectives.\n\n## METRIC: Annual Profit\n### Executive Summary\nCurrently at 250.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 1,275,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 1,350,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 1,562,500. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 5,250,000. Expected to meet year-end objectives.\n\n## METRIC: Monthly Recurring Revenue (MRR)\n### Executive Summary\nCurrently at 0.0% of goal with weak performance trajectory.\n\n### Outlook This Week\nProjected to reach 0 based on current pace, maintaining weak momentum.\n\n### Outlook This Month\nMonthly forecast: 0. Risk of missing monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 0. May fall short of quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 0. Unlikely to achieve year-end objectives.\n\n*Note: These metric-specific forecasts were generated using fallback analysis due to AI service unavailability. Projections are based on current performance patterns.*",
+        "generatedAt": "2025-08-28T15:57:59.207Z",
+        "timePeriod": "monthly",
+        "version": "1.0"
+      }
+    },
+    "27": {
+      "companyId": 1748544793859,
+      "title": "testmia",
+      "description": "test",
+      "selectedMetrics": [
+        1,
+        2
+      ],
+      "customGroupings": {},
+      "reportConfig": {
+        "timePeriod": "monthly",
+        "includeInsights": true,
+        "timeFrames": {
+          "week": true,
+          "month": true,
+          "quarter": true,
+          "year": true
+        }
+      },
+      "isPublic": false,
+      "createdBy": 1,
+      "id": 27,
+      "shareToken": "ho8epaikkdadc3ssze5zv",
+      "createdAt": "2025-08-28T17:19:54.697Z",
+      "updatedAt": "2025-08-28T17:19:57.911Z",
+      "generatedInsights": {
+        "content": "## METRIC: Annual Revenue\n### Executive Summary\nCurrently at 1840.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 18,768,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 19,872,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 23,000,000. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 77,280,000. Expected to meet year-end objectives.\n\n## METRIC: Annual Profit\n### Executive Summary\nCurrently at 250.0% of goal with strong performance trajectory.\n\n### Outlook This Week\nProjected to reach 1,275,000 based on current pace, maintaining strong momentum.\n\n### Outlook This Month\nMonthly forecast: 1,350,000. Likely to achieve monthly targets.\n\n### Outlook This Quarter\nQuarterly projection: 1,562,500. On track for quarterly goals.\n\n### Outlook This Year\nAnnual forecast: 5,250,000. Expected to meet year-end objectives.\n\n*Note: These metric-specific forecasts were generated using fallback analysis due to AI service unavailability. Projections are based on current performance patterns.*",
+        "generatedAt": "2025-08-28T17:19:57.911Z",
+        "timePeriod": "monthly",
+        "version": "1.0"
+      }
+    }
   }
 }

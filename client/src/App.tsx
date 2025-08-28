@@ -16,6 +16,8 @@ import MetricsManagement from "@/pages/metrics-management";
 import UserManagement from "@/pages/user-management";
 import SaultoChat from "@/pages/saultochat";
 import IntegrationsCanvas from "@/pages/integrations-canvas";
+import MetricReports from "@/pages/metric-reports";
+import MetricReportViewer from "@/pages/metric-report-viewer";
 import Sidebar from "@/components/layout/sidebar";
 
 function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean; selectedCompany: string | null }) {
@@ -40,6 +42,8 @@ function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean
       <Route path="/integrations-canvas" component={IntegrationsCanvas} />
       <Route path="/saultochat" component={SaultoChat} />
       <Route path="/metrics" component={MetricsManagement} />
+      <Route path="/metric-reports/:id/view" component={MetricReportViewer} />
+      <Route path="/metric-reports" component={MetricReports} />
       <Route path="/users" component={UserManagement} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/companies" component={CompanySelection} />

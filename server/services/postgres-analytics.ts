@@ -82,7 +82,7 @@ export class PostgresAnalyticsService {
       const metricValue = this.extractMetricValue(queryResult.data[0]);
       console.log(`✅ Real PostgreSQL result for ${metricName}: ${metricValue}`);
       
-      return this.createMetricDataObject(metricName, metricValue, metricId, timePeriod);
+      return this.createMetricDataObject(metricName, metricValue, metricId, timePeriod, sqlQuery);
 
     } catch (error) {
       console.error(`PostgreSQL metric calculation failed for ${metricName}:`, error);
@@ -213,7 +213,7 @@ export class PostgresAnalyticsService {
     return 0;
   }
 
-  private createMetricDataObject(metricName: string, currentValue: number, metricId?: number, timePeriod?: string): PostgresMetricData {
+  private createMetricDataObject(metricName: string, currentValue: number, metricId?: number, timePeriod?: string, sqlQuery?: string): PostgresMetricData {
     // Determine format based on metric name
     let format: 'currency' | 'percentage' | 'number' = 'number';
     if (metricName.toLowerCase().includes('revenue') || metricName.toLowerCase().includes('expense') || 
@@ -254,7 +254,7 @@ export class PostgresAnalyticsService {
       format,
       description: `${metricName} calculated from real PostgreSQL analytics data`,
       category,
-      sql_query: this.getSQLTemplate(metricName, 1, 'monthly') || undefined
+      sql_query: sqlQuery || undefined
     };
   }
 

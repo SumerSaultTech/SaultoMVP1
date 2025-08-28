@@ -7,6 +7,7 @@ import {
   pipelineActivities,
   setupStatus,
   users,
+  metricReports,
   type Company,
   type InsertCompany,
   type DataSource,
@@ -16,6 +17,7 @@ import {
   type PipelineActivity,
   type SetupStatus,
   type User,
+  type MetricReport,
   type InsertDataSource,
   type InsertSqlModel,
   type InsertKpiMetric,
@@ -23,6 +25,7 @@ import {
   type InsertPipelineActivity,
   type InsertSetupStatus,
   type InsertUser,
+  type InsertMetricReport,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -42,6 +45,8 @@ export interface IStorage {
   getDataSource(id: number): Promise<DataSource | undefined>;
   createDataSource(dataSource: InsertDataSource): Promise<DataSource>;
   updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined>;
+  getDataSourcesByCompany(companyId: number): Promise<DataSource[]>;
+  getDataSourceByInstanceId(instanceId: string): Promise<DataSource | undefined>;
 
   // SQL Models (company-scoped)
   getSqlModels(companyId: number): Promise<SqlModel[]>;
@@ -69,6 +74,14 @@ export interface IStorage {
   // Setup Status (company-scoped)
   getSetupStatus(companyId: number): Promise<SetupStatus | undefined>;
   updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus>;
+
+  // Metric Reports (company-scoped)
+  getMetricReports(companyId: number): Promise<MetricReport[]>;
+  getMetricReport(id: number): Promise<MetricReport | undefined>;
+  getMetricReportByShareToken(shareToken: string): Promise<MetricReport | undefined>;
+  createMetricReport(report: InsertMetricReport): Promise<MetricReport>;
+  updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined>;
+  deleteMetricReport(id: number): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -78,6 +91,7 @@ export class MemStorage implements IStorage {
   private kpiMetrics: Map<number, KpiMetric>;
   private chatMessages: Map<number, ChatMessage>;
   private pipelineActivities: Map<number, PipelineActivity>;
+  protected metricReports: Map<number, MetricReport>;
   private setupStatus: SetupStatus | undefined;
   private currentId: number;
 
@@ -88,6 +102,7 @@ export class MemStorage implements IStorage {
     this.kpiMetrics = new Map();
     this.chatMessages = new Map();
     this.pipelineActivities = new Map();
+    this.metricReports = new Map();
     this.currentId = 1;
 
     // Initialize with default setup status
@@ -120,7 +135,13 @@ export class MemStorage implements IStorage {
       ...insertUser, 
       id,
       companyId: insertUser.companyId || null,
-      role: insertUser.role || "user"
+      role: insertUser.role || "user",
+      firstName: insertUser.firstName || null,
+      lastName: insertUser.lastName || null,
+      email: insertUser.email || null,
+      status: insertUser.status || "active",
+      createdAt: insertUser.createdAt || new Date().toISOString(),
+      updatedAt: insertUser.updatedAt || new Date().toISOString(),
     };
     this.users.set(id, user);
     return user;
@@ -149,6 +170,27 @@ export class MemStorage implements IStorage {
     const updated: DataSource = { ...existing, ...updates };
     this.dataSources.set(id, updated);
     return updated;
+  }
+
+  // OAuth2 specific data source methods
+  async getDataSourcesByCompany(companyId: number): Promise<DataSource[]> {
+    return Array.from(this.dataSources.values()).filter(ds => 
+      ds.companyId === companyId
+    );
+  }
+
+  async getDataSourceByInstanceId(instanceId: string): Promise<DataSource | undefined> {
+    return Array.from(this.dataSources.values()).find(ds => {
+      if (ds.config) {
+        try {
+          const config = JSON.parse(ds.config);
+          return config.instanceId === instanceId;
+        } catch (e) {
+          return false;
+        }
+      }
+      return false;
+    });
   }
 
   // SQL Models
@@ -266,6 +308,55 @@ export class MemStorage implements IStorage {
     }
     return this.setupStatus;
   }
+
+  // Metric Reports
+  async getMetricReports(companyId: number): Promise<MetricReport[]> {
+    return Array.from(this.metricReports.values()).filter(report => report.companyId === companyId);
+  }
+
+  async getMetricReport(id: number): Promise<MetricReport | undefined> {
+    return this.metricReports.get(id);
+  }
+
+  async getMetricReportByShareToken(shareToken: string): Promise<MetricReport | undefined> {
+    return Array.from(this.metricReports.values()).find(report => report.shareToken === shareToken);
+  }
+
+  async createMetricReport(insertReport: InsertMetricReport): Promise<MetricReport> {
+    const id = this.currentId++;
+    const now = new Date();
+    const shareToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    
+    const report: MetricReport = {
+      ...insertReport,
+      id,
+      shareToken,
+      createdAt: now,
+      updatedAt: now,
+      companyId: insertReport.companyId || 1748544793859, // Default to MIAS_DATA company
+    };
+    
+    this.metricReports.set(id, report);
+    return report;
+  }
+
+  async updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined> {
+    const existing = this.metricReports.get(id);
+    if (!existing) return undefined;
+    
+    const updated: MetricReport = { 
+      ...existing, 
+      ...updates, 
+      updatedAt: new Date() 
+    };
+    
+    this.metricReports.set(id, updated);
+    return updated;
+  }
+
+  async deleteMetricReport(id: number): Promise<boolean> {
+    return this.metricReports.delete(id);
+  }
 }
 
 // DatabaseStorage is disabled - using Snowflake instead of PostgreSQL
@@ -295,6 +386,8 @@ export class DatabaseStorage implements IStorage {
   async getDataSource(id: number): Promise<DataSource | undefined> { return this.throwError(); }
   async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> { return this.throwError(); }
   async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> { return this.throwError(); }
+  async getDataSourcesByCompany(companyId: number): Promise<DataSource[]> { return this.throwError(); }
+  async getDataSourceByInstanceId(instanceId: string): Promise<DataSource | undefined> { return this.throwError(); }
 
   // SQL Models
   async getSqlModels(companyId: number): Promise<SqlModel[]> { return this.throwError(); }
@@ -322,6 +415,14 @@ export class DatabaseStorage implements IStorage {
   // Setup Status
   async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> { return this.throwError(); }
   async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> { return this.throwError(); }
+
+  // Metric Reports
+  async getMetricReports(companyId: number): Promise<MetricReport[]> { return this.throwError(); }
+  async getMetricReport(id: number): Promise<MetricReport | undefined> { return this.throwError(); }
+  async getMetricReportByShareToken(shareToken: string): Promise<MetricReport | undefined> { return this.throwError(); }
+  async createMetricReport(report: InsertMetricReport): Promise<MetricReport> { return this.throwError(); }
+  async updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined> { return this.throwError(); }
+  async deleteMetricReport(id: number): Promise<boolean> { return this.throwError(); }
 }
 
 import fs from 'fs';
@@ -351,8 +452,20 @@ class PersistentMemStorage extends MemStorage {
           }
           this.currentId = Math.max(this.currentId, ...Array.from(this.kpiMetrics.keys())) + 1;
         }
+
+        // Restore metric reports
+        if (data.metricReports) {
+          for (const [id, report] of Object.entries(data.metricReports as Record<string, any>)) {
+            this.metricReports.set(parseInt(id), {
+              ...report,
+              createdAt: new Date(report.createdAt),
+              updatedAt: new Date(report.updatedAt)
+            });
+          }
+          this.currentId = Math.max(this.currentId, ...Array.from(this.metricReports.keys())) + 1;
+        }
         
-        console.log(`✓ Loaded ${this.kpiMetrics.size} metrics from persistent storage`);
+        console.log(`✓ Loaded ${this.kpiMetrics.size} metrics and ${this.metricReports.size} reports from persistent storage`);
       } else {
         this.initializeDefaultMetrics();
       }
@@ -365,7 +478,8 @@ class PersistentMemStorage extends MemStorage {
   private saveToFile() {
     try {
       const data = {
-        kpiMetrics: Object.fromEntries(this.kpiMetrics.entries())
+        kpiMetrics: Object.fromEntries(this.kpiMetrics.entries()),
+        metricReports: Object.fromEntries(this.metricReports.entries())
       };
       fs.writeFileSync(METRICS_FILE, JSON.stringify(data, null, 2));
     } catch (error) {
@@ -456,6 +570,28 @@ class PersistentMemStorage extends MemStorage {
 
   async deleteKpiMetric(id: number): Promise<boolean> {
     const result = await super.deleteKpiMetric(id);
+    if (result) {
+      this.saveToFile();
+    }
+    return result;
+  }
+
+  async createMetricReport(insertReport: InsertMetricReport): Promise<MetricReport> {
+    const result = await super.createMetricReport(insertReport);
+    this.saveToFile();
+    return result;
+  }
+
+  async updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined> {
+    const result = await super.updateMetricReport(id, updates);
+    if (result) {
+      this.saveToFile();
+    }
+    return result;
+  }
+
+  async deleteMetricReport(id: number): Promise<boolean> {
+    const result = await super.deleteMetricReport(id);
     if (result) {
       this.saveToFile();
     }

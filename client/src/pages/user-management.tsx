@@ -12,6 +12,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 interface User {
   id: number;
   username: string;
+  firstName?: string;
+  lastName?: string;
   email?: string;
   companyId: number;
   role: string;
@@ -32,9 +34,9 @@ export default function UserManagement() {
   const { toast } = useToast();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUser, setNewUser] = useState({
-    username: "",
+    firstName: "",
+    lastName: "",
     email: "",
-    password: "",
     companyId: "",
     role: "user"
   });
@@ -49,27 +51,28 @@ export default function UserManagement() {
 
   const createUserMutation = useMutation({
     mutationFn: async (userData: { 
-      username: string; 
+      firstName: string;
+      lastName: string;
       email: string; 
-      password: string; 
       companyId: number; 
-      role: string; 
+      role: string;
+      sendInvitation?: boolean;
     }) => {
-      return await apiRequest("/api/users", "POST", userData);
+      return await apiRequest("/api/users/invite", "POST", userData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setShowCreateForm(false);
-      setNewUser({ username: "", email: "", password: "", companyId: "", role: "user" });
+      setNewUser({ firstName: "", lastName: "", email: "", companyId: "", role: "user" });
       toast({
-        title: "Success",
-        description: "User created successfully",
+        title: "Invitation Sent",
+        description: "User invitation has been sent successfully. They will receive an email to set up their account.",
       });
     },
     onError: (error) => {
       toast({
         title: "Error",
-        description: "Failed to create user",
+        description: "Failed to send user invitation",
         variant: "destructive",
       });
     },
@@ -100,21 +103,22 @@ export default function UserManagement() {
 
 
   const handleCreateUser = () => {
-    if (!newUser.username.trim() || !newUser.email.trim() || !newUser.password.trim() || !newUser.companyId) {
+    if (!newUser.firstName.trim() || !newUser.lastName.trim() || !newUser.email.trim() || !newUser.companyId) {
       toast({
         title: "Error",
-        description: "All fields are required",
+        description: "First name, last name, email, and company are required",
         variant: "destructive",
       });
       return;
     }
 
     createUserMutation.mutate({
-      username: newUser.username,
+      firstName: newUser.firstName,
+      lastName: newUser.lastName,
       email: newUser.email,
-      password: newUser.password,
       companyId: parseInt(newUser.companyId),
       role: newUser.role,
+      sendInvitation: true,
     });
   };
 
@@ -153,39 +157,44 @@ export default function UserManagement() {
       {showCreateForm && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Create New User</CardTitle>
-            <CardDescription>Add a new user and assign them to a company</CardDescription>
+            <CardTitle className="flex items-center space-x-2">
+              <Mail className="h-5 w-5 text-green-600" />
+              <span>Invite New User</span>
+            </CardTitle>
+            <CardDescription>Send an invitation email to a new user with account setup instructions</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="firstName">First Name *</Label>
                 <Input
-                  id="username"
-                  value={newUser.username}
-                  onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
-                  placeholder="Enter username"
+                  id="firstName"
+                  value={newUser.firstName}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, firstName: e.target.value }))}
+                  placeholder="Enter first name"
                 />
               </div>
               <div>
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="lastName">Last Name *</Label>
+                <Input
+                  id="lastName"
+                  value={newUser.lastName}
+                  onChange={(e) => setNewUser(prev => ({ ...prev, lastName: e.target.value }))}
+                  placeholder="Enter last name"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="email">Email Address *</Label>
                 <Input
                   id="email"
                   type="email"
                   value={newUser.email}
                   onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="Enter email"
+                  placeholder="Enter email address"
                 />
-              </div>
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder="Enter password"
-                />
+                <p className="text-xs text-gray-500 mt-1">
+                  An invitation email will be sent to this address with account setup instructions.
+                </p>
               </div>
               <div>
                 <Label htmlFor="company">Company</Label>
@@ -205,8 +214,8 @@ export default function UserManagement() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="role">Role</Label>
+              <div className="md:col-span-2">
+                <Label htmlFor="role">User Role</Label>
                 <Select 
                   value={newUser.role} 
                   onValueChange={(value) => setNewUser(prev => ({ ...prev, role: value }))}
@@ -215,11 +224,91 @@ export default function UserManagement() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="user">User</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="admin">
+                      <div className="flex flex-col items-start py-1">
+                        <div className="font-medium">Admin</div>
+                        <div className="text-xs text-gray-500">Full access: manage users, create reports, configure data sources</div>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="user">
+                      <div className="flex flex-col items-start py-1">
+                        <div className="font-medium">User</div>
+                        <div className="text-xs text-gray-500">Standard access: create reports, view metrics, use AI assistant</div>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="viewer">
+                      <div className="flex flex-col items-start py-1">
+                        <div className="font-medium">Viewer</div>
+                        <div className="text-xs text-gray-500">Read-only access: view existing reports and dashboards only</div>
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+                
+                {/* Role Explanation */}
+                <div className="mt-2 p-3 bg-gray-50 rounded-lg border">
+                  <div className="text-sm font-medium text-gray-700 mb-2">Role Permissions:</div>
+                  {newUser.role === "admin" && (
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Manage users and company settings</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Configure data sources and connectors</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Create and manage metric definitions</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Full access to all reports and dashboards</span>
+                      </div>
+                    </div>
+                  )}
+                  {newUser.role === "user" && (
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Create and share metric reports</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Use AI assistant for metric insights</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>View and analyze business metrics</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                        <span>Cannot manage users or system settings</span>
+                      </div>
+                    </div>
+                  )}
+                  {newUser.role === "viewer" && (
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                        <span>View existing reports and dashboards</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                        <span>Access shared metric reports</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                        <span>Cannot create or edit reports</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                        <span>Cannot access admin or user management features</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex gap-2">
@@ -227,12 +316,13 @@ export default function UserManagement() {
                 onClick={handleCreateUser}
                 disabled={createUserMutation.isPending}
               >
-                {createUserMutation.isPending ? "Creating..." : "Create User"}
+                <Mail className="h-4 w-4 mr-2" />
+                {createUserMutation.isPending ? "Sending Invitation..." : "Send Invitation"}
               </Button>
               <Button 
                 onClick={() => {
                   setShowCreateForm(false);
-                  setNewUser({ username: "", email: "", password: "", companyId: "", role: "user" });
+                  setNewUser({ firstName: "", lastName: "", email: "", companyId: "", role: "user" });
                 }}
                 variant="outline"
               >
@@ -252,35 +342,53 @@ export default function UserManagement() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
-                  {user.username}
+                  {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
                 </CardTitle>
                 <CardDescription>
-                  Role: {user.role} • ID: {user.id}
+                  {user.email && (
+                    <div className="flex items-center gap-1 text-sm">
+                      <Mail className="h-3 w-3" />
+                      {user.email}
+                    </div>
+                  )}
+                  <div className="text-xs mt-1">
+                    Role: {user.role} • ID: {user.id}
+                  </div>
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Building2 className="h-4 w-4" />
-                  <span>{userCompany?.name || "Unknown Company"}</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                    user.role === 'user' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {user.role}
-                  </span>
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    onClick={() => impersonateUserMutation.mutate(user.id)}
-                    disabled={impersonateUserMutation.isPending}
-                    className="ml-2"
-                  >
-                    <UserCheck className="h-4 w-4 mr-1" />
-                    Impersonate
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Building2 className="h-4 w-4" />
+                    <span>{userCompany?.name || "Unknown Company"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        user.role === 'admin' ? 'bg-red-100 text-red-800' :
+                        user.role === 'user' ? 'bg-green-100 text-green-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {user.role}
+                      </span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        user.status === 'active' ? 'bg-green-100 text-green-800' :
+                        user.status === 'invited' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {user.status || 'active'}
+                      </span>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => impersonateUserMutation.mutate(user.id)}
+                      disabled={impersonateUserMutation.isPending}
+                    >
+                      <UserCheck className="h-4 w-4 mr-1" />
+                      Impersonate
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

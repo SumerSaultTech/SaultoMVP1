@@ -34,7 +34,9 @@ import {
   Clock,
   Zap,
   Activity,
-  Award
+  Award,
+  Database,
+  Info
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -83,6 +85,8 @@ export default function MetricReportViewer() {
   const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set());
   const [selectedMetricForAI, setSelectedMetricForAI] = useState<string | null>(null);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [selectedMetricForSQL, setSelectedMetricForSQL] = useState<any>(null);
+  const [sqlDialogOpen, setSqlDialogOpen] = useState(false);
   
   // Customizable thresholds for color coding
   const [greenThreshold, setGreenThreshold] = useState(100); // Green = 100%+ by default
@@ -124,6 +128,8 @@ export default function MetricReportViewer() {
   // Fetch report data with real calculations
   const { data: reportData, isLoading, error, refetch } = useQuery({
     queryKey: ["/api/metric-reports", finalReportId, "data", timePeriod],
+    staleTime: 0, // Always fetch fresh data
+    refetchOnMount: true, // Always refetch when component mounts
     queryFn: async (): Promise<ReportData> => {
       console.log("Fetching report data for ID:", finalReportId);
       const response = await fetch(`/api/metric-reports/${finalReportId}/data?timePeriod=${timePeriod}`);
@@ -142,6 +148,8 @@ export default function MetricReportViewer() {
       try {
         const data = JSON.parse(responseText);
         console.log("Parsed JSON data:", data);
+        console.log("🔍 SQL QUERY DEBUG: First metric sqlQuery:", data.metrics?.[0]?.sqlQuery);
+        console.log("🔍 SQL QUERY DEBUG: All metrics have sqlQuery?", data.metrics?.every((m: any) => m.sqlQuery));
         return data;
       } catch (parseError) {
         console.error("JSON parse error:", parseError);
@@ -205,6 +213,7 @@ export default function MetricReportViewer() {
       
       const sections = {
         executiveSummary: '',
+        dataSourceExplanation: '',
         outlookWeek: '',
         outlookMonth: '',
         outlookQuarter: '',
@@ -223,6 +232,12 @@ export default function MetricReportViewer() {
             sectionContent = [];
           }
           currentSection = 'executiveSummary';
+        } else if (line.startsWith('### Data Source Explanation')) {
+          if (currentSection && sectionContent.length) {
+            sections[currentSection as keyof typeof sections] = sectionContent.join(' ').trim();
+            sectionContent = [];
+          }
+          currentSection = 'dataSourceExplanation';
         } else if (line.startsWith('### Outlook This Week')) {
           if (currentSection && sectionContent.length) {
             sections[currentSection as keyof typeof sections] = sectionContent.join(' ').trim();
@@ -289,6 +304,56 @@ export default function MetricReportViewer() {
     setAiDialogOpen(true);
   };
 
+  // Open SQL explanation dialog for specific metric
+  const openSQLExplanation = (metric: any) => {
+    console.log("DEBUG: Opening SQL explanation for metric:", metric);
+    console.log("DEBUG: Metric sqlQuery:", metric.sqlQuery);
+    console.log("DEBUG: Metric properties:", Object.keys(metric));
+    console.log("DEBUG: Full metric object:", JSON.stringify(metric, null, 2));
+    setSelectedMetricForSQL(metric);
+    setSqlDialogOpen(true);
+  };
+
+  // Generate plain English explanation of SQL
+  const generateSQLExplanation = (sqlQuery: string, metricName: string) => {
+    console.log("DEBUG: generateSQLExplanation called with:");
+    console.log("DEBUG: sqlQuery:", sqlQuery);
+    console.log("DEBUG: metricName:", metricName);
+    if (!sqlQuery) return "No SQL query available for this metric.";
+    
+    // Simple heuristic-based translation for common patterns
+    let explanation = "";
+    const lowerSQL = sqlQuery.toLowerCase();
+    
+    if (lowerSQL.includes('revenue') || lowerSQL.includes('amount')) {
+      explanation += `This metric calculates ${metricName.toLowerCase()} by summing monetary amounts from your data sources. `;
+    }
+    
+    if (lowerSQL.includes('hubspot') && lowerSQL.includes('salesforce')) {
+      explanation += "It combines data from both HubSpot and Salesforce systems. ";
+    } else if (lowerSQL.includes('hubspot')) {
+      explanation += "It uses data from your HubSpot system. ";
+    } else if (lowerSQL.includes('salesforce')) {
+      explanation += "It uses data from your Salesforce system. ";
+    }
+    
+    if (lowerSQL.includes('closedwon') || lowerSQL.includes('closed won')) {
+      explanation += "It only counts deals that are marked as 'Closed Won'. ";
+    }
+    
+    if (lowerSQL.includes('current_date') || lowerSQL.includes('extract(year')) {
+      explanation += "It filters data for the current time period. ";
+    }
+    
+    if (lowerSQL.includes('date_trunc')) {
+      explanation += "Data is grouped by specific time periods (daily, weekly, monthly, etc.). ";
+    }
+    
+    explanation += "The result gives you a single number representing the total value for this metric.";
+    
+    return explanation || "This query retrieves and calculates data from your connected business systems to generate this metric value.";
+  };
+
   const formatValue = (value: number | null, format: string) => {
     if (value === null || value === undefined) return "N/A";
     
@@ -341,7 +406,7 @@ export default function MetricReportViewer() {
       case 'revenue':
         return <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-700 border-green-200 font-medium">💰 Revenue</Badge>;
       case 'growth':
-        return <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-medium">📈 Growth</Badge>;
+        return <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-700 border-green-200 font-medium">📈 Growth</Badge>;
       case 'efficiency':
         return <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-700 border-orange-200 font-medium">⚡ Efficiency</Badge>;
       case 'marketing':
@@ -666,8 +731,26 @@ View full report: ${window.location.href}`;
           </Card>
 
           {/* Compact Metrics Grid */}
-          <div className="space-y-2">
+          <div className="space-y-2 overflow-x-auto">
             {reportData.metrics.map((metric) => {
+              console.log("🎯 RENDER DEBUG: Processing metric:", metric.name, "sqlQuery present:", !!metric.sqlQuery);
+              
+              // Get time frame settings from report config (default to all true for backward compatibility)
+              const timeFrameSettings = reportData.report.reportConfig?.timeFrames || {
+                week: true,
+                month: true,
+                quarter: true,
+                year: true,
+              };
+              
+              // Calculate dynamic grid columns based on selected time frames
+              const selectedTimeFrames = Object.values(timeFrameSettings).filter(Boolean).length;
+              const gridCols = selectedTimeFrames === 4 ? "grid-cols-[minmax(200px,2fr),1fr,1fr,1fr,1fr,0.6fr,0.6fr]" :
+                              selectedTimeFrames === 3 ? "grid-cols-[minmax(200px,2fr),1fr,1fr,1fr,0.7fr,0.7fr]" :
+                              selectedTimeFrames === 2 ? "grid-cols-[minmax(200px,2fr),1fr,1fr,0.8fr,0.8fr]" :
+                              selectedTimeFrames === 1 ? "grid-cols-[minmax(200px,2fr),1fr,0.9fr,0.9fr]" :
+                              "grid-cols-[minmax(200px,2fr),0.9fr,0.9fr]"; // fallback if no time frames selected
+              
               // Calculate time-period progress percentages
               const currentValue = metric.currentValue || 0;
               const yearlyGoal = metric.yearlyGoal ? parseFloat(metric.yearlyGoal) : 1;
@@ -687,7 +770,7 @@ View full report: ${window.location.href}`;
               const yearProgress = (currentValue / yearlyGoal) * 100;
               
               return (
-                <Card key={metric.id} className="overflow-hidden">
+                <Card key={metric.id} className="overflow-hidden w-full min-w-0">
                   <CardContent className="p-0">
                     {metric.status === 'error' ? (
                       <div className="p-4 text-center text-red-500 bg-red-50">
@@ -695,16 +778,16 @@ View full report: ${window.location.href}`;
                         <div className="text-sm font-medium">Unable to calculate metric</div>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-6 divide-x divide-gray-200">
+                      <div className={`grid ${gridCols} divide-x divide-gray-200 min-w-full overflow-x-auto`}>
                         {/* Metric Info */}
-                        <div className="p-3 relative bg-gray-50 min-h-[70px]">
-                          <div className="absolute top-1 right-1">
+                        <div className="p-2 relative bg-gray-50 min-h-[50px] overflow-hidden">
+                          <div className="absolute top-1 right-1 z-10">
                             {getMetricTypeTag(metric)}
                           </div>
                           <div className="flex items-center justify-center h-full pr-16">
-                            <div className="text-center">
-                              <div className="font-semibold text-sm mb-1">{metric.name}</div>
-                              <div className="text-xs text-gray-500">
+                            <div className="text-center max-w-full">
+                              <div className="font-semibold text-sm mb-1 break-words overflow-hidden" style={{display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'}}>{metric.name}</div>
+                              <div className="text-xs text-gray-500 truncate">
                                 {formatValue(metric.currentValue, metric.format)}
                               </div>
                             </div>
@@ -712,84 +795,107 @@ View full report: ${window.location.href}`;
                         </div>
                         
                         {/* This Week */}
-                        <div className="p-2 flex flex-col items-center justify-center text-center min-h-[70px]">
-                          <div className="text-xs font-medium text-gray-700 mb-1">This Week</div>
-                          <div 
-                            className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(weekProgress, metric.isIncreasing)} transition-all duration-300`}
-                          >
-                            <div className="text-white font-bold text-xs">
-                              {getProgressSymbol(weekProgress)}
+                        {timeFrameSettings.week && (
+                          <div className="p-1 flex flex-col items-center justify-center text-center min-h-[50px] overflow-hidden">
+                            <div className="text-xs font-medium text-gray-700 mb-1 truncate w-full">This Week</div>
+                            <div 
+                              className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(weekProgress, metric.isIncreasing)} transition-all duration-300`}
+                            >
+                              <div className="text-white font-bold text-xs">
+                                {getProgressSymbol(weekProgress)}
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 truncate w-full">
+                              {getProgressText(weekProgress)}
                             </div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {getProgressText(weekProgress)}
-                          </div>
-                        </div>
+                        )}
                         
                         {/* This Month */}
-                        <div className="p-2 flex flex-col items-center justify-center text-center min-h-[70px]">
-                          <div className="text-xs font-medium text-gray-700 mb-1">This Month</div>
-                          <div 
-                            className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(monthProgress, metric.isIncreasing)} transition-all duration-300`}
-                          >
-                            <div className="text-white font-bold text-xs">
-                              {getProgressSymbol(monthProgress)}
+                        {timeFrameSettings.month && (
+                          <div className="p-1 flex flex-col items-center justify-center text-center min-h-[50px] overflow-hidden">
+                            <div className="text-xs font-medium text-gray-700 mb-1 truncate w-full">This Month</div>
+                            <div 
+                              className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(monthProgress, metric.isIncreasing)} transition-all duration-300`}
+                            >
+                              <div className="text-white font-bold text-xs">
+                                {getProgressSymbol(monthProgress)}
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 truncate w-full">
+                              {getProgressText(monthProgress)}
                             </div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {getProgressText(monthProgress)}
-                          </div>
-                        </div>
+                        )}
                         
                         {/* This Quarter */}
-                        <div className="p-2 flex flex-col items-center justify-center text-center min-h-[70px]">
-                          <div className="text-xs font-medium text-gray-700 mb-1">This Quarter</div>
-                          <div 
-                            className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(quarterProgress, metric.isIncreasing)} transition-all duration-300`}
-                          >
-                            <div className="text-white font-bold text-xs">
-                              {getProgressSymbol(quarterProgress)}
+                        {timeFrameSettings.quarter && (
+                          <div className="p-1 flex flex-col items-center justify-center text-center min-h-[50px] overflow-hidden">
+                            <div className="text-xs font-medium text-gray-700 mb-1 truncate w-full">This Quarter</div>
+                            <div 
+                              className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(quarterProgress, metric.isIncreasing)} transition-all duration-300`}
+                            >
+                              <div className="text-white font-bold text-xs">
+                                {getProgressSymbol(quarterProgress)}
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 truncate w-full">
+                              {getProgressText(quarterProgress)}
                             </div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {getProgressText(quarterProgress)}
-                          </div>
-                        </div>
+                        )}
                         
                         {/* This Year */}
-                        <div className="p-2 flex flex-col items-center justify-center text-center min-h-[70px]">
-                          <div className="text-xs font-medium text-gray-700 mb-1">This Year</div>
-                          <div 
-                            className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(yearProgress, metric.isIncreasing)} transition-all duration-300`}
-                          >
-                            <div className="text-white font-bold text-xs">
-                              {getProgressSymbol(yearProgress)}
+                        {timeFrameSettings.year && (
+                          <div className="p-1 flex flex-col items-center justify-center text-center min-h-[50px] overflow-hidden">
+                            <div className="text-xs font-medium text-gray-700 mb-1 truncate w-full">This Year</div>
+                            <div 
+                              className={`w-7 h-7 rounded-full flex items-center justify-center ${getProgressColor(yearProgress, metric.isIncreasing)} transition-all duration-300`}
+                            >
+                              <div className="text-white font-bold text-xs">
+                                {getProgressSymbol(yearProgress)}
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 truncate w-full">
+                              {getProgressText(yearProgress)}
                             </div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {getProgressText(yearProgress)}
-                          </div>
-                        </div>
+                        )}
 
                         {/* AI Insights Button */}
-                        <div className="p-2 flex flex-col items-center justify-center text-center min-h-[70px] bg-gradient-to-b from-blue-50 to-indigo-50">
+                        <div className="px-1 py-1 flex flex-col items-center justify-center text-center min-h-[50px] bg-gradient-to-b from-blue-50 to-indigo-50">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => openAIInsights(metric.name)}
-                            className="h-8 w-8 p-0 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-sm"
+                            className="h-6 w-6 p-0 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-sm"
                             disabled={generateInsightsMutation.isPending || !getMetricInsights(metric.name)}
                           >
                             {generateInsightsMutation.isPending ? (
-                              <Sparkles className="h-4 w-4 animate-spin" />
+                              <Sparkles className="h-3 w-3 animate-spin" />
                             ) : getMetricInsights(metric.name) ? (
-                              <Brain className="h-4 w-4" />
+                              <Brain className="h-3 w-3" />
                             ) : (
-                              <Brain className="h-4 w-4 opacity-50" />
+                              <Brain className="h-3 w-3 opacity-50" />
                             )}
                           </Button>
-                          <div className="text-xs text-blue-600 font-medium mt-1">
-                            {generateInsightsMutation.isPending ? "Loading..." : getMetricInsights(metric.name) ? "AI Insights" : "Generating..."}
+                          <div className="text-xs text-green-600 font-medium mt-1">
+                            AI
+                          </div>
+                        </div>
+                        
+                        {/* SQL Info Button */}
+                        <div className="px-1 py-1 flex flex-col items-center justify-center text-center min-h-[50px] bg-gradient-to-b from-emerald-50 to-teal-50">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openSQLExplanation(metric)}
+                            className="h-6 w-6 p-0 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm"
+                          >
+                            <Info className="h-3 w-3" />
+                          </Button>
+                          <div className="text-xs text-emerald-600 font-medium mt-1">
+                            Definition
                           </div>
                         </div>
                       </div>
@@ -832,11 +938,11 @@ View full report: ${window.location.href}`;
                       <div className="space-y-6">
                         {/* Executive Summary */}
                         {insight.executiveSummary && (
-                          <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-l-4 border-blue-500">
+                          <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-l-4 border-green-500">
                             <div className="flex items-start space-x-3">
-                              <Zap className="h-6 w-6 text-blue-600 mt-1 flex-shrink-0" />
+                              <Zap className="h-6 w-6 text-green-600 mt-1 flex-shrink-0" />
                               <div className="w-full">
-                                <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wide mb-2">Executive Summary & Root Cause Analysis</h3>
+                                <h3 className="text-sm font-semibold text-green-800 uppercase tracking-wide mb-2">Executive Summary & Root Cause Analysis</h3>
                                 <div className="text-gray-700 leading-relaxed space-y-2">
                                   {insight.executiveSummary.split('\n').filter(line => line.trim()).map((line, idx) => {
                                     if (line.includes('**') && line.includes(':**')) {
@@ -846,12 +952,40 @@ View full report: ${window.location.href}`;
                                       const content = parts[1]?.trim();
                                       return (
                                         <div key={idx} className="mb-2">
-                                          <span className="font-semibold text-blue-900 text-xs uppercase tracking-wide">{heading}:</span>
+                                          <span className="font-semibold text-green-900 text-xs uppercase tracking-wide">{heading}:</span>
                                           <span className="ml-2 text-gray-700">{content}</span>
                                         </div>
                                       );
                                     }
                                     return <p key={idx}>{line}</p>;
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Data Source Explanation */}
+                        {insight.dataSourceExplanation && (
+                          <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border-l-4 border-emerald-500">
+                            <div className="flex items-start space-x-3">
+                              <Database className="h-6 w-6 text-emerald-600 mt-1 flex-shrink-0" />
+                              <div className="w-full">
+                                <h3 className="text-sm font-semibold text-emerald-800 uppercase tracking-wide mb-2">How This Metric is Calculated</h3>
+                                <div className="text-gray-700 leading-relaxed space-y-2">
+                                  {insight.dataSourceExplanation.split('\n').filter(line => line.trim()).map((line, idx) => {
+                                    if (line.includes('**') && line.includes(':**')) {
+                                      const parts = line.split(':**');
+                                      const heading = parts[0].replace(/\*\*/g, '');
+                                      const content = parts[1]?.trim();
+                                      return (
+                                        <div key={idx} className="mb-2">
+                                          <span className="font-semibold text-emerald-900 text-xs uppercase tracking-wide">{heading}:</span>
+                                          <span className="ml-2 text-gray-700">{content}</span>
+                                        </div>
+                                      );
+                                    }
+                                    return <p key={idx} className="text-sm">{line}</p>;
                                   })}
                                 </div>
                               </div>
@@ -978,6 +1112,70 @@ View full report: ${window.location.href}`;
               </DialogContent>
             </Dialog>
 
+            {/* SQL Explanation Dialog */}
+            <Dialog open={sqlDialogOpen} onOpenChange={setSqlDialogOpen}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg flex-shrink-0">
+                      <Database className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-lg font-bold block">How This Metric is Calculated</span>
+                      <p className="text-sm text-gray-600 font-normal truncate">{selectedMetricForSQL?.name || 'Metric'}</p>
+                    </div>
+                  </DialogTitle>
+                </DialogHeader>
+                
+                <div className="space-y-4">
+                  {/* Plain English Explanation */}
+                  <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <h3 className="text-sm font-semibold text-emerald-800 mb-2">What This Metric Does</h3>
+                    <p className="text-emerald-700 leading-relaxed break-words">
+                      {selectedMetricForSQL ? generateSQLExplanation(selectedMetricForSQL.sqlQuery, selectedMetricForSQL.name) : "Loading..."}
+                    </p>
+                  </div>
+
+                  {/* Data Sources */}
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <h3 className="text-sm font-semibold text-green-800 mb-2">Data Sources</h3>
+                    <div className="text-green-700 space-y-1">
+                      {selectedMetricForSQL?.sqlQuery?.toLowerCase().includes('hubspot') && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-sm">HubSpot CRM</span>
+                        </div>
+                      )}
+                      {selectedMetricForSQL?.sqlQuery?.toLowerCase().includes('salesforce') && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-sm">Salesforce CRM</span>
+                        </div>
+                      )}
+                      {!selectedMetricForSQL?.sqlQuery?.toLowerCase().includes('hubspot') && 
+                       !selectedMetricForSQL?.sqlQuery?.toLowerCase().includes('salesforce') && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-sm">Analytics Database</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Technical Details (Collapsible) */}
+                  {selectedMetricForSQL?.sqlQuery && (
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <h3 className="text-sm font-semibold text-gray-800 mb-2">SQL Query</h3>
+                      <div className="bg-white rounded border overflow-hidden">
+                        <pre className="text-xs text-gray-600 p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-words">
+                          {selectedMetricForSQL.sqlQuery}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
 
             
             {/* Compact Legend */}

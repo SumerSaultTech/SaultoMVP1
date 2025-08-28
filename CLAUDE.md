@@ -303,6 +303,49 @@ WORKSPACE_ID=your-workspace-id
 5. Start development with `npm run dev` (auto-starts Python services)
 6. Visit `http://localhost:5000` - app should be running with all services
 
+## UI Design & Color Theming
+
+**IMPORTANT: All new features must follow the consistent GREEN color theme.**
+
+### Primary Color Palette (Saulto Brand Colors)
+- **Primary Buttons**: Use default `<Button>` component (no custom className needed)
+- **Primary Icons**: `text-primary` or `text-primary-600` (primary icons)
+- **Light Green**: `bg-green-50 text-green-700 border-green-200` (backgrounds, badges)
+- **Success States**: `bg-green-100 text-green-800` (success badges, indicators)
+- **Secondary Icons**: `text-green-500` (secondary icons)
+
+### Secondary Colors (Use Sparingly)
+- **Admin/Warning**: `bg-red-100 text-red-800` (admin roles, warnings)
+- **Status/Pending**: `bg-yellow-100 text-yellow-800` (pending states)
+- **Neutral**: `bg-gray-100 text-gray-800` (disabled, neutral states)
+
+### ❌ Avoid These Colors
+- **NO BLUE**: Never use `bg-blue-*`, `text-blue-*`, `border-blue-*` for new features
+- **Consistency Rule**: All buttons, icons, and interactive elements should use green theme
+
+### Examples
+```tsx
+// ✅ Correct - Default button styling (uses Saulto brand colors)
+<Button>Save</Button>
+<Button className="flex items-center gap-2">
+  <Plus className="h-4 w-4" />
+  Add User
+</Button>
+<Mail className="text-primary" />
+<Badge className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+
+// ❌ Incorrect - Custom primary colors (too dark)
+<Button className="bg-primary-500 hover:bg-primary-600">Save</Button>
+
+// ❌ Incorrect - Blue theme
+<Button className="bg-blue-600 hover:bg-blue-700">Save</Button>
+<Mail className="text-blue-600" />
+<Badge className="bg-blue-50 text-blue-700 border-blue-200">Active</Badge>
+
+// ❌ Incorrect - Generic green
+<Button className="bg-green-600 hover:bg-green-700">Save</Button>
+```
+
 ## File Upload System
 
 The application supports comprehensive file uploads through multer:

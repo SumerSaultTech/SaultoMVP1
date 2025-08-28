@@ -21,6 +21,12 @@ interface ReportFormData {
   selectedMetrics: number[];
   customGroupings: { [key: string]: number[] };
   isPublic: boolean;
+  timeFrames: {
+    week: boolean;
+    month: boolean;
+    quarter: boolean;
+    year: boolean;
+  };
 }
 
 export default function MetricReports() {
@@ -35,6 +41,12 @@ export default function MetricReports() {
     selectedMetrics: [],
     customGroupings: {},
     isPublic: false,
+    timeFrames: {
+      week: true,
+      month: true,
+      quarter: true,
+      year: true,
+    },
   });
 
   // Fetch metric reports
@@ -112,6 +124,12 @@ export default function MetricReports() {
       selectedMetrics: [],
       customGroupings: {},
       isPublic: false,
+      timeFrames: {
+        week: true,
+        month: true,
+        quarter: true,
+        year: true,
+      },
     });
     setEditingReport(null);
   };
@@ -124,6 +142,12 @@ export default function MetricReports() {
       selectedMetrics: Array.isArray(report.selectedMetrics) ? report.selectedMetrics : [],
       customGroupings: report.customGroupings || {},
       isPublic: report.isPublic || false,
+      timeFrames: report.reportConfig?.timeFrames || {
+        week: true,
+        month: true,
+        quarter: true,
+        year: true,
+      },
     });
     setIsDialogOpen(true);
   };
@@ -145,6 +169,7 @@ export default function MetricReports() {
       reportConfig: {
         timePeriod: "monthly",
         includeInsights: true,
+        timeFrames: formData.timeFrames,
       },
     };
 
@@ -161,6 +186,28 @@ export default function MetricReports() {
       selectedMetrics: prev.selectedMetrics.includes(metricId)
         ? prev.selectedMetrics.filter(id => id !== metricId)
         : [...prev.selectedMetrics, metricId]
+    }));
+  };
+
+  const toggleTimeFrame = (timeFrame: keyof typeof formData.timeFrames) => {
+    setFormData(prev => ({
+      ...prev,
+      timeFrames: {
+        ...prev.timeFrames,
+        [timeFrame]: !prev.timeFrames[timeFrame]
+      }
+    }));
+  };
+
+  const toggleAllTimeFrames = (selectAll: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      timeFrames: {
+        week: selectAll,
+        month: selectAll,
+        quarter: selectAll,
+        year: selectAll,
+      }
     }));
   };
 
@@ -315,6 +362,75 @@ View full report: ${getShareUrl(report)}`;
                     </p>
                   </div>
 
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Time Frames to Include</label>
+                      <div className="flex space-x-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleAllTimeFrames(true)}
+                          className="text-xs px-2 py-1 h-auto"
+                        >
+                          Select All
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleAllTimeFrames(false)}
+                          className="text-xs px-2 py-1 h-auto"
+                        >
+                          Clear All
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="border rounded-lg p-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.timeFrames.week}
+                            onChange={() => toggleTimeFrame('week')}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-sm">This Week</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.timeFrames.month}
+                            onChange={() => toggleTimeFrame('month')}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-sm">This Month</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.timeFrames.quarter}
+                            onChange={() => toggleTimeFrame('quarter')}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-sm">This Quarter</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.timeFrames.year}
+                            onChange={() => toggleTimeFrame('year')}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-sm">This Year</span>
+                        </label>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {Object.values(formData.timeFrames).filter(Boolean).length} time frames selected
+                    </p>
+                  </div>
+
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
@@ -340,7 +456,6 @@ View full report: ${getShareUrl(report)}`;
                     <Button
                       type="submit"
                       disabled={createReportMutation.isPending || updateReportMutation.isPending}
-                      className="bg-blue-600 hover:bg-blue-700"
                     >
                       <FileText className="w-4 h-4 mr-2" />
                       {editingReport ? 
@@ -431,7 +546,7 @@ View full report: ${getShareUrl(report)}`;
                               variant="outline"
                               size="sm"
                               onClick={() => viewReport(report)}
-                              className="bg-blue-50 hover:bg-blue-100 border-blue-200"
+                              className="bg-green-50 hover:bg-green-100 border-green-200"
                             >
                               <BarChart3 className="h-4 w-4" />
                             </Button>

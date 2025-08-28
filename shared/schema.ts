@@ -14,13 +14,19 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
-  companyId: integer("company_id").references(() => companies.id),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  email: text("email"),
+  status: text("status").default("active"), // 'active', 'invited', 'disabled'
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id),
   role: text("role").default("user"), // 'admin', 'user', 'viewer'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const dataSources = pgTable("data_sources", {
   id: serial("id").primaryKey(),
-  companyId: integer("company_id").references(() => companies.id).notNull(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(), // 'salesforce', 'hubspot', 'quickbooks'
   status: text("status").notNull().default("disconnected"), // 'connected', 'syncing', 'error', 'disconnected'

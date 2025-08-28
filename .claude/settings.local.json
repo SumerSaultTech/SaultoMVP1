@@ -14,12 +14,26 @@
       "Bash(npm i:*)",
       "Bash(npm run:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(git push:*)",
+      "Bash(timeout:*)",
+      "Read(/C:\\c\\Users\\nphil/**)",
+      "Bash(del \"C:\\Users\\nphil\\SaultoMVP1\\server\\services\\pdf-generator.ts\")",
+      "Bash(rm:*)",
+      "Bash(rg:*)",
+      "Bash(sed:*)",
+      "Bash(git log:*)",
+      "Bash(python:*)",
+      "Bash(npx tsc:*)",
+      "Bash(del nul)"
     ],
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "C:\\Users\\nphil\\Downloads"
+      "C:\\Users\\nphil\\Downloads",
+      "C:\\c\\Users\\nphil"
     ]
   }
 }

@@ -7,99 +7,186 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CredentialDialog } from "@/components/ui/credential-dialog";
-import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
 type SetupStep = "initial" | "appCount" | "toolSelection" | "confirmLogin" | "syncProgress" | "complete";
 
-// Tool definitions with available data
+// Tool definitions with categories and logos - alphabetically ordered
 const availableTools = [
+  {
+    id: "activecampaign",
+    name: "ActiveCampaign",
+    icon: Users,
+    logo: "https://logo.clearbit.com/activecampaign.com",
+    description: "Available data: Contacts, Campaigns, Automations, Lists",
+    category: "Marketing",
+    color: "#356ae6",
+    standardTables: ["contact", "campaign", "automation", "list"],
+    customCost: 30
+  },
+  {
+    id: "asana",
+    name: "Asana",
+    icon: Target,
+    logo: "https://cdn.worldvectorlogo.com/logos/asana-logo.svg",
+    description: "Available data: Tasks, Projects, Teams, Workspaces",
+    category: "Ops",
+    color: "#f06a6a",
+    standardTables: ["task", "project", "user", "team"],
+    customCost: 20
+  },
   {
     id: "harvest",
     name: "Harvest",
     icon: Clock,
+    logo: "https://logo.clearbit.com/getharvest.com",
     description: "Available data: Time logs, Projects, Invoices",
-    color: "#f97316",
+    category: "Ops",
+    color: "#ff8a00",
     standardTables: ["time_entry", "project", "client", "invoice"],
+    customCost: 25
+  },
+  {
+    id: "hubspot",
+    name: "HubSpot",
+    icon: Users,
+    logo: "https://logo.clearbit.com/hubspot.com",
+    description: "Available data: Contacts, Deals, Companies, Tickets",
+    category: "CRM",
+    color: "#ff7a59",
+    standardTables: ["contact", "deal", "company", "ticket"],
+    customCost: 30
+  },
+  {
+    id: "jira",
+    name: "Jira", 
+    icon: Briefcase,
+    logo: "https://cdn.worldvectorlogo.com/logos/jira-1.svg",
+    description: "Available data: Issues, Projects, Workflows, Reports",
+    category: "Ops",
+    color: "#0052cc",
+    standardTables: ["issue", "project", "user", "sprint"],
+    customCost: 25
+  },
+  {
+    id: "mailchimp",
+    name: "Mailchimp",
+    icon: Mail,
+    logo: "https://logo.clearbit.com/mailchimp.com",
+    description: "Available data: Campaigns, Lists, Subscribers, Analytics",
+    category: "Marketing",
+    color: "#ffe01b",
+    standardTables: ["campaign", "list", "subscriber", "report"],
+    customCost: 25
+  },
+  {
+    id: "monday",
+    name: "Monday.com",
+    icon: Calendar,
+    logo: "https://logo.clearbit.com/monday.com",
+    description: "Available data: Boards, Items, Updates, Users",
+    category: "Ops",
+    color: "#ff3d57",
+    standardTables: ["board", "item", "update", "user"],
+    customCost: 25
+  },
+  {
+    id: "netsuite",
+    name: "NetSuite",
+    icon: Database,
+    logo: "https://cdn.worldvectorlogo.com/logos/netsuite-1.svg",
+    description: "Available data: Financial records, Inventory, CRM", 
+    category: "ERP",
+    color: "#1f4788",
+    standardTables: ["transaction", "customer", "item", "vendor"],
+    customCost: 35
+  },
+  {
+    id: "quickbooks",
+    name: "QuickBooks", 
+    icon: DollarSign,
+    logo: "https://cdn.worldvectorlogo.com/logos/quickbooks-1.svg",
+    description: "Available data: Invoices, Expenses, Customers, Vendors",
+    category: "ERP",
+    color: "#0077c5",
+    standardTables: ["invoice", "customer", "item", "payment"],
     customCost: 25
   },
   {
     id: "salesforce", 
     name: "Salesforce",
     icon: Users,
+    logo: "https://cdn.worldvectorlogo.com/logos/salesforce-2.svg",
     description: "Available data: Leads, Accounts, Opportunities, Contacts",
-    color: "#3b82f6",
+    category: "CRM",
+    color: "#00a1e0",
     standardTables: ["opportunity", "account", "contact", "lead"],
     customCost: 30
   },
-  {
-    id: "quickbooks",
-    name: "QuickBooks", 
-    icon: DollarSign,
-    description: "Available data: Invoices, Expenses, Customers, Vendors",
-    color: "#22c55e",
-    standardTables: ["invoice", "customer", "item", "payment"],
-    customCost: 25
-  },
-  {
-    id: "netsuite",
-    name: "NetSuite (Oracle)",
-    icon: Database,
-    description: "Available data: Financial records, Inventory, CRM", 
-    color: "#a855f7",
-    standardTables: ["transaction", "customer", "item", "vendor"],
-    customCost: 35
-  },
-  {
-    id: "asana",
-    name: "Asana",
-    icon: Target,
-    description: "Available data: Tasks, Projects, Teams, Workspaces",
-    color: "#ec4899",
-    standardTables: ["task", "project", "user", "team"],
-    customCost: 20
-  },
-  {
-    id: "jira",
-    name: "Jira", 
-    icon: Briefcase,
-    description: "Available data: Issues, Projects, Workflows, Reports",
-    color: "#6366f1",
-    standardTables: ["issue", "project", "user", "sprint"],
-    customCost: 25
-  },
+];
+
+// Tool categories
+const toolCategories = [
+  { id: "all", name: "All Tools", count: 0 },
+  { id: "CRM", name: "CRM", count: 0 },
+  { id: "ERP", name: "ERP", count: 0 },
+  { id: "Ops", name: "Operations", count: 0 },
+  { id: "Marketing", name: "Marketing", count: 0 }
 ];
 
 // Standard setup table definitions
 const standardTables = {
-  salesforce: ["opportunity", "account", "contact", "lead"],
-  hubspot: ["deal", "contact", "company", "ticket"],
-  jira: ["issue", "project", "user", "sprint"],
-  quickbooks: ["invoice", "customer", "item", "payment"],
-  harvest: ["time_entry", "project", "client", "invoice"],
+  activecampaign: ["contact", "campaign", "automation", "list"],
   asana: ["task", "project", "user", "team"],
-  netsuite: ["transaction", "customer", "item", "vendor"]
+  harvest: ["time_entry", "project", "client", "invoice"],
+  hubspot: ["contact", "deal", "company", "ticket"],
+  jira: ["issue", "project", "user", "sprint"],
+  mailchimp: ["campaign", "list", "subscriber", "report"],
+  monday: ["board", "item", "update", "user"],
+  netsuite: ["transaction", "customer", "item", "vendor"],
+  quickbooks: ["invoice", "customer", "item", "payment"],
+  salesforce: ["opportunity", "account", "contact", "lead"]
 };
 
 // Available tables for custom setup with pricing
 const availableTablesForCustom = {
-  salesforce: [
-    { name: "opportunity", label: "Opportunities", included: true, cost: 0 },
-    { name: "account", label: "Accounts", included: true, cost: 0 },
+  activecampaign: [
     { name: "contact", label: "Contacts", included: true, cost: 0 },
-    { name: "lead", label: "Leads", included: true, cost: 0 },
-    { name: "campaign", label: "Campaigns", included: false, cost: 25 },
-    { name: "case", label: "Cases", included: false, cost: 25 },
+    { name: "campaign", label: "Campaigns", included: true, cost: 0 },
+    { name: "automation", label: "Automations", included: true, cost: 0 },
+    { name: "list", label: "Lists", included: true, cost: 0 },
+    { name: "email", label: "Emails", included: false, cost: 25 },
+    { name: "deal", label: "Deals", included: false, cost: 25 },
+    { name: "tag", label: "Tags", included: false, cost: 15 },
+    { name: "form", label: "Forms", included: false, cost: 20 },
+  ],
+  asana: [
+    { name: "task", label: "Tasks", included: true, cost: 0 },
+    { name: "project", label: "Projects", included: true, cost: 0 },
+    { name: "user", label: "Users", included: true, cost: 0 },
+    { name: "team", label: "Teams", included: true, cost: 0 },
+    { name: "story", label: "Stories", included: false, cost: 20 },
+    { name: "attachment", label: "Attachments", included: false, cost: 25 },
+    { name: "tag", label: "Tags", included: false, cost: 15 },
+    { name: "portfolio", label: "Portfolios", included: false, cost: 30 },
+  ],
+  harvest: [
+    { name: "time_entry", label: "Time Entries", included: true, cost: 0 },
+    { name: "project", label: "Projects", included: true, cost: 0 },
+    { name: "client", label: "Clients", included: true, cost: 0 },
+    { name: "invoice", label: "Invoices", included: true, cost: 0 },
+    { name: "expense", label: "Expenses", included: false, cost: 25 },
     { name: "task", label: "Tasks", included: false, cost: 20 },
-    { name: "event", label: "Events", included: false, cost: 20 },
-    { name: "product", label: "Products", included: false, cost: 30 },
+    { name: "user", label: "Users", included: false, cost: 20 },
+    { name: "estimate", label: "Estimates", included: false, cost: 30 },
   ],
   hubspot: [
-    { name: "deal", label: "Deals", included: true, cost: 0 },
     { name: "contact", label: "Contacts", included: true, cost: 0 },
+    { name: "deal", label: "Deals", included: true, cost: 0 },
     { name: "company", label: "Companies", included: true, cost: 0 },
     { name: "ticket", label: "Tickets", included: true, cost: 0 },
     { name: "email", label: "Emails", included: false, cost: 25 },
@@ -118,35 +205,25 @@ const availableTablesForCustom = {
     { name: "attachment", label: "Attachments", included: false, cost: 30 },
     { name: "component", label: "Components", included: false, cost: 15 },
   ],
-  quickbooks: [
-    { name: "invoice", label: "Invoices", included: true, cost: 0 },
-    { name: "customer", label: "Customers", included: true, cost: 0 },
+  mailchimp: [
+    { name: "campaign", label: "Campaigns", included: true, cost: 0 },
+    { name: "list", label: "Lists", included: true, cost: 0 },
+    { name: "subscriber", label: "Subscribers", included: true, cost: 0 },
+    { name: "report", label: "Reports", included: true, cost: 0 },
+    { name: "automation", label: "Automations", included: false, cost: 25 },
+    { name: "template", label: "Templates", included: false, cost: 20 },
+    { name: "segment", label: "Segments", included: false, cost: 20 },
+    { name: "landing_page", label: "Landing Pages", included: false, cost: 30 },
+  ],
+  monday: [
+    { name: "board", label: "Boards", included: true, cost: 0 },
     { name: "item", label: "Items", included: true, cost: 0 },
-    { name: "payment", label: "Payments", included: true, cost: 0 },
-    { name: "expense", label: "Expenses", included: false, cost: 25 },
-    { name: "bill", label: "Bills", included: false, cost: 25 },
-    { name: "vendor", label: "Vendors", included: false, cost: 20 },
-    { name: "employee", label: "Employees", included: false, cost: 30 },
-  ],
-  harvest: [
-    { name: "time_entry", label: "Time Entries", included: true, cost: 0 },
-    { name: "project", label: "Projects", included: true, cost: 0 },
-    { name: "client", label: "Clients", included: true, cost: 0 },
-    { name: "invoice", label: "Invoices", included: true, cost: 0 },
-    { name: "expense", label: "Expenses", included: false, cost: 25 },
-    { name: "task", label: "Tasks", included: false, cost: 20 },
-    { name: "user", label: "Users", included: false, cost: 20 },
-    { name: "estimate", label: "Estimates", included: false, cost: 30 },
-  ],
-  asana: [
-    { name: "task", label: "Tasks", included: true, cost: 0 },
-    { name: "project", label: "Projects", included: true, cost: 0 },
+    { name: "update", label: "Updates", included: true, cost: 0 },
     { name: "user", label: "Users", included: true, cost: 0 },
-    { name: "team", label: "Teams", included: true, cost: 0 },
-    { name: "story", label: "Stories", included: false, cost: 20 },
-    { name: "attachment", label: "Attachments", included: false, cost: 25 },
-    { name: "tag", label: "Tags", included: false, cost: 15 },
-    { name: "portfolio", label: "Portfolios", included: false, cost: 30 },
+    { name: "column", label: "Columns", included: false, cost: 20 },
+    { name: "group", label: "Groups", included: false, cost: 15 },
+    { name: "activity", label: "Activity Logs", included: false, cost: 25 },
+    { name: "workspace", label: "Workspaces", included: false, cost: 30 },
   ],
   netsuite: [
     { name: "transaction", label: "Transactions", included: true, cost: 0 },
@@ -157,6 +234,27 @@ const availableTablesForCustom = {
     { name: "subsidiary", label: "Subsidiaries", included: false, cost: 35 },
     { name: "location", label: "Locations", included: false, cost: 20 },
     { name: "department", label: "Departments", included: false, cost: 25 },
+  ],
+  quickbooks: [
+    { name: "invoice", label: "Invoices", included: true, cost: 0 },
+    { name: "customer", label: "Customers", included: true, cost: 0 },
+    { name: "item", label: "Items", included: true, cost: 0 },
+    { name: "payment", label: "Payments", included: true, cost: 0 },
+    { name: "expense", label: "Expenses", included: false, cost: 25 },
+    { name: "bill", label: "Bills", included: false, cost: 25 },
+    { name: "vendor", label: "Vendors", included: false, cost: 20 },
+    { name: "employee", label: "Employees", included: false, cost: 30 },
+  ],
+  salesforce: [
+    { name: "opportunity", label: "Opportunities", included: true, cost: 0 },
+    { name: "account", label: "Accounts", included: true, cost: 0 },
+    { name: "contact", label: "Contacts", included: true, cost: 0 },
+    { name: "lead", label: "Leads", included: true, cost: 0 },
+    { name: "campaign", label: "Campaigns", included: false, cost: 25 },
+    { name: "case", label: "Cases", included: false, cost: 25 },
+    { name: "task", label: "Tasks", included: false, cost: 20 },
+    { name: "event", label: "Events", included: false, cost: 20 },
+    { name: "product", label: "Products", included: false, cost: 30 },
   ],
 };
 
@@ -215,6 +313,10 @@ export default function Setup() {
   // Per-tool setup type state
   const [toolSetupTypes, setToolSetupTypes] = useState<{[toolId: string]: "standard" | "custom"}>(initialState.toolSetupTypes);
   const [customTables, setCustomTables] = useState<{[toolId: string]: string[]}>(initialState.customTables);
+  
+  // Tool category filter state
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Dialog states
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
@@ -592,7 +694,6 @@ export default function Setup() {
             <div className="space-y-2">
               {completedTools.map((toolId: string) => {
                 const tool = availableTools.find(t => t.id === toolId)!;
-                const Icon = tool.icon;
                 const setupType = toolSetupTypes[toolId];
                 const standardTablesList = standardTables[toolId as keyof typeof standardTables] || [];
                 const customTablesList = customTables[toolId] || [];
@@ -600,8 +701,8 @@ export default function Setup() {
                 return (
                   <div key={toolId} className="flex items-center justify-between p-2 rounded-md bg-gray-50">
                     <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-md flex items-center justify-center bg-gray-100">
-                        <Icon className="w-4 h-4" style={{ color: tool.color }} />
+                      <div className="w-8 h-8 rounded-md flex items-center justify-center bg-white p-1">
+                        <img src={tool.logo} alt={tool.name} className="w-6 h-6 object-contain" />
                       </div>
                       <div>
                         <h4 className="font-medium text-sm text-gray-900">{tool.name}</h4>
@@ -762,85 +863,239 @@ export default function Setup() {
     </div>
   );
 
-  const renderToolSelectionStep = () => (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div className="text-center space-y-4">
-        <h2 className="text-2xl font-bold text-gray-900">Select Your Tools</h2>
-        <p className="text-gray-600">
-          Choose {appCount} tools to connect to your data platform
-        </p>
-      </div>
+  const renderToolSelectionStep = () => {
+    // Filter tools by search query and category
+    const filteredTools = availableTools.filter(tool => {
+      const matchesSearch = searchQuery === "" || 
+        tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tool.category.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesCategory = selectedCategory === "all" || tool.category === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
+    });
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {availableTools.map((tool) => {
-          const Icon = tool.icon;
-          const isSelected = selectedTools.includes(tool.id);
+    // Calculate category counts based on search results
+    const categoryCounts = toolCategories.map(category => ({
+      ...category,
+      count: category.id === "all" 
+        ? availableTools.filter(tool => 
+            searchQuery === "" || 
+            tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            tool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            tool.category.toLowerCase().includes(searchQuery.toLowerCase())
+          ).length
+        : availableTools.filter(tool => 
+            tool.category === category.id && (
+              searchQuery === "" || 
+              tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              tool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              tool.category.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+          ).length
+    }));
 
-          return (
-            <Card 
-              key={tool.id}
-              className={`cursor-pointer transition-all ${
-                isSelected ? 'ring-2 ring-saulto-600 bg-saulto-50' : 'hover:shadow-lg'
-              } ${selectedTools.length >= appCount! && !isSelected ? 'opacity-50' : ''}`}
-              onClick={() => {
-                if (selectedTools.length < appCount! || isSelected) {
-                  handleToolToggle(tool.id);
-                }
-              }}
-            >
-              <CardContent className="p-6">
-                <div className="flex items-start space-x-4">
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-gray-100">
-                    <Icon className="w-6 h-6" style={{ color: tool.color }} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-lg">{tool.name}</h3>
-                      <Checkbox checked={isSelected} readOnly />
+    return (
+      <div className="max-w-5xl mx-auto space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto px-4">
+        <div className="text-center space-y-4 sticky top-0 bg-gray-50 pt-4 pb-4 z-10">
+          <h2 className="text-2xl font-bold text-gray-900">Select Your Tools</h2>
+          <p className="text-gray-600">
+            Choose {appCount} tools to connect to your data platform. Search and filter tools by category.
+          </p>
+        </div>
+
+        {/* Search Bar and Category Filters */}
+        <Card className="sticky top-24 z-10 bg-white">
+          <CardContent className="p-4">
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+              {/* Search Bar */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Search tools by name, category, or description..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-4"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Category Filters */}
+              <div className="flex flex-wrap gap-2">
+                {categoryCounts.map((category) => (
+                  <Button
+                    key={category.id}
+                    variant={selectedCategory === category.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(category.id)}
+                    className={selectedCategory === category.id ? "bg-saulto-600 hover:bg-saulto-700 text-white" : ""}
+                    disabled={category.count === 0 && searchQuery !== ""}
+                  >
+                    {category.name}
+                    <Badge variant="outline" className="ml-2 text-xs">
+                      {category.count}
+                    </Badge>
+                  </Button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Search Results Summary */}
+            {searchQuery && (
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-sm text-gray-600">
+                  {filteredTools.length} tool{filteredTools.length !== 1 ? 's' : ''} found for "{searchQuery}"
+                  {searchQuery && filteredTools.length === 0 && (
+                    <span className="block mt-1 text-orange-600">
+                      Try adjusting your search terms or clearing filters
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Tools List - Row Layout */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="space-y-0">
+              {filteredTools.map((tool, index) => {
+                const isSelected = selectedTools.includes(tool.id);
+                const isDisabled = selectedTools.length >= appCount! && !isSelected;
+
+                return (
+                  <div
+                    key={tool.id}
+                    className={`flex items-center justify-between p-4 cursor-pointer transition-all ${
+                      index !== filteredTools.length - 1 ? 'border-b border-gray-100' : ''
+                    } ${
+                      isSelected 
+                        ? 'bg-saulto-50 border-l-4 border-l-saulto-600' 
+                        : isDisabled 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      if (!isDisabled || isSelected) {
+                        handleToolToggle(tool.id);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center space-x-4 flex-1">
+                      {/* Logo */}
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white border p-2">
+                        <img src={tool.logo} alt={tool.name} className="w-6 h-6 object-contain" />
+                      </div>
+                      
+                      {/* Tool Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3">
+                          <h3 className="font-semibold text-gray-900">{tool.name}</h3>
+                          <Badge variant="outline" className="text-xs">
+                            {tool.category}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {tool.description}
+                        </p>
+                      </div>
+
+                      {/* Selection Indicator */}
+                      <div className="flex items-center space-x-3">
+                        <Checkbox 
+                          checked={isSelected} 
+                          disabled={isDisabled && !isSelected}
+                          readOnly 
+                        />
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-600 mt-2">
-                      {tool.description}
-                    </p>
                   </div>
+                );
+              })}
+              
+              {filteredTools.length === 0 && (
+                <div className="p-8 text-center text-gray-500">
+                  <Search className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">
+                    {searchQuery ? `No tools found matching "${searchQuery}"` : "No tools found in this category"}
+                  </p>
+                  <p className="text-sm mt-2">
+                    {searchQuery ? (
+                      <>
+                        Try different search terms or{" "}
+                        <button 
+                          onClick={() => setSearchQuery("")}
+                          className="text-saulto-600 hover:text-saulto-700 underline"
+                        >
+                          clear search
+                        </button>
+                      </>
+                    ) : (
+                      "Try selecting a different category or search for specific tools"
+                    )}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Selected: {selectedTools.length}/{appCount}</p>
-              <p className="text-sm text-gray-600">
-                {selectedTools.length === appCount 
-                  ? "Perfect! You've selected all your tools." 
-                  : `Select ${appCount! - selectedTools.length} more tool${appCount! - selectedTools.length !== 1 ? 's' : ''}.`
-                }
-              </p>
+        {/* Selection Summary - Sticky Bottom */}
+        <Card className="sticky bottom-4 bg-white shadow-lg border-2">
+          <CardContent className="p-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <p className="font-medium">Selected: {selectedTools.length}/{appCount}</p>
+                <p className="text-sm text-gray-600">
+                  {selectedTools.length === appCount 
+                    ? "Perfect! You've selected all your tools." 
+                    : `Select ${appCount! - selectedTools.length} more tool${appCount! - selectedTools.length !== 1 ? 's' : ''}.`
+                  }
+                </p>
+                {selectedTools.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1 max-w-md">
+                    {selectedTools.map(toolId => {
+                      const tool = availableTools.find(t => t.id === toolId);
+                      return tool ? (
+                        <Badge key={toolId} variant="outline" className="text-xs">
+                          {tool.name}
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 flex-shrink-0">
+                <Button 
+                  variant="outline"
+                  onClick={() => setCurrentStep("appCount")}
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={() => setCurrentStep("confirmLogin")}
+                  disabled={selectedTools.length !== appCount}
+                  className="bg-saulto-600 hover:bg-saulto-700 text-white"
+                >
+                  Continue with Selected Tools
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-4">
-              <Button 
-                variant="outline"
-                onClick={() => setCurrentStep("appCount")}
-              >
-                Back
-              </Button>
-              <Button 
-                onClick={() => setCurrentStep("confirmLogin")}
-                disabled={selectedTools.length !== appCount}
-                className="bg-saulto-600 hover:bg-saulto-700 text-white"
-              >
-                OK
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
 
   const renderConfirmLoginStep = () => (
     <div className="max-w-3xl mx-auto space-y-8">
@@ -854,7 +1109,6 @@ export default function Setup() {
       <div className="space-y-4">
         {selectedTools.map((toolId) => {
           const tool = availableTools.find(t => t.id === toolId)!;
-          const Icon = tool.icon;
           const isCompleted = completedLogins.includes(toolId);
 
           return (
@@ -862,8 +1116,8 @@ export default function Setup() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-gray-100">
-                      <Icon className="w-6 h-6" style={{ color: tool.color }} />
+                    <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-white p-2">
+                      <img src={tool.logo} alt={tool.name} className="w-8 h-8 object-contain" />
                     </div>
                     <div>
                       <h3 className="font-semibold">{tool.name}</h3>
@@ -978,14 +1232,13 @@ export default function Setup() {
           <div className="space-y-3">
             {selectedTools.map((toolId, index) => {
               const tool = availableTools.find(t => t.id === toolId)!;
-              const Icon = tool.icon;
               const toolProgress = Math.max(0, Math.min(100, (syncProgress - (index * (100 / selectedTools.length))) * (selectedTools.length)));
               const isCompleted = toolProgress >= 100;
 
               return (
                 <div key={toolId} className="flex items-center space-x-4 p-3 rounded-lg bg-gray-50">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gray-100">
-                    <Icon className="w-4 h-4" style={{ color: tool.color }} />
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white p-1">
+                    <img src={tool.logo} alt={tool.name} className="w-6 h-6 object-contain" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
@@ -1092,8 +1345,8 @@ export default function Setup() {
                         className="flex items-center space-x-3 p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                         onClick={() => toggleAppExpansion(toolId)}
                       >
-                        <div className="w-6 h-6 bg-white rounded flex items-center justify-center shadow-sm">
-                          {React.createElement(tool.icon, { className: "w-4 h-4", style: { color: tool.color } })}
+                        <div className="w-6 h-6 bg-white rounded flex items-center justify-center shadow-sm p-1">
+                          <img src={tool.logo} alt={tool.name} className="w-4 h-4 object-contain" />
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">

@@ -1,25 +1,22 @@
 import { Link, useLocation } from "wouter";
-import { Database, BarChart3, Settings, Table, Shield, Target, Building2, LogOut, Users, MessageCircle, Zap, Link as LinkIcon, GitBranch } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Database, BarChart3, Settings, Shield, Target, LogOut, Users, MessageCircle, GitBranch, FileText, Menu, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 export default function Sidebar() {
   const [location] = useLocation();
-
-  const { data: setupStatus } = useQuery({
-    queryKey: ["/api/setup-status"],
-  });
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const navItems = [
     { path: "/", icon: BarChart3, label: "Dashboard" },
+    { path: "/metric-reports", icon: FileText, label: "Metric Reports" },
+    { path: "/saultochat", icon: MessageCircle, label: "SaultoChat" },
+    { path: "/integrations-canvas", icon: GitBranch, label: "Integration Canvas" },
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/data-browser", icon: Database, label: "Data Browser" },
-    { path: "/integrations-canvas", icon: GitBranch, label: "Integration Canvas" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
-    { path: "/users", icon: Users, label: "User Management" },
     { path: "/admin", icon: Shield, label: "Admin Panel" },
-    { path: "/saultochat", icon: MessageCircle, label: "SaultoChat" },
+    { path: "/users", icon: Users, label: "User Management" },
   ];
 
   const isActive = (path: string) => {
@@ -28,111 +25,73 @@ export default function Sidebar() {
     return false;
   };
 
-  const getSystemStatus = () => {
-    if (!setupStatus) return { text: "Loading...", color: "bg-gray-500" };
-    
-    if (setupStatus.warehouseConnected && setupStatus.dataSourcesConfigured && 
-        setupStatus.modelsDeployed === setupStatus.totalModels && setupStatus.totalModels > 0) {
-      return { text: "All Systems Operational", color: "bg-green-500" };
-    }
-    
-    if (setupStatus.warehouseConnected || setupStatus.dataSourcesConfigured) {
-      return { text: "Partially Configured", color: "bg-amber-500" };
-    }
-    
-    return { text: "Setup Required", color: "bg-red-500" };
-  };
-
-  const systemStatus = getSystemStatus();
 
   return (
-    <div className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col h-screen">
+    <div className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white shadow-sm border-r border-gray-200 flex flex-col h-screen transition-all duration-300 ease-in-out`}>
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-start">
-          <Link href="/">
-            <a className="cursor-pointer hover:opacity-80 transition-opacity">
-              <img 
-                src="/assets/logo.png" 
-                alt="Logo" 
-                className="w-48 h-20 object-contain max-w-full"
-              />
-            </a>
-          </Link>
+      <div className={`bg-white border-b border-gray-200 ${isCollapsed ? 'px-2' : 'px-6'} py-4 transition-all duration-300`}>
+        <div className="flex items-center justify-between">
+          {!isCollapsed ? (
+            <Link href="/">
+              <a className="cursor-pointer hover:opacity-80 transition-opacity">
+                <img 
+                  src="/assets/logo.png" 
+                  alt="Logo" 
+                  className="w-48 h-20 object-contain max-w-full"
+                />
+              </a>
+            </Link>
+          ) : (
+            <div className="flex-1 flex justify-center">
+              <Link href="/">
+                <a className="cursor-pointer hover:opacity-80 transition-opacity">
+                  <BarChart3 className="w-6 h-6 text-saulto-600" />
+                </a>
+              </Link>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="ml-2 text-gray-500 hover:text-gray-700"
+          >
+            {isCollapsed ? <Menu className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </Button>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      <nav className={`flex-1 ${isCollapsed ? 'px-2' : 'p-4'} py-4 space-y-2 overflow-y-auto transition-all duration-300`}>
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
             <Link key={item.path} href={item.path}>
-              <a className={`sidebar-nav-item ${isActive(item.path) ? "active" : ""}`}>
+              <a 
+                className={`sidebar-nav-item ${isActive(item.path) ? "active" : ""} ${isCollapsed ? 'justify-center px-2' : ''}`}
+                title={isCollapsed ? item.label : undefined}
+              >
                 <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
+                {!isCollapsed && <span>{item.label}</span>}
               </a>
             </Link>
           );
         })}
       </nav>
 
-      {/* Company Switcher */}
-      <div className="p-4 border-t border-gray-200">
-        <div className="bg-saulto-50 border border-saulto-100 rounded-lg p-3 mb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Building2 className="w-4 h-4 text-saulto-700" />
-              <span className="text-sm font-heading font-medium text-saulto-800">
-                {(() => {
-                  const selectedCompany = localStorage.getItem("selectedCompany");
-                  if (selectedCompany) {
-                    const company = JSON.parse(selectedCompany);
-                    return company.name;
-                  }
-                  return "No Company";
-                })()}
-              </span>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                localStorage.removeItem("selectedCompany");
-                window.location.href = "/companies";
-              }}
-              className="text-saulto-700 hover:text-saulto-800"
-            >
-              <LogOut className="w-3 h-3" />
-            </Button>
-          </div>
-          <p className="text-xs text-saulto-700 mt-1">
-            Switch company to test isolation
-          </p>
-        </div>
-
-        {/* Status Indicator */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
-          <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 ${systemStatus.color} rounded-full animate-pulse`} />
-            <span className="text-sm font-heading font-medium text-green-800">{systemStatus.text}</span>
-          </div>
-          <p className="text-xs text-green-600 mt-1">
-            System status
-          </p>
-        </div>
-
-        {/* Logout Button */}
+      {/* Logout Button */}
+      <div className={`${isCollapsed ? 'px-2' : 'p-4'} py-4 border-t border-gray-200 transition-all duration-300`}>
         <Button
           onClick={() => {
             localStorage.clear();
             window.location.href = "/login";
           }}
           variant="outline"
-          className="w-full flex items-center justify-center space-x-2 text-gray-600 hover:text-gray-800"
+          className={`w-full flex items-center justify-center space-x-2 text-gray-600 hover:text-gray-800 ${isCollapsed ? 'p-2' : ''}`}
+          title={isCollapsed ? "Sign Out" : undefined}
         >
           <LogOut className="w-4 h-4" />
-          <span>Sign Out</span>
+          {!isCollapsed && <span>Sign Out</span>}
         </Button>
       </div>
     </div>
