@@ -6,6 +6,8 @@ import { postgresAnalyticsService } from "./services/postgres-analytics";
 import { openaiService } from "./services/openai";
 import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
+import { jiraOAuthService } from "./services/jira-oauth";
+import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
 import path from 'path';
@@ -19,6 +21,7 @@ import {
   insertMetricReportSchema,
 } from "@shared/schema";
 import { z } from "zod";
+import { filterToSQL, buildMetricSQL, generateMetricTemplate } from "./services/filter-to-sql";
 
 
 // File upload configuration
@@ -134,17 +137,237 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     res.json(health);
   });
+
+  // Initialize Jira OAuth service
+  (async () => {
+    try {
+      await jiraOAuthService.initialize();
+      console.log('Jira OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Jira OAuth service:', error);
+    }
+  })();
+
+  // Jira OAuth2 Routes
+  app.get("/api/auth/jira/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = jiraOAuthService.getAuthorizationUrl(companyId, userId);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error('Jira OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/jira/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = jiraOAuthService.parseState(state as string);
+      
+      // Exchange code for tokens
+      const tokens = await jiraOAuthService.exchangeCodeForTokens(code as string, state as string);
+      
+      // Get user info (optional - don't fail if this doesn't work)
+      let userInfo = null;
+      try {
+        userInfo = await jiraOAuthService.getUserInfo(tokens.access_token);
+      } catch (error) {
+        console.log('Could not get user info (missing scope?), continuing without it:', error.message);
+      }
+      
+      // Get accessible Jira resources (instances)
+      const resources = await jiraOAuthService.getAccessibleResources(tokens.access_token);
+
+      // Store the OAuth tokens and connection info in the database
+      // This should be stored per company for multi-tenant support
+      const connectionData = {
+        companyId: stateData.companyId,
+        connectorType: 'jira',
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+        userInfo,
+        resources,
+        isActive: true,
+        createdAt: new Date()
+      };
+
+      // Store in your dataSources table or create a new oauth_connections table
+      await storage.createDataSource({
+        companyId: stateData.companyId,
+        name: `Jira (${userInfo?.name || 'Connected'})`,
+        type: 'jira',
+        config: JSON.stringify({
+          oauth: true,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: connectionData.expiresAt.toISOString(),
+          userInfo,
+          resources,
+          accountId: userInfo?.account_id || null
+        }),
+        isActive: true
+      });
+
+      // Redirect to frontend setup page with OAuth parameters
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?code=${code}&state=${state}`);
+
+    } catch (error) {
+      console.error('Jira OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Jira table discovery endpoint
+  app.get("/api/auth/jira/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Table discovery for company: ${companyId}`);
+      
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSources(parseInt(companyId));
+      console.log(`🔍 Found ${dataSources.length} data sources for company`);
+      
+      const jiraSource = dataSources.find(ds => ds.type === 'jira' && ds.isActive);
+      console.log(`🔍 Active Jira source found:`, !!jiraSource);
+      
+      if (!jiraSource) {
+        console.log(`❌ No active Jira connection found for company ${companyId}`);
+        return res.status(404).json({ error: "No active Jira connection found for this company" });
+      }
+      
+      const config = JSON.parse(jiraSource.config);
+      console.log(`🔍 Config parsed, accessToken exists:`, !!config.accessToken);
+      console.log(`🔍 Resources in config:`, config.resources?.length || 0);
+      
+      const accessToken = config.accessToken;
+      const resources = config.resources;
+      
+      if (!resources || resources.length === 0) {
+        console.log(`❌ No resources available:`, resources);
+        return res.status(400).json({ error: "No Jira resources available" });
+      }
+      
+      // Use the first available Jira instance
+      const cloudId = resources[0].id;
+      console.log(`✅ Using cloud ID: ${cloudId}`);
+      
+      // Discover tables and their fields
+      console.log(`🔍 Discovering Jira tables...`);
+      const tables = await jiraOAuthService.discoverJiraTables(accessToken, cloudId);
+      console.log(`✅ Found ${tables.length} tables`);
+      
+      res.json({ tables, cloudId });
+    } catch (error) {
+      console.error('Error discovering Jira tables:', error);
+      res.status(500).json({ error: 'Failed to discover Jira tables' });
+    }
+  });
+
+  app.get("/api/auth/jira/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Check if company has active Jira connection
+      const dataSources = await storage.getDataSources(companyId);
+      const jiraConnection = dataSources.find(ds => ds.type === 'jira' && ds.isActive);
+
+      if (!jiraConnection) {
+        return res.json({ connected: false });
+      }
+
+      // Parse config to get OAuth info
+      const config = JSON.parse(jiraConnection.config);
+      
+      if (!config.oauth) {
+        return res.json({ connected: false, method: 'basic_auth' });
+      }
+
+      // Check if token is still valid
+      const expiresAt = new Date(config.expiresAt);
+      const isExpired = expiresAt <= new Date();
+
+      res.json({ 
+        connected: true,
+        method: 'oauth',
+        userInfo: config.userInfo,
+        resources: config.resources,
+        expired: isExpired,
+        expiresAt: config.expiresAt
+      });
+
+    } catch (error) {
+      console.error('Jira OAuth status error:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Jira sync endpoint
+  app.post("/api/auth/jira/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based Jira sync for company ${companyId}`);
+      
+      // Use the Jira OAuth service to sync data
+      const result = await jiraOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth Jira sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Jira`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Jira sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          message: result.error || 'Sync failed',
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth Jira sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync Jira data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
   
   // Companies
   app.get("/api/companies", async (req, res) => {
     try {
-      res.json(companiesArray.map(company => ({
+      const companies = await storage.getCompanies();
+      res.json(companies.map(company => ({
         id: company.id,
         name: company.name,
         slug: company.slug,
-        isActive: company.status === "active"
+        isActive: company.isActive
       })));
     } catch (error) {
+      console.error('Failed to get companies:', error);
       res.status(500).json({ message: "Failed to get companies" });
     }
   });
@@ -152,23 +375,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/companies", async (req, res) => {
     try {
       const { name, slug } = req.body;
-      const newCompany = {
-        id: Date.now(),
+      
+      console.log(`🔨 Starting company creation: ${name}`);
+      
+      // Create company in database
+      const newCompany = await storage.createCompany({
+        id: Date.now(), // Generate unique ID
         name,
         slug,
-        createdAt: new Date().toISOString().split('T')[0],
-        userCount: 0,
-        status: "active"
-      };
-      companiesArray.push(newCompany);
+        isActive: true
+      });
+      
+      console.log(`✅ Company created successfully: ${name} (ID: ${newCompany.id})`);
+      
+      // Automatically create analytics schema for the new company
+      console.log(`🏗️ Creating analytics schema for new company: ${name} (ID: ${newCompany.id})`);
+      const schemaResult = await storage.ensureAnalyticsSchema(newCompany.id);
+      
+      if (!schemaResult.success) {
+        console.error(`⚠️ Analytics schema creation failed for company ${newCompany.id}:`, schemaResult.error);
+      } else {
+        console.log(`✅ Analytics schema created successfully for ${name}`);
+      }
+      
       res.json({
         id: newCompany.id,
         name: newCompany.name,
         slug: newCompany.slug,
-        isActive: true
+        isActive: newCompany.isActive
       });
     } catch (error) {
+      console.error('❌ Failed to create company:', error);
+      console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
       res.status(500).json({ message: "Failed to create company" });
+    }
+  });
+
+  app.delete("/api/companies/:id", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.id);
+      
+      if (isNaN(companyId)) {
+        return res.status(400).json({ message: "Invalid company ID" });
+      }
+      
+      console.log(`🔨 Starting company deletion: ID ${companyId}`);
+      
+      // Delete company and its analytics schema
+      const result = await storage.deleteCompany(companyId);
+      
+      if (!result.success) {
+        return res.status(404).json({ message: result.error || "Company not found" });
+      }
+      
+      console.log(`✅ Company deletion completed successfully: ID ${companyId}`);
+      res.json({ success: true, message: "Company and analytics schema deleted successfully" });
+      
+    } catch (error) {
+      console.error('❌ Failed to delete company:', error);
+      console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
+      res.status(500).json({ message: "Failed to delete company" });
+    }
+  });
+
+  // Cleanup orphaned analytics schemas
+  app.post("/api/companies/cleanup-schemas", async (req, res) => {
+    try {
+      console.log(`🧹 Starting manual cleanup of orphaned analytics schemas...`);
+      
+      const result = await storage.cleanupOrphanedAnalyticsSchemas();
+      
+      if (!result.success) {
+        return res.status(500).json({ 
+          success: false, 
+          message: "Failed to cleanup schemas", 
+          errors: result.errors 
+        });
+      }
+      
+      console.log(`✅ Schema cleanup completed. Cleaned: ${result.cleaned.length}, Errors: ${result.errors.length}`);
+      
+      res.json({ 
+        success: true, 
+        message: `Cleanup completed. Removed ${result.cleaned.length} orphaned schemas.`,
+        cleaned: result.cleaned,
+        errors: result.errors
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to cleanup schemas:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Internal server error during schema cleanup" 
+      });
+    }
+  });
+
+  // Ensure all companies have analytics schemas
+  app.post("/api/companies/ensure-schemas", async (req, res) => {
+    try {
+      console.log(`🏗️ Starting manual ensure all companies have schemas...`);
+      
+      const result = await storage.ensureAllCompaniesHaveSchemas();
+      
+      if (!result.success) {
+        return res.status(500).json({ 
+          success: false, 
+          message: "Failed to ensure schemas", 
+          errors: result.errors 
+        });
+      }
+      
+      console.log(`✅ Schema ensure completed. Created: ${result.created.length}, Errors: ${result.errors.length}`);
+      
+      res.json({ 
+        success: true, 
+        message: `Schema ensure completed. Created ${result.created.length} missing schemas.`,
+        created: result.created,
+        errors: result.errors
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to ensure schemas:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Internal server error during schema ensure" 
+      });
     }
   });
 
@@ -526,6 +858,48 @@ The Saulto Analytics Team
       // Use MIAS_DATA company ID for metric creation
       const dataWithCompanyId = { ...req.body, companyId: 1748544793859 };
       console.log("Creating metric for MIAS_DATA company:", JSON.stringify(dataWithCompanyId, null, 2));
+      
+      // Handle filter processing if provided
+      if (dataWithCompanyId.filterConfig && dataWithCompanyId.dataSource) {
+        const filterResult = filterToSQL(dataWithCompanyId.filterConfig, dataWithCompanyId.dataSource);
+        
+        if (filterResult.errors.length > 0) {
+          return res.status(400).json({ 
+            message: "Invalid filter configuration", 
+            errors: filterResult.errors 
+          });
+        }
+        
+        // Build SQL with filter
+        const baseQuery = dataWithCompanyId.sqlQuery || generateMetricTemplate(
+          dataWithCompanyId.dataSource,
+          dataWithCompanyId.metricType || "revenue",
+          "monthly"
+        );
+        
+        const sqlResult = buildMetricSQL(
+          baseQuery,
+          dataWithCompanyId.filterConfig,
+          dataWithCompanyId.dataSource,
+          dataWithCompanyId.aggregateFunction || "SUM",
+          dataWithCompanyId.valueColumn || "amount"
+        );
+        
+        if (sqlResult.errors.length > 0) {
+          return res.status(400).json({ 
+            message: "Failed to build SQL query", 
+            errors: sqlResult.errors 
+          });
+        }
+        
+        // Store the generated SQL and parameters
+        dataWithCompanyId.sqlQuery = sqlResult.whereClause;
+        dataWithCompanyId.sqlParameters = sqlResult.parameters;
+        
+        console.log("Generated SQL with filter:", sqlResult.whereClause);
+        console.log("SQL Parameters:", JSON.stringify(sqlResult.parameters, null, 2));
+      }
+      
       const validatedData = insertKpiMetricSchema.parse(dataWithCompanyId);
       const metric = await storage.createKpiMetric(validatedData);
       console.log("Successfully saved metric:", metric.name);
@@ -575,6 +949,177 @@ The Saulto Analytics Team
       res.json({ message: "Metric deleted successfully" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete KPI metric" });
+    }
+  });
+
+  // Filter validation and management
+  app.post("/api/filters/validate", async (req, res) => {
+    try {
+      const { filter, dataSource } = req.body;
+      
+      if (!filter || !dataSource) {
+        return res.status(400).json({ 
+          message: "Filter and dataSource are required" 
+        });
+      }
+      
+      const result = filterToSQL(filter, dataSource);
+      
+      res.json({
+        valid: result.errors.length === 0,
+        errors: result.errors,
+        sql: result.errors.length === 0 ? result.whereClause : null,
+        parameters: result.errors.length === 0 ? result.parameters : null
+      });
+    } catch (error) {
+      console.error("Error validating filter:", error);
+      res.status(500).json({ message: "Failed to validate filter" });
+    }
+  });
+  
+  app.post("/api/filters/ai-suggest", async (req, res) => {
+    try {
+      const { prompt, dataSource, metricName } = req.body;
+      
+      if (!prompt || !dataSource) {
+        return res.status(400).json({ 
+          message: "Prompt and dataSource are required" 
+        });
+      }
+      
+      // Get available fields for the data source
+      const validColumns: Record<string, any> = {
+        "core.fact_financials": [
+          { name: "invoice_amount", type: "number", label: "Invoice Amount" },
+          { name: "expense_amount", type: "number", label: "Expense Amount" },
+          { name: "transaction_date", type: "date", label: "Transaction Date" },
+          { name: "category", type: "string", label: "Category" },
+          { name: "customer_id", type: "string", label: "Customer ID" }
+        ],
+        "core.fact_hubspot": [
+          { name: "stage", type: "string", label: "Deal Stage" },
+          { name: "deal_type", type: "string", label: "Deal Type" },
+          { name: "priority", type: "string", label: "Priority" },
+          { name: "amount", type: "number", label: "Deal Amount" },
+          { name: "close_date", type: "date", label: "Close Date" },
+          { name: "owner", type: "string", label: "Deal Owner" }
+        ],
+        "core.fact_jira": [
+          { name: "status", type: "string", label: "Issue Status" },
+          { name: "priority", type: "string", label: "Priority" },
+          { name: "issue_type", type: "string", label: "Issue Type" },
+          { name: "assignee", type: "string", label: "Assignee" },
+          { name: "created_date", type: "date", label: "Created Date" },
+          { name: "story_points", type: "number", label: "Story Points" }
+        ],
+        "core.fact_salesforce": [
+          { name: "stage_name", type: "string", label: "Stage Name" },
+          { name: "type", type: "string", label: "Opportunity Type" },
+          { name: "lead_source", type: "string", label: "Lead Source" },
+          { name: "amount", type: "number", label: "Amount" },
+          { name: "probability", type: "number", label: "Probability" },
+          { name: "account_name", type: "string", label: "Account Name" }
+        ]
+      };
+      
+      const fields = validColumns[dataSource];
+      if (!fields) {
+        return res.status(400).json({ 
+          message: `Invalid data source: ${dataSource}` 
+        });
+      }
+      
+      const aiPrompt = `
+You are a SQL filter builder AI. Convert natural language filter descriptions into a JSON filter tree structure.
+
+DATA SOURCE: ${dataSource}
+AVAILABLE FIELDS:
+${fields.map((f: any) => `- ${f.name} (${f.type}): ${f.label}`).join('\n')}
+
+AVAILABLE OPERATORS:
+- = (equals)
+- != (not equals)
+- > (greater than)
+- < (less than)
+- >= (greater than or equal)
+- <= (less than or equal)
+- IN (in list - for multiple values)
+- NOT IN (not in list)
+- IS NULL (is empty)
+- IS NOT NULL (is not empty)
+- LIKE (contains text)
+- NOT LIKE (does not contain text)
+
+USER REQUEST: "${prompt}"
+METRIC CONTEXT: ${metricName ? `Creating filter for metric: ${metricName}` : 'General business metric filter'}
+
+RESPOND WITH ONLY A VALID JSON FILTER TREE IN THIS FORMAT:
+
+For single condition:
+{
+  "column": "field_name",
+  "op": "operator",
+  "value": "value_or_array"
+}
+
+For multiple conditions:
+{
+  "op": "AND|OR",
+  "conditions": [
+    { "column": "field1", "op": "=", "value": "value1" },
+    { "column": "field2", "op": ">", "value": 100 }
+  ]
+}
+
+IMPORTANT RULES:
+1. Only use field names that exist in the available fields list
+2. Match field types (string values in quotes, numbers without quotes)
+3. Use IN operator for multiple values: "value": ["val1", "val2", "val3"]
+4. For date fields, use YYYY-MM-DD format
+5. Be case-sensitive with field names
+6. Respond with ONLY the JSON, no explanations
+
+Convert the user request into the appropriate filter structure:
+`;
+
+      // Try Azure OpenAI first, then OpenAI
+      let aiResponse;
+      try {
+        aiResponse = await azureOpenAIService.generateResponse(aiPrompt);
+      } catch (azureError) {
+        console.log("Azure OpenAI failed, trying OpenAI...");
+        try {
+          aiResponse = await openaiService.generateResponse(aiPrompt);
+        } catch (openaiError) {
+          throw new Error("Both AI services unavailable");
+        }
+      }
+      
+      // Clean up AI response - extract JSON
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("AI did not return valid JSON");
+      }
+      
+      // Parse AI response as JSON
+      const suggestedFilter = JSON.parse(jsonMatch[0]);
+      
+      // Validate the suggested filter
+      const validationResult = filterToSQL(suggestedFilter, dataSource);
+      
+      res.json({
+        filter: suggestedFilter,
+        valid: validationResult.errors.length === 0,
+        errors: validationResult.errors,
+        sql: validationResult.errors.length === 0 ? validationResult.whereClause : null
+      });
+      
+    } catch (error) {
+      console.error("Error generating AI filter:", error);
+      res.status(500).json({ 
+        message: "Failed to generate filter suggestion",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
@@ -663,12 +1208,13 @@ The Saulto Analytics Team
   app.post("/api/metric-reports", async (req, res) => {
     try {
       const companyId = req.session?.selectedCompany?.id || 1748544793859;
-      const createdBy = req.session?.user?.id || 1;
+      const createdBy = req.session?.user?.id; // Don't default to 1 if no user
       
       const dataWithCompanyId = { 
         ...req.body, 
         companyId,
-        createdBy
+        // Only include createdBy if it exists
+        ...(createdBy && { createdBy })
       };
       
       const validatedData = insertMetricReportSchema.parse(dataWithCompanyId);
@@ -829,9 +1375,32 @@ The Saulto Analytics Team
             reportData.summary.failedMetrics++;
           }
         } else {
-          // No SQL query - use static data or mark as unavailable
-          metricData.status = 'error';
-          reportData.summary.failedMetrics++;
+          // No SQL query - use static values from database if available
+          if (metric.value) {
+            metricData.currentValue = parseFloat(metric.value);
+            
+            // Calculate goal progress if we have a yearly goal
+            if (metric.yearlyGoal && parseFloat(metric.yearlyGoal) > 0) {
+              const yearlyGoal = parseFloat(metric.yearlyGoal);
+              const currentValue = parseFloat(metric.value) || 0;
+              metricData.goalProgress = (currentValue / yearlyGoal) * 100;
+              
+              console.log(`🎯 Static Goal Calculation: ${currentValue} / ${yearlyGoal} = ${metricData.goalProgress.toFixed(2)}%`);
+            }
+            
+            // Use existing change percent if available
+            if (metric.changePercent) {
+              metricData.changePercent = parseFloat(metric.changePercent);
+            }
+            
+            metricData.status = 'success';
+            reportData.summary.calculatedMetrics++;
+            console.log(`✅ Using static data for metric ${metric.name}: ${metric.value}`);
+          } else {
+            metricData.status = 'error';
+            reportData.summary.failedMetrics++;
+            console.log(`❌ No SQL query or static value for metric ${metric.name}`);
+          }
         }
         
         reportData.metrics.push(metricData);
@@ -2114,7 +2683,7 @@ CRITICAL REQUIREMENTS:
     }
   });
 
-  // Demo version - Mock connector sync that always succeeds
+  // Demo version - Mock connector sync that always succeeds + creates schema layers
   app.post("/api/connectors/:companyId/:connectorType/sync", async (req, res) => {
     try {
       const { companyId, connectorType } = req.params;
@@ -2126,15 +2695,52 @@ CRITICAL REQUIREMENTS:
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       const mockRecords = Math.floor(Math.random() * 10000) + 1000; // Random 1000-11000 records
+      const tablesProcessed = tables ? tables.length : Math.floor(Math.random() * 8) + 3;
+      
+      // **AUTOMATIC SCHEMA LAYER CREATION** - This is the new automated behavior
+      let schemaLayersCreated: string[] = [];
+      let schemaError: string | undefined;
+      
+      try {
+        const analyticsSchema = `analytics_company_${companyId}`;
+        const mockTables = tables || ['issues', 'users', 'sprints']; // Default mock tables
+        
+        console.log(`🔨 Creating schema layers for ${connectorType}...`);
+        
+        const schemaResult = await schemaLayerManager.createSchemaLayers({
+          companyId: parseInt(companyId),
+          connectorType,
+          tables: mockTables,
+          analyticsSchema
+        });
+        
+        if (schemaResult.success) {
+          schemaLayersCreated = schemaResult.layersCreated;
+          console.log(`✅ Automatic schema layers created: ${schemaLayersCreated.join(' → ')}`);
+        } else {
+          schemaError = schemaResult.error;
+          console.warn(`⚠️ Schema layer creation failed: ${schemaError}`);
+        }
+        
+      } catch (error) {
+        schemaError = error instanceof Error ? error.message : 'Schema layer creation failed';
+        console.error('Schema layer creation error:', error);
+      }
       
       res.json({
         success: true,
         message: `✅ Demo: Successfully synced ${connectorType}`,
         recordsSynced: mockRecords,
-        tablesProcessed: tables ? tables.length : Math.floor(Math.random() * 8) + 3,
+        tablesProcessed: tablesProcessed,
         syncDuration: `${Math.floor(Math.random() * 30) + 10}s`,
         lastSyncAt: new Date().toISOString(),
-        demo: true
+        demo: true,
+        // New schema layer information
+        schemaLayers: {
+          created: schemaLayersCreated,
+          error: schemaError,
+          automatic: true
+        }
       });
     } catch (error: any) {
       console.error("Error syncing connector:", error);
@@ -2146,7 +2752,110 @@ CRITICAL REQUIREMENTS:
     }
   });
 
-  // Removed Snowflake debug endpoint - no longer needed with PostgreSQL
+  // Schema Layer Management endpoints
+  app.get("/api/schema-layers/:companyId/:connectorType/status", async (req, res) => {
+    try {
+      const { companyId, connectorType } = req.params;
+      
+      const status = await schemaLayerManager.getSchemaLayerStatus(
+        parseInt(companyId),
+        connectorType
+      );
+      
+      res.json({
+        success: true,
+        ...status
+      });
+      
+    } catch (error: any) {
+      console.error("Error getting schema layer status:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get schema layer status",
+        details: error.message
+      });
+    }
+  });
+
+  app.post("/api/schema-layers/:companyId/:connectorType/create", async (req, res) => {
+    try {
+      const { companyId, connectorType } = req.params;
+      const { tables, force = false } = req.body;
+      
+      if (!tables || !Array.isArray(tables) || tables.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Tables array is required"
+        });
+      }
+      
+      console.log(`🔨 Manual schema layer creation requested for ${connectorType}`);
+      
+      const analyticsSchema = `analytics_company_${companyId}`;
+      
+      const result = await schemaLayerManager.createSchemaLayers({
+        companyId: parseInt(companyId),
+        connectorType,
+        tables,
+        analyticsSchema
+      });
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: `Schema layers created: ${result.layersCreated.join(' → ')}`,
+          layersCreated: result.layersCreated
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: "Failed to create schema layers",
+          details: result.error
+        });
+      }
+      
+    } catch (error: any) {
+      console.error("Error creating schema layers:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to create schema layers",
+        details: error.message
+      });
+    }
+  });
+
+  app.get("/api/schema-layers/:companyId/all", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      
+      // Get all schema layer activities for the company
+      const activities = await storage.getPipelineActivitiesByType(
+        parseInt(companyId),
+        'schema_layer_creation'
+      );
+      
+      const schemaLayers = activities.map(activity => ({
+        connectorType: activity.details?.connectorType,
+        tables: activity.details?.tablesProcessed || [],
+        layers: activity.details?.layersCreated || [],
+        createdAt: activity.createdAt || activity.timestamp,
+        status: activity.status
+      }));
+      
+      res.json({
+        success: true,
+        schemaLayers
+      });
+      
+    } catch (error: any) {
+      console.error("Error getting all schema layers:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get schema layers",
+        details: error.message
+      });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

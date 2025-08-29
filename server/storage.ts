@@ -28,11 +28,17 @@ import {
   type InsertMetricReport,
 } from "@shared/schema";
 
+// Import postgres and drizzle for DatabaseStorage
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { sql, eq, and, desc } from 'drizzle-orm';
+
 export interface IStorage {
   // Companies
   getCompanies(): Promise<Company[]>;
   getCompany(id: number): Promise<Company | undefined>;
   createCompany(company: InsertCompany): Promise<Company>;
+  deleteCompany(companyId: number): Promise<{ success: boolean; error?: string }>;
 
   // Users
   getUsers(): Promise<User[]>;
@@ -82,6 +88,12 @@ export interface IStorage {
   createMetricReport(report: InsertMetricReport): Promise<MetricReport>;
   updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined>;
   deleteMetricReport(id: number): Promise<boolean>;
+  
+  // Schema Layer Operations
+  executeQuery(query: string): Promise<{ success: boolean; data?: any[]; error?: string }>;
+  checkTableExists(schema: string, tableName: string): Promise<boolean>;
+  getPipelineActivitiesByType(companyId: number, activityType: string): Promise<PipelineActivity[]>;
+  insertPipelineActivity(activity: InsertPipelineActivity): Promise<PipelineActivity>;
 }
 
 export class MemStorage implements IStorage {
@@ -287,6 +299,29 @@ export class MemStorage implements IStorage {
     return activity;
   }
 
+  async getPipelineActivitiesByType(companyId: number, activityType: string): Promise<PipelineActivity[]> {
+    return Array.from(this.pipelineActivities.values())
+      .filter(activity => 
+        activity.companyId === companyId && 
+        activity.activityType === activityType
+      )
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+
+  async insertPipelineActivity(activity: InsertPipelineActivity): Promise<PipelineActivity> {
+    return this.createPipelineActivity(activity);
+  }
+
+  async executeQuery(query: string): Promise<{ success: boolean; data?: any[]; error?: string }> {
+    console.warn('MemStorage.executeQuery called - returning mock success for schema layer operations');
+    return { success: true, data: [] };
+  }
+
+  async checkTableExists(schema: string, tableName: string): Promise<boolean> {
+    console.warn(`MemStorage.checkTableExists called for ${schema}.${tableName} - returning true for demo`);
+    return true;
+  }
+
   // Setup Status
   async getSetupStatus(): Promise<SetupStatus | undefined> {
     return this.setupStatus;
@@ -363,17 +398,100 @@ export class MemStorage implements IStorage {
 import { snowflakeConfig } from "./db";
 
 export class DatabaseStorage implements IStorage {
-  // DatabaseStorage is disabled since we removed PostgreSQL dependency
-  // Using PersistentMemStorage with Snowflake integration instead
+  private db: any;
   
+  constructor() {
+    // Initialize database connection using the same pattern as postgres-analytics
+    const databaseUrl = process.env.DATABASE_URL;
+    
+    if (databaseUrl) {
+      try {
+        const client = postgres(databaseUrl);
+        this.db = drizzle(client);
+        console.log('✅ DatabaseStorage: Neon connection initialized successfully');
+      } catch (error) {
+        console.error('❌ DatabaseStorage: Failed to connect to Neon database:', error);
+        throw new Error('Failed to initialize database storage');
+      }
+    } else {
+      throw new Error('DATABASE_URL is required for DatabaseStorage');
+    }
+  }
+
+  private async executeQuery(query: string, params?: any[]): Promise<any> {
+    try {
+      const result = await this.db.execute(sql.raw(query));
+      return result;
+    } catch (error) {
+      console.error('Database query failed:', error);
+      throw error;
+    }
+  }
+
   private throwError(): never {
-    throw new Error("DatabaseStorage is disabled. Using PersistentMemStorage with Snowflake integration.");
+    throw new Error("DatabaseStorage method not yet implemented for Neon");
   }
 
   // Companies
-  async getCompanies(): Promise<Company[]> { return this.throwError(); }
-  async getCompany(id: number): Promise<Company | undefined> { return this.throwError(); }
-  async createCompany(insertCompany: InsertCompany): Promise<Company> { return this.throwError(); }
+  async getCompanies(): Promise<Company[]> {
+    try {
+      const result = await this.db.select().from(companies);
+      return result;
+    } catch (error) {
+      console.error('Failed to get companies:', error);
+      return [];
+    }
+  }
+  
+  async getCompany(id: number): Promise<Company | undefined> {
+    try {
+      const result = await this.db.select().from(companies).where(eq(companies.id, id));
+      return result[0];
+    } catch (error) {
+      console.error('Failed to get company:', error);
+      return undefined;
+    }
+  }
+  
+  async createCompany(insertCompany: InsertCompany): Promise<Company> {
+    try {
+      const result = await this.db.insert(companies).values(insertCompany).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Failed to create company:', error);
+      throw error;
+    }
+  }
+
+  async deleteCompany(companyId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`🗑️ Deleting company with ID: ${companyId}`);
+      
+      // First, delete the analytics schema
+      const schemaResult = await this.deleteAnalyticsSchema(companyId);
+      if (!schemaResult.success) {
+        console.error(`⚠️ Analytics schema deletion failed for company ${companyId}:`, schemaResult.error);
+        // Continue with company deletion even if schema deletion fails
+      }
+      
+      // Delete the company from the companies table
+      const result = await this.db.delete(companies).where(eq(companies.id, companyId)).returning();
+      
+      if (result.length === 0) {
+        return { success: false, error: 'Company not found' };
+      }
+      
+      console.log(`✅ Company deleted successfully: ${result[0].name} (ID: ${companyId})`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to delete company:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
 
   // Users
   async getUsers(): Promise<User[]> { return this.throwError(); }
@@ -382,12 +500,59 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> { return this.throwError(); }
 
   // Data Sources
-  async getDataSources(companyId: number): Promise<DataSource[]> { return this.throwError(); }
-  async getDataSource(id: number): Promise<DataSource | undefined> { return this.throwError(); }
-  async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> { return this.throwError(); }
-  async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> { return this.throwError(); }
-  async getDataSourcesByCompany(companyId: number): Promise<DataSource[]> { return this.throwError(); }
-  async getDataSourceByInstanceId(instanceId: string): Promise<DataSource | undefined> { return this.throwError(); }
+  async getDataSources(companyId: number): Promise<DataSource[]> {
+    try {
+      const result = await this.db.select().from(dataSources).where(eq(dataSources.companyId, companyId));
+      return result;
+    } catch (error) {
+      console.error('Failed to get data sources:', error);
+      return [];
+    }
+  }
+  
+  async getDataSource(id: number): Promise<DataSource | undefined> {
+    try {
+      const result = await this.db.select().from(dataSources).where(eq(dataSources.id, id));
+      return result[0];
+    } catch (error) {
+      console.error('Failed to get data source:', error);
+      return undefined;
+    }
+  }
+  
+  async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> {
+    try {
+      const result = await this.db.insert(dataSources).values(insertDataSource).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Failed to create data source:', error);
+      throw error;
+    }
+  }
+  
+  async updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined> {
+    try {
+      const result = await this.db.update(dataSources).set(updates).where(eq(dataSources.id, id)).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Failed to update data source:', error);
+      return undefined;
+    }
+  }
+  
+  async getDataSourcesByCompany(companyId: number): Promise<DataSource[]> {
+    return this.getDataSources(companyId);
+  }
+  
+  async getDataSourceByInstanceId(instanceId: string): Promise<DataSource | undefined> {
+    try {
+      const result = await this.db.select().from(dataSources).where(eq(dataSources.instanceId, instanceId));
+      return result[0];
+    } catch (error) {
+      console.error('Failed to get data source by instance ID:', error);
+      return undefined;
+    }
+  }
 
   // SQL Models
   async getSqlModels(companyId: number): Promise<SqlModel[]> { return this.throwError(); }
@@ -398,31 +563,396 @@ export class DatabaseStorage implements IStorage {
   async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> { return this.throwError(); }
 
   // KPI Metrics
-  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> { return this.throwError(); }
+  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
+    try {
+      const result = await this.db.select()
+        .from(kpiMetrics)
+        .where(eq(kpiMetrics.companyId, companyId))
+        .orderBy(kpiMetrics.priority, kpiMetrics.id);
+      return result;
+    } catch (error) {
+      console.error('Error fetching KPI metrics:', error);
+      throw error;
+    }
+  }
   async getKpiMetric(id: number): Promise<KpiMetric | undefined> { return this.throwError(); }
-  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> { return this.throwError(); }
+  async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
+    try {
+      const result = await this.db.insert(kpiMetrics).values(insertMetric).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error creating KPI metric:', error);
+      throw error;
+    }
+  }
   async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> { return this.throwError(); }
   async deleteKpiMetric(id: number): Promise<boolean> { return this.throwError(); }
 
   // Chat Messages
-  async getChatMessages(companyId: number): Promise<ChatMessage[]> { return this.throwError(); }
-  async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> { return this.throwError(); }
+  async getChatMessages(companyId: number): Promise<ChatMessage[]> {
+    try {
+      const result = await this.db.select()
+        .from(chatMessages)
+        .orderBy(desc(chatMessages.timestamp))
+        .limit(100);
+      return result;
+    } catch (error) {
+      console.error('Error fetching chat messages:', error);
+      throw error;
+    }
+  }
+
+  async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> {
+    try {
+      const result = await this.db.insert(chatMessages).values(insertMessage).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error creating chat message:', error);
+      throw error;
+    }
+  }
 
   // Pipeline Activities
-  async getPipelineActivities(companyId: number, limit = 50): Promise<PipelineActivity[]> { return this.throwError(); }
-  async createPipelineActivity(insertActivity: InsertPipelineActivity): Promise<PipelineActivity> { return this.throwError(); }
+  async getPipelineActivities(companyId: number, limit = 50): Promise<PipelineActivity[]> {
+    try {
+      const result = await this.db.select()
+        .from(pipelineActivities)
+        .orderBy(desc(pipelineActivities.timestamp))
+        .limit(limit);
+      return result;
+    } catch (error) {
+      console.error('Failed to get pipeline activities:', error);
+      return [];
+    }
+  }
+  
+  async createPipelineActivity(insertActivity: InsertPipelineActivity): Promise<PipelineActivity> {
+    try {
+      const result = await this.db.insert(pipelineActivities).values(insertActivity).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Failed to create pipeline activity:', error);
+      throw error;
+    }
+  }
+  async getPipelineActivitiesByType(companyId: number, activityType: string): Promise<PipelineActivity[]> {
+    try {
+      const result = await this.db.select()
+        .from(pipelineActivities)
+        .where(and(
+          eq(pipelineActivities.companyId, companyId),
+          eq(pipelineActivities.activityType, activityType)
+        ))
+        .orderBy(pipelineActivities.timestamp);
+      return result;
+    } catch (error) {
+      console.error('Failed to get pipeline activities by type:', error);
+      return [];
+    }
+  }
+  
+  async insertPipelineActivity(activity: InsertPipelineActivity): Promise<PipelineActivity> {
+    return this.createPipelineActivity(activity);
+  }
+  
+  async executeQuery(query: string): Promise<{ success: boolean; data?: any[]; error?: string }> {
+    try {
+      const result = await this.db.execute(sql.raw(query));
+      return {
+        success: true,
+        data: result || []
+      };
+    } catch (error) {
+      console.error('Database query failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+  
+  async checkTableExists(schema: string, tableName: string): Promise<boolean> {
+    try {
+      const query = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = '${schema}' 
+          AND table_name = '${tableName}'
+        )
+      `;
+      
+      const result = await this.executeQuery(query);
+      return result.success && result.data && result.data[0]?.exists === true;
+    } catch (error) {
+      console.error(`Error checking if table ${schema}.${tableName} exists:`, error);
+      return false;
+    }
+  }
 
   // Setup Status
   async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> { return this.throwError(); }
   async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> { return this.throwError(); }
 
+  // Analytics Schema Management
+  async ensureAnalyticsSchema(companyId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const schemaName = `analytics_company_${companyId}`;
+      
+      console.log(`🏗️ Creating analytics schema: ${schemaName}`);
+      
+      // Create analytics schema if it doesn't exist using direct SQL execution
+      const createSchemaQuery = `CREATE SCHEMA IF NOT EXISTS ${schemaName}`;
+      
+      // Use the database connection directly (same approach as postgres analytics service)
+      const result = await this.db.execute(sql.raw(createSchemaQuery));
+      
+      console.log(`✅ Analytics schema created/verified: ${schemaName}`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to ensure analytics schema:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async deleteAnalyticsSchema(companyId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const schemaName = `analytics_company_${companyId}`;
+      
+      console.log(`🗑️ Deleting analytics schema: ${schemaName}`);
+      
+      // Drop the analytics schema and all its contents (CASCADE removes all tables/views/functions)
+      const dropSchemaQuery = `DROP SCHEMA IF EXISTS ${schemaName} CASCADE`;
+      
+      // Use the database connection directly
+      const result = await this.db.execute(sql.raw(dropSchemaQuery));
+      
+      console.log(`✅ Analytics schema deleted: ${schemaName}`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to delete analytics schema:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async cleanupOrphanedAnalyticsSchemas(): Promise<{ success: boolean; cleaned: string[]; errors: string[] }> {
+    try {
+      console.log(`🧹 Starting cleanup of orphaned analytics schemas...`);
+      
+      // Get all existing company IDs
+      const existingCompanies = await this.getCompanies();
+      const existingCompanyIds = new Set(existingCompanies.map(c => c.id.toString()));
+      
+      console.log(`📊 Found ${existingCompanies.length} existing companies:`, Array.from(existingCompanyIds));
+      
+      // Get all analytics schemas
+      const schemasQuery = `
+        SELECT schema_name 
+        FROM information_schema.schemata 
+        WHERE schema_name LIKE 'analytics_company_%' 
+        ORDER BY schema_name
+      `;
+      
+      const schemasResult = await this.db.execute(sql.raw(schemasQuery));
+      const allSchemas = schemasResult as any[];
+      
+      console.log(`🔍 Found ${allSchemas.length} analytics schemas:`, allSchemas.map(s => s.schema_name));
+      
+      const cleaned: string[] = [];
+      const errors: string[] = [];
+      
+      // Check each schema and remove orphaned ones
+      for (const schemaRow of allSchemas) {
+        const schemaName = schemaRow.schema_name;
+        
+        // Extract company ID from schema name
+        const match = schemaName.match(/^analytics_company_(\d+)$/);
+        if (!match) {
+          console.log(`⚠️ Skipping invalid schema name: ${schemaName}`);
+          continue;
+        }
+        
+        const companyId = match[1];
+        
+        // Check if company exists
+        if (!existingCompanyIds.has(companyId)) {
+          console.log(`🗑️ Removing orphaned schema: ${schemaName} (company ${companyId} not found)`);
+          
+          try {
+            const dropQuery = `DROP SCHEMA IF EXISTS ${schemaName} CASCADE`;
+            await this.db.execute(sql.raw(dropQuery));
+            cleaned.push(schemaName);
+            console.log(`✅ Cleaned up orphaned schema: ${schemaName}`);
+          } catch (error) {
+            const errorMsg = `Failed to delete ${schemaName}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            errors.push(errorMsg);
+            console.error(`❌ ${errorMsg}`);
+          }
+        } else {
+          console.log(`✅ Keeping valid schema: ${schemaName} (company ${companyId} exists)`);
+        }
+      }
+      
+      console.log(`🧹 Cleanup complete. Cleaned: ${cleaned.length}, Errors: ${errors.length}`);
+      return { success: true, cleaned, errors };
+      
+    } catch (error) {
+      console.error('Failed to cleanup orphaned analytics schemas:', error);
+      return { 
+        success: false, 
+        cleaned: [], 
+        errors: [error instanceof Error ? error.message : 'Unknown error']
+      };
+    }
+  }
+
+  async ensureAllCompaniesHaveSchemas(): Promise<{ success: boolean; created: string[]; errors: string[] }> {
+    try {
+      console.log(`🏗️ Ensuring all companies have analytics schemas...`);
+      
+      // Get all companies
+      const companies = await this.getCompanies();
+      console.log(`📊 Found ${companies.length} companies to check:`, companies.map(c => `${c.id} (${c.name})`));
+      
+      // Get existing schemas
+      const schemasQuery = `
+        SELECT schema_name 
+        FROM information_schema.schemata 
+        WHERE schema_name LIKE 'analytics_company_%' 
+        ORDER BY schema_name
+      `;
+      
+      const schemasResult = await this.db.execute(sql.raw(schemasQuery));
+      const existingSchemas = new Set((schemasResult as any[]).map(row => row.schema_name));
+      
+      console.log(`🔍 Found ${existingSchemas.size} existing schemas:`, Array.from(existingSchemas));
+      
+      const created: string[] = [];
+      const errors: string[] = [];
+      
+      // Check each company and create missing schemas
+      for (const company of companies) {
+        const expectedSchema = `analytics_company_${company.id}`;
+        
+        if (!existingSchemas.has(expectedSchema)) {
+          console.log(`🏗️ Creating missing schema for company ${company.id} (${company.name}): ${expectedSchema}`);
+          
+          const result = await this.ensureAnalyticsSchema(company.id);
+          if (result.success) {
+            created.push(expectedSchema);
+            console.log(`✅ Created schema: ${expectedSchema}`);
+          } else {
+            const errorMsg = `Failed to create ${expectedSchema}: ${result.error}`;
+            errors.push(errorMsg);
+            console.error(`❌ ${errorMsg}`);
+          }
+        } else {
+          console.log(`✅ Schema already exists: ${expectedSchema}`);
+        }
+      }
+      
+      console.log(`🏗️ Schema creation complete. Created: ${created.length}, Errors: ${errors.length}`);
+      return { success: true, created, errors };
+      
+    } catch (error) {
+      console.error('Failed to ensure all companies have schemas:', error);
+      return { 
+        success: false, 
+        created: [], 
+        errors: [error instanceof Error ? error.message : 'Unknown error']
+      };
+    }
+  }
+
   // Metric Reports
-  async getMetricReports(companyId: number): Promise<MetricReport[]> { return this.throwError(); }
-  async getMetricReport(id: number): Promise<MetricReport | undefined> { return this.throwError(); }
-  async getMetricReportByShareToken(shareToken: string): Promise<MetricReport | undefined> { return this.throwError(); }
-  async createMetricReport(report: InsertMetricReport): Promise<MetricReport> { return this.throwError(); }
-  async updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined> { return this.throwError(); }
-  async deleteMetricReport(id: number): Promise<boolean> { return this.throwError(); }
+  async getMetricReports(companyId: number): Promise<MetricReport[]> {
+    try {
+      const result = await this.db.select()
+        .from(metricReports)
+        .where(eq(metricReports.companyId, companyId))
+        .orderBy(desc(metricReports.updatedAt));
+      return result;
+    } catch (error) {
+      console.error('Error fetching metric reports:', error);
+      throw error;
+    }
+  }
+
+  async getMetricReport(id: number): Promise<MetricReport | undefined> {
+    try {
+      const result = await this.db.select()
+        .from(metricReports)
+        .where(eq(metricReports.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error fetching metric report:', error);
+      throw error;
+    }
+  }
+
+  async getMetricReportByShareToken(shareToken: string): Promise<MetricReport | undefined> {
+    try {
+      const result = await this.db.select()
+        .from(metricReports)
+        .where(eq(metricReports.shareToken, shareToken))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error fetching metric report by share token:', error);
+      throw error;
+    }
+  }
+
+  async createMetricReport(report: InsertMetricReport): Promise<MetricReport> {
+    try {
+      // Generate a unique share token
+      const shareToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      
+      const reportWithToken = {
+        ...report,
+        shareToken
+      };
+      
+      const result = await this.db.insert(metricReports).values(reportWithToken).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error creating metric report:', error);
+      throw error;
+    }
+  }
+
+  async updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined> {
+    try {
+      const result = await this.db.update(metricReports)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(metricReports.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error updating metric report:', error);
+      throw error;
+    }
+  }
+
+  async deleteMetricReport(id: number): Promise<boolean> {
+    try {
+      const result = await this.db.delete(metricReports)
+        .where(eq(metricReports.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error deleting metric report:', error);
+      throw error;
+    }
+  }
 }
 
 import fs from 'fs';
@@ -599,6 +1129,5 @@ class PersistentMemStorage extends MemStorage {
   }
 }
 
-// Use in-memory storage by default since we removed PostgreSQL dependency
-// In production, this would be replaced with Snowflake integration
-export const storage = new PersistentMemStorage();
+// Use real Neon PostgreSQL database storage
+export const storage = new DatabaseStorage();

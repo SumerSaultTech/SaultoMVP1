@@ -373,6 +373,28 @@ export class PostgresAnalyticsService {
   }
 
 
+  /**
+   * Check if a table exists in the specified schema
+   */
+  async checkTableExists(schema: string, tableName: string): Promise<boolean> {
+    try {
+      const query = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = '${schema}' 
+          AND table_name = '${tableName}'
+        )
+      `;
+      
+      const result = await this.executeQuery(query);
+      return result.success && result.data && result.data[0]?.exists === true;
+      
+    } catch (error) {
+      console.error(`Error checking if table ${schema}.${tableName} exists:`, error);
+      return false;
+    }
+  }
+
   async executeQuery(query: string, companyId?: number): Promise<{ success: boolean; data?: any[]; error?: string }> {
     try {
       console.log(`Executing PostgreSQL query: ${query}`);

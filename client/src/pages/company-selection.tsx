@@ -97,81 +97,87 @@ export default function CompanySelection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {companies?.map((company) => (
-            <Card key={company.id} className="cursor-pointer hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
-                  {company.name}
-                </CardTitle>
-                <CardDescription>
-                  Database: {company.snowflakeDatabase}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button 
-                  onClick={() => selectCompany(company)}
-                  className="w-full"
-                  disabled={!company.isActive}
-                >
-                  {company.isActive ? "Select Company" : "Inactive"}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow border-dashed">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-gray-500">
-                <Plus className="h-5 w-5" />
-                Create New Company
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!showCreateForm ? (
-                <Button 
-                  onClick={() => setShowCreateForm(true)}
-                  variant="outline"
-                  className="w-full"
-                >
-                  Add Company
-                </Button>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="companyName">Company Name</Label>
-                    <Input
-                      id="companyName"
-                      value={newCompanyName}
-                      onChange={(e) => setNewCompanyName(e.target.value)}
-                      placeholder="Enter company name"
-                    />
-                  </div>
-                  <div className="flex gap-2">
+        <div className="max-h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+          <div className="space-y-2 p-4">
+            {companies?.map((company) => (
+              <Card key={company.id} className="cursor-pointer hover:shadow-lg transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Building2 className="h-5 w-5 text-primary" />
+                      <div>
+                        <h3 className="font-medium text-gray-900 dark:text-white">
+                          {company.name}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          Database: {company.snowflakeDatabase}
+                        </p>
+                      </div>
+                    </div>
                     <Button 
-                      onClick={handleCreateCompany}
-                      disabled={createCompanyMutation.isPending}
+                      onClick={() => selectCompany(company)}
                       size="sm"
+                      disabled={!company.isActive}
                     >
-                      {createCompanyMutation.isPending ? "Creating..." : "Create"}
-                    </Button>
-                    <Button 
-                      onClick={() => {
-                        setShowCreateForm(false);
-                        setNewCompanyName("");
-                      }}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Cancel
+                      {company.isActive ? "Select" : "Inactive"}
                     </Button>
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
+
+        <Card className="mt-6 cursor-pointer hover:shadow-lg transition-shadow border-dashed">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-gray-500">
+              <Plus className="h-5 w-5" />
+              Create New Company
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!showCreateForm ? (
+              <Button 
+                onClick={() => setShowCreateForm(true)}
+                variant="outline"
+                className="w-full"
+              >
+                Add Company
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="companyName">Company Name</Label>
+                  <Input
+                    id="companyName"
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="Enter company name"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={handleCreateCompany}
+                    disabled={createCompanyMutation.isPending}
+                    size="sm"
+                  >
+                    {createCompanyMutation.isPending ? "Creating..." : "Create"}
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setNewCompanyName("");
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

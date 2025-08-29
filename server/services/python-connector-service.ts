@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { schemaLayerManager } from './schema-layer-manager';
 
 interface ConnectorConfig {
   service: string;
@@ -150,7 +151,7 @@ class PythonConnectorService {
   }
 
   /**
-   * Sync data for a connector
+   * Sync data for a connector - AUTOMATICALLY creates schema layers after sync
    */
   async syncConnector(companyId: number, connectorType: string, tables?: string[]): Promise<SyncResult> {
     try {
@@ -158,7 +159,56 @@ class PythonConnectorService {
         tables
       });
       
-      return response.data;
+      const syncResult = response.data;
+      
+      // **AUTOMATIC SCHEMA LAYER CREATION** after successful sync
+      if (syncResult.success && syncResult.tables_synced?.length > 0) {
+        console.log(`✅ Sync successful, creating schema layers for ${connectorType}...`);
+        
+        try {
+          const analyticsSchema = `analytics_company_${companyId}`;
+          
+          const schemaResult = await schemaLayerManager.createSchemaLayers({
+            companyId,
+            connectorType,
+            tables: syncResult.tables_synced,
+            analyticsSchema
+          });
+          
+          if (schemaResult.success) {
+            console.log(`✅ Automatic schema layers created: ${schemaResult.layersCreated.join(' → ')}`);
+            
+            // Add schema layer info to sync result
+            return {
+              ...syncResult,
+              schema_layers_created: schemaResult.layersCreated,
+              schema_layers_success: true
+            };
+          } else {
+            console.warn(`⚠️ Schema layer creation failed: ${schemaResult.error}`);
+            
+            return {
+              ...syncResult,
+              schema_layers_created: [],
+              schema_layers_success: false,
+              schema_layers_error: schemaResult.error
+            };
+          }
+          
+        } catch (schemaError) {
+          console.error('Schema layer creation failed:', schemaError);
+          
+          return {
+            ...syncResult,
+            schema_layers_created: [],
+            schema_layers_success: false,
+            schema_layers_error: schemaError instanceof Error ? schemaError.message : 'Schema creation failed'
+          };
+        }
+      }
+      
+      return syncResult;
+      
     } catch (error) {
       console.error(`Failed to sync ${connectorType}:`, error);
       

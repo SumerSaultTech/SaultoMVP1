@@ -27,7 +27,13 @@
       "Bash(git log:*)",
       "Bash(python:*)",
       "Bash(npx tsc:*)",
-      "Bash(del nul)"
+      "Bash(del nul)",
+      "Bash(npx kill-port:*)",
+      "Bash(cross-env:*)",
+      "Bash(node:*)",
+      "WebFetch(domain:fivetran.com)",
+      "WebSearch",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": [],

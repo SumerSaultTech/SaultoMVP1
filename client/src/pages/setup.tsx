@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CredentialDialog } from "@/components/ui/credential-dialog";
-import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search } from "lucide-react";
+import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
@@ -66,10 +66,10 @@ const availableTools = [
     name: "Jira", 
     icon: Briefcase,
     logo: "https://cdn.worldvectorlogo.com/logos/jira-1.svg",
-    description: "Available data: Issues, Projects, Workflows, Reports",
+    description: "Available data: Issues, Projects, Users, Sprints, Worklogs",
     category: "Ops",
     color: "#0052cc",
-    standardTables: ["issue", "project", "user", "sprint"],
+    standardTables: ["issue", "project", "user", "sprint", "worklog"],
     customCost: 25
   },
   {
@@ -144,7 +144,7 @@ const standardTables = {
   asana: ["task", "project", "user", "team"],
   harvest: ["time_entry", "project", "client", "invoice"],
   hubspot: ["contact", "deal", "company", "ticket"],
-  jira: ["issue", "project", "user", "sprint"],
+  jira: ["issue", "project", "user", "sprint", "worklog"],
   mailchimp: ["campaign", "list", "subscriber", "report"],
   monday: ["board", "item", "update", "user"],
   netsuite: ["transaction", "customer", "item", "vendor"],
@@ -196,14 +196,28 @@ const availableTablesForCustom = {
     { name: "product", label: "Products", included: false, cost: 30 },
   ],
   jira: [
-    { name: "issue", label: "Issues", included: true, cost: 0 },
-    { name: "project", label: "Projects", included: true, cost: 0 },
-    { name: "user", label: "Users", included: true, cost: 0 },
-    { name: "sprint", label: "Sprints", included: true, cost: 0 },
-    { name: "worklog", label: "Work Logs", included: false, cost: 25 },
-    { name: "comment", label: "Comments", included: false, cost: 20 },
     { name: "attachment", label: "Attachments", included: false, cost: 30 },
+    { name: "comment", label: "Comments", included: false, cost: 20 },
     { name: "component", label: "Components", included: false, cost: 15 },
+    { name: "epic", label: "Epics", included: false, cost: 25 },
+    { name: "filter", label: "Filters", included: false, cost: 20 },
+    { name: "issue", label: "Issues", included: true, cost: 0 },
+    { name: "issue_link", label: "Issue Links", included: false, cost: 20 },
+    { name: "issue_type", label: "Issue Types", included: false, cost: 15 },
+    { name: "priority", label: "Priorities", included: false, cost: 15 },
+    { name: "project", label: "Projects", included: true, cost: 0 },
+    { name: "project_category", label: "Project Categories", included: false, cost: 15 },
+    { name: "project_permission_scheme", label: "Project Permission Schemes", included: false, cost: 25 },
+    { name: "project_role", label: "Project Roles", included: false, cost: 20 },
+    { name: "resolution", label: "Resolutions", included: false, cost: 15 },
+    { name: "sprint", label: "Sprints", included: true, cost: 0 },
+    { name: "status", label: "Statuses", included: false, cost: 15 },
+    { name: "status_category", label: "Status Categories", included: false, cost: 15 },
+    { name: "time_tracking", label: "Time Tracking", included: false, cost: 25 },
+    { name: "user", label: "Users", included: true, cost: 0 },
+    { name: "version", label: "Versions", included: false, cost: 20 },
+    { name: "workflow", label: "Workflows", included: false, cost: 25 },
+    { name: "worklog", label: "Worklogs", included: true, cost: 0 },
   ],
   mailchimp: [
     { name: "campaign", label: "Campaigns", included: true, cost: 0 },
@@ -303,6 +317,39 @@ export default function Setup() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [completedLogins, setCompletedLogins] = useState<string[]>(initialState.completedLogins);
+
+  // Handle OAuth callback and show setup type dialog
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const error = urlParams.get('error');
+
+    // Check if we're returning from Jira OAuth (backend already processed tokens)
+    if (code && state && !error) {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // Set Jira as the current tool and show setup type dialog
+      setCurrentToolForSetup('jira');
+      setSetupTypeDialogOpen(true);
+      
+      toast({
+        title: "Jira Authorization Complete",
+        description: "Please select your setup type to continue.",
+      });
+    } else if (error) {
+      // Clear URL parameters  
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      const message = urlParams.get('message');
+      toast({
+        title: "Authorization Failed",
+        description: error === 'access_denied' ? 'You cancelled the authorization' : message || 'Authorization failed. Please try again.',
+        variant: "destructive",
+      });
+    }
+  }, []);
   
   // Check for existing setup from localStorage or API
   const [hasExistingSetup, setHasExistingSetup] = useState(() => {
@@ -326,12 +373,19 @@ export default function Setup() {
   const [currentToolForSetup, setCurrentToolForSetup] = useState<string | null>(null);
   const [currentToolForCustom, setCurrentToolForCustom] = useState<string | null>(null);
   
+  // Dynamic table discovery
+  const [discoveredTables, setDiscoveredTables] = useState<any[]>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+  
   // App expansion state for setup complete page
   const [expandedApps, setExpandedApps] = useState<Set<string>>(new Set());
 
   // Add table confirmation dialog
   const [addTableDialogOpen, setAddTableDialogOpen] = useState(false);
   const [pendingTableAdd, setPendingTableAdd] = useState<{toolId: string, table: any} | null>(null);
+  
+  // Contact dialog state
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -421,8 +475,68 @@ export default function Setup() {
 
   // Open setup type dialog for a specific tool
   const openSetupTypeDialog = (toolId: string) => {
-    setCurrentToolForSetup(toolId);
-    setSetupTypeDialogOpen(true);
+    // For Jira, start OAuth immediately
+    if (toolId === 'jira') {
+      startJiraOAuth();
+    } else {
+      setCurrentToolForSetup(toolId);
+      setSetupTypeDialogOpen(true);
+    }
+  };
+
+  // Discover Jira tables dynamically using API
+  const discoverJiraTables = async () => {
+    setLoadingTables(true);
+    try {
+      const companyId = 1748544793859; // Using the company ID from CLAUDE.md
+      const response = await fetch(`/api/auth/jira/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to discover tables');
+      }
+      
+      const data = await response.json();
+      setDiscoveredTables(data.tables || []);
+      
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${data.tables?.length || 0} accessible Jira tables`,
+      });
+    } catch (error) {
+      console.error('Failed to discover Jira tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Could not discover Jira tables. Using default list.",
+        variant: "destructive",
+      });
+      // Fallback to empty array, will show loading state
+      setDiscoveredTables([]);
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  // Start Jira OAuth flow immediately when Connect is clicked
+  const startJiraOAuth = async () => {
+    try {
+      const companyId = 1748544793859; // Using the company ID from CLAUDE.md
+      const response = await fetch(`/api/auth/jira/authorize?companyId=${companyId}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Redirect to Jira OAuth authorization page
+        window.location.href = data.authUrl;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get authorization URL');
+      }
+    } catch (error) {
+      console.error('Failed to start Jira OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start Jira OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle setup type selection and proceed to credentials
@@ -435,9 +549,43 @@ export default function Setup() {
     }));
     
     setSetupTypeDialogOpen(false);
-    setCurrentToolForCredentials(currentToolForSetup);
-    setCredentialDialogOpen(true);
+    
+    // For Jira, OAuth already completed, handle setup type choice
+    if (currentToolForSetup === 'jira') {
+      if (setupType === 'custom') {
+        // Show custom table selection dialog for Jira with dynamic discovery
+        setCurrentToolForCustom(currentToolForSetup);
+        discoverJiraTables();
+        setCustomTableDialogOpen(true);
+      } else {
+        // Standard setup - just mark as completed
+        setCompletedLogins(prev => [...prev, currentToolForSetup]);
+        toast({
+          title: "Jira Setup Complete",
+          description: "Jira has been successfully configured with OAuth.",
+        });
+      }
+    } else {
+      setCurrentToolForCredentials(currentToolForSetup);
+      setCredentialDialogOpen(true);
+    }
+    
     setCurrentToolForSetup(null);
+  };
+
+  // Initiate Jira OAuth2 flow
+  const initiateJiraOAuth = async () => {
+    try {
+      // First, show the setup type dialog before OAuth
+      setSetupTypeDialogOpen(true);
+    } catch (error) {
+      console.error('Failed to start Jira OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start Jira OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Toggle app expansion
@@ -1093,6 +1241,32 @@ export default function Setup() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Contact Support Card */}
+        <Card className="mt-4 bg-gradient-to-r from-blue-50 to-green-50 border-blue-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-blue-900">Don't see a tool you need?</h3>
+                  <p className="text-sm text-blue-700">We're here to help add custom integrations</p>
+                </div>
+              </div>
+              <Button
+                onClick={() => setContactDialogOpen(true)}
+                size="sm"
+                variant="outline"
+                className="border-blue-300 text-blue-700 hover:bg-blue-100"
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Contact Us
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   };
@@ -1657,74 +1831,114 @@ export default function Setup() {
                 </CardContent>
               </Card>
 
-              {/* Table Selection */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
-                  const isSelected = (customTables[currentToolForCustom] || []).includes(table.name);
-                  const isIncluded = table.included;
+              {/* Table Selection - One row per table with fields */}
+              {loadingTables ? (
+                <div className="flex items-center justify-center p-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-saulto-600"></div>
+                  <span className="ml-3 text-gray-600">Discovering Jira tables...</span>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(currentToolForCustom === 'jira' ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
+                    // Handle both discovered tables (Jira) and static tables (other tools)
+                    const tableName = table.name;
+                    const tableLabel = table.label;
+                    const tableFields = table.fields || [];
+                    const isStandard = table.isStandard || table.included;
+                    const tableCost = table.cost || (isStandard ? 0 : 25);
+                    
+                    const isSelected = (customTables[currentToolForCustom] || []).includes(tableName);
 
-                  return (
-                    <div
-                      key={table.name}
-                      className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                        isIncluded 
-                          ? 'bg-green-50 border-green-200 cursor-default' 
-                          : isSelected 
-                            ? 'bg-saulto-50 border-saulto-100 ring-1 ring-saulto-600'
-                            : 'bg-white border-gray-200 hover:border-gray-300'
-                      }`}
-                      onClick={() => {
-                        if (!isIncluded) {
-                          setCustomTables(prev => {
-                            const currentTables = prev[currentToolForCustom] || [];
-                            if (currentTables.includes(table.name)) {
-                              return {
-                                ...prev,
-                                [currentToolForCustom]: currentTables.filter(t => t !== table.name)
-                              };
-                            } else {
-                              return {
-                                ...prev,
-                                [currentToolForCustom]: [...currentTables, table.name]
-                              };
-                            }
-                          });
-                        }
-                      }}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <Checkbox 
-                          checked={isIncluded || isSelected}
-                          disabled={isIncluded}
-                          readOnly 
-                        />
-                        <div className="flex-1">
-                          <span className="font-medium text-gray-900">
-                            {table.label}
-                          </span>
-                          <div className="mt-1">
-                            {isIncluded ? (
-                              <Badge className="bg-green-100 text-green-700 text-xs">
-                                INCLUDED
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-yellow-100 text-yellow-700 text-xs">
-                                ${table.cost}/month
-                              </Badge>
-                            )}
+                    return (
+                      <div
+                        key={tableName}
+                        className={`p-4 rounded-lg border transition-all ${
+                          isStandard 
+                            ? 'bg-green-50 border-green-200' 
+                            : isSelected 
+                              ? 'bg-saulto-50 border-saulto-100 ring-1 ring-saulto-600 cursor-pointer'
+                              : 'bg-white border-gray-200 hover:border-gray-300 cursor-pointer'
+                        }`}
+                        onClick={() => {
+                          if (!isStandard) {
+                            setCustomTables(prev => {
+                              const currentTables = prev[currentToolForCustom] || [];
+                              if (currentTables.includes(tableName)) {
+                                return {
+                                  ...prev,
+                                  [currentToolForCustom]: currentTables.filter(t => t !== tableName)
+                                };
+                              } else {
+                                return {
+                                  ...prev,
+                                  [currentToolForCustom]: [...currentTables, tableName]
+                                };
+                              }
+                            });
+                          }
+                        }}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center space-x-3 flex-1">
+                            <Checkbox 
+                              checked={isStandard || isSelected}
+                              disabled={isStandard}
+                              readOnly 
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <span className="font-medium text-gray-900 text-lg">
+                                  {tableLabel}
+                                </span>
+                                {isStandard ? (
+                                  <Badge className="bg-green-100 text-green-700 text-xs">
+                                    INCLUDED
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-yellow-100 text-yellow-700 text-xs">
+                                    ${tableCost}/month
+                                  </Badge>
+                                )}
+                              </div>
+                              {tableFields.length > 0 && (
+                                <div className="text-sm text-gray-600">
+                                  <span className="font-medium">Available fields:</span> {tableFields.slice(0, 8).join(", ")}
+                                  {tableFields.length > 8 && ` +${tableFields.length - 8} more`}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
+                    );
+                  })}
+                  
+                  {currentToolForCustom === 'jira' && discoveredTables.length === 0 && !loadingTables && (
+                    <div className="text-center p-8 text-gray-500">
+                      <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p className="font-medium">No tables discovered</p>
+                      <p className="text-sm mt-1">Please ensure Jira is properly connected and try again.</p>
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex justify-end space-x-4 pt-4 border-t">
                 <Button 
                   variant="outline" 
-                  onClick={() => setCustomTableDialogOpen(false)}
+                  onClick={() => {
+                    setCustomTableDialogOpen(false);
+                    // Mark the tool as completed when custom setup is done
+                    if (currentToolForCustom) {
+                      setCompletedLogins(prev => [...prev, currentToolForCustom]);
+                      toast({
+                        title: "Custom Setup Complete",
+                        description: `${currentToolForCustom.charAt(0).toUpperCase() + currentToolForCustom.slice(1)} has been successfully configured.`,
+                      });
+                    }
+                    setCurrentToolForCustom(null);
+                  }}
                 >
                   Done
                 </Button>
@@ -1798,6 +2012,72 @@ export default function Setup() {
         appName={currentToolForCredentials ? availableTools.find(t => t.id === currentToolForCredentials)?.name || "" : ""}
         onSubmit={handleCredentialSubmit}
       />
+
+      {/* Contact Support Dialog */}
+      <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <MessageCircle className="w-5 h-5 text-blue-600" />
+              <span>Contact Our Team</span>
+            </DialogTitle>
+            <DialogDescription>
+              We'll help you add custom integrations or answer any questions about our tools.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <Mail className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="font-medium text-blue-900">Email Support</h4>
+                  <p className="text-sm text-blue-800 mt-1">
+                    Reach out to us at{" "}
+                    <a 
+                      href="mailto:help@sumersaulttech.com" 
+                      className="font-semibold underline hover:text-blue-900"
+                      onClick={() => setContactDialogOpen(false)}
+                    >
+                      help@sumersaulttech.com
+                    </a>
+                  </p>
+                  <p className="text-xs text-blue-700 mt-2">
+                    We typically respond within 24 hours and can help with:
+                  </p>
+                  <ul className="text-xs text-blue-700 mt-1 space-y-0.5">
+                    <li>• Custom tool integrations</li>
+                    <li>• API connector setup</li>
+                    <li>• Data pipeline configuration</li>
+                    <li>• Technical support questions</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setContactDialogOpen(false)}
+                size="sm"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  window.open('mailto:help@sumersaulttech.com?subject=Custom Integration Request&body=Hi! I need help adding a custom tool integration to my Saulto setup.%0D%0A%0D%0ATool needed:%0D%0AUse case:%0D%0ATimeline:', '_blank');
+                  setContactDialogOpen(false);
+                }}
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Send Email
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

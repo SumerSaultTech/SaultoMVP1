@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -264,6 +264,7 @@ export function CredentialDialog({
   const [oauthStatus, setOauthStatus] = useState<string>('');
 
   const fields = APP_CREDENTIALS[appId] || [];
+
 
   // OAuth2 flow functions
   const initiateOAuth2Flow = async () => {

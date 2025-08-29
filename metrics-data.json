@@ -30,7 +30,7 @@
       "category": "revenue",
       "format": "currency",
       "isIncreasing": true,
-      "isNorthStar": true,
+      "isNorthStar": false,
       "id": 1,
       "lastCalculatedAt": null
     },
@@ -100,6 +100,102 @@
       "isIncreasing": true,
       "isNorthStar": false,
       "id": 3,
+      "lastCalculatedAt": null
+    },
+    "28": {
+      "companyId": 1748544793859,
+      "name": "Test Revenue",
+      "description": "Revenue with filter",
+      "sqlQuery": "SELECT SUM(amount) as amount FROM core.fact_financials",
+      "yearlyGoal": "100000",
+      "category": "revenue",
+      "id": 28,
+      "lastCalculatedAt": null
+    },
+    "29": {
+      "companyId": 1748544793859,
+      "name": "Invalid Filter Test",
+      "description": "Should fail",
+      "sqlQuery": "SELECT SUM(amount) as amount FROM core.fact_financials",
+      "yearlyGoal": "100000",
+      "category": "revenue",
+      "id": 29,
+      "lastCalculatedAt": null
+    },
+    "30": {
+      "companyId": 1748544793859,
+      "name": "Filtered Revenue",
+      "description": "Revenue with valid filter",
+      "sqlQuery": "SELECT SUM(\"invoice_amount\") as amount\n      FROM (SELECT \n          DATE_TRUNC('month', created_at) as period,\n          SUM(amount) as amount\n        FROM core.fact_financials\n        WHERE amount > 0 AND (\"invoice_amount\" > $param_0)) as filtered_data",
+      "yearlyGoal": "100000",
+      "category": "revenue",
+      "id": 30,
+      "lastCalculatedAt": null
+    },
+    "32": {
+      "companyId": 1748544793859,
+      "name": "test",
+      "description": "test",
+      "yearlyGoal": "5050000",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "revenue",
+      "format": "currency",
+      "isIncreasing": true,
+      "isNorthStar": false,
+      "id": 32,
+      "lastCalculatedAt": null
+    },
+    "33": {
+      "companyId": 1748544793859,
+      "name": "test",
+      "description": "test",
+      "yearlyGoal": "435454",
+      "goalType": "yearly",
+      "quarterlyGoals": {
+        "Q1": "",
+        "Q2": "",
+        "Q3": "",
+        "Q4": ""
+      },
+      "monthlyGoals": {
+        "Jan": "",
+        "Feb": "",
+        "Mar": "",
+        "Apr": "",
+        "May": "",
+        "Jun": "",
+        "Jul": "",
+        "Aug": "",
+        "Sep": "",
+        "Oct": "",
+        "Nov": "",
+        "Dec": ""
+      },
+      "category": "revenue",
+      "format": "currency",
+      "isIncreasing": true,
+      "isNorthStar": false,
+      "id": 33,
       "lastCalculatedAt": null
     }
   },

@@ -1482,6 +1482,7 @@ export default function IntegrationsCanvas() {
           )}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
