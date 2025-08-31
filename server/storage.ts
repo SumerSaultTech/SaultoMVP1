@@ -8,6 +8,8 @@ import {
   setupStatus,
   users,
   metricReports,
+  goals,
+  metricRegistry,
   type Company,
   type InsertCompany,
   type DataSource,
@@ -18,6 +20,8 @@ import {
   type SetupStatus,
   type User,
   type MetricReport,
+  type Goal,
+  type MetricRegistry,
   type InsertDataSource,
   type InsertSqlModel,
   type InsertKpiMetric,
@@ -26,6 +30,8 @@ import {
   type InsertSetupStatus,
   type InsertUser,
   type InsertMetricReport,
+  type InsertGoal,
+  type InsertMetricRegistry,
 } from "@shared/schema";
 
 // Import postgres and drizzle for DatabaseStorage
@@ -88,6 +94,21 @@ export interface IStorage {
   createMetricReport(report: InsertMetricReport): Promise<MetricReport>;
   updateMetricReport(id: number, updates: Partial<InsertMetricReport>): Promise<MetricReport | undefined>;
   deleteMetricReport(id: number): Promise<boolean>;
+
+  // Goals (tenant-scoped)
+  getGoals(tenantId: number): Promise<Goal[]>;
+  getGoalsByMetric(tenantId: number, metricKey: string): Promise<Goal[]>;
+  createGoal(goal: InsertGoal): Promise<Goal>;
+  updateGoal(id: number, updates: Partial<InsertGoal>): Promise<Goal | undefined>;
+  deleteGoal(id: number): Promise<boolean>;
+
+  // Metric Registry (company-specific)
+  setupCompanyMetricRegistry(companyId: number): Promise<{ success: boolean; error?: string }>;
+  getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]>;
+  getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined>;
+  createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry>;
+  updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined>;
+  deleteCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<boolean>;
   
   // Schema Layer Operations
   executeQuery(query: string): Promise<{ success: boolean; data?: any[]; error?: string }>;
@@ -272,10 +293,12 @@ export class MemStorage implements IStorage {
   }
 
   // Chat Messages
-  async getChatMessages(): Promise<ChatMessage[]> {
-    return Array.from(this.chatMessages.values()).sort((a, b) => 
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+  async getChatMessages(companyId: number): Promise<ChatMessage[]> {
+    return Array.from(this.chatMessages.values())
+      .filter(message => message.companyId === companyId)
+      .sort((a, b) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
   }
 
   async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> {
@@ -286,8 +309,9 @@ export class MemStorage implements IStorage {
   }
 
   // Pipeline Activities
-  async getPipelineActivities(limit = 50): Promise<PipelineActivity[]> {
+  async getPipelineActivities(companyId: number, limit = 50): Promise<PipelineActivity[]> {
     return Array.from(this.pipelineActivities.values())
+      .filter(activity => activity.companyId === companyId)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
   }
@@ -323,14 +347,17 @@ export class MemStorage implements IStorage {
   }
 
   // Setup Status
-  async getSetupStatus(): Promise<SetupStatus | undefined> {
+  async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> {
+    // In memory storage, we simulate company-specific setup status
+    // In a real implementation, this would be filtered by companyId
     return this.setupStatus;
   }
 
-  async updateSetupStatus(updates: Partial<InsertSetupStatus>): Promise<SetupStatus> {
+  async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> {
     if (!this.setupStatus) {
       this.setupStatus = {
         id: 1,
+        companyId: companyId,
         warehouseConnected: false,
         dataSourcesConfigured: false,
         modelsDeployed: 0,
@@ -368,7 +395,7 @@ export class MemStorage implements IStorage {
       shareToken,
       createdAt: now,
       updatedAt: now,
-      companyId: insertReport.companyId || 1748544793859, // Default to MIAS_DATA company
+      companyId: insertReport.companyId, // Company ID must be provided
     };
     
     this.metricReports.set(id, report);
@@ -391,6 +418,63 @@ export class MemStorage implements IStorage {
 
   async deleteMetricReport(id: number): Promise<boolean> {
     return this.metricReports.delete(id);
+  }
+
+  // Goals (stub implementations for MemStorage)
+  async getGoals(tenantId: number): Promise<Goal[]> {
+    console.warn('MemStorage.getGoals called - returning empty array');
+    return [];
+  }
+
+  async getGoalsByMetric(tenantId: number, metricKey: string): Promise<Goal[]> {
+    console.warn('MemStorage.getGoalsByMetric called - returning empty array');
+    return [];
+  }
+
+  async createGoal(goal: InsertGoal): Promise<Goal> {
+    console.warn('MemStorage.createGoal called - returning mock goal');
+    return { id: 1, ...goal, createdAt: new Date() } as Goal;
+  }
+
+  async updateGoal(id: number, updates: Partial<InsertGoal>): Promise<Goal | undefined> {
+    console.warn('MemStorage.updateGoal called - returning undefined');
+    return undefined;
+  }
+
+  async deleteGoal(id: number): Promise<boolean> {
+    console.warn('MemStorage.deleteGoal called - returning false');
+    return false;
+  }
+
+  // Company-specific Metric Registry (stub implementations for MemStorage)
+  async setupCompanyMetricRegistry(companyId: number): Promise<{ success: boolean; error?: string }> {
+    console.warn(`MemStorage.setupCompanyMetricRegistry called for company ${companyId} - returning success`);
+    return { success: true };
+  }
+
+  async getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]> {
+    console.warn(`MemStorage.getCompanyMetricRegistry called for company ${companyId} - returning empty array`);
+    return [];
+  }
+
+  async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined> {
+    console.warn(`MemStorage.getCompanyMetricRegistryEntry called for company ${companyId} - returning undefined`);
+    return undefined;
+  }
+
+  async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry> {
+    console.warn(`MemStorage.createCompanyMetricRegistryEntry called for company ${companyId} - returning mock entry`);
+    return { ...entry, createdAt: new Date(), updatedAt: new Date() } as MetricRegistry;
+  }
+
+  async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined> {
+    console.warn(`MemStorage.updateCompanyMetricRegistryEntry called for company ${companyId} - returning undefined`);
+    return undefined;
+  }
+
+  async deleteCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<boolean> {
+    console.warn(`MemStorage.deleteCompanyMetricRegistryEntry called for company ${companyId} - returning false`);
+    return false;
   }
 }
 
@@ -418,15 +502,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  private async executeQuery(query: string, params?: any[]): Promise<any> {
-    try {
-      const result = await this.db.execute(sql.raw(query));
-      return result;
-    } catch (error) {
-      console.error('Database query failed:', error);
-      throw error;
-    }
-  }
 
   private throwError(): never {
     throw new Error("DatabaseStorage method not yet implemented for Neon");
@@ -593,6 +668,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const result = await this.db.select()
         .from(chatMessages)
+        .where(eq(chatMessages.companyId, companyId))
         .orderBy(desc(chatMessages.timestamp))
         .limit(100);
       return result;
@@ -617,6 +693,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const result = await this.db.select()
         .from(pipelineActivities)
+        .where(eq(pipelineActivities.companyId, companyId))
         .orderBy(desc(pipelineActivities.timestamp))
         .limit(limit);
       return result;
@@ -641,7 +718,7 @@ export class DatabaseStorage implements IStorage {
         .from(pipelineActivities)
         .where(and(
           eq(pipelineActivities.companyId, companyId),
-          eq(pipelineActivities.activityType, activityType)
+          eq(pipelineActivities.type, activityType)
         ))
         .orderBy(pipelineActivities.timestamp);
       return result;
@@ -690,8 +767,49 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Setup Status
-  async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> { return this.throwError(); }
-  async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> { return this.throwError(); }
+  async getSetupStatus(companyId: number): Promise<SetupStatus | undefined> {
+    try {
+      const result = await this.db.select()
+        .from(setupStatus)
+        .where(eq(setupStatus.companyId, companyId))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error fetching setup status:', error);
+      return undefined;
+    }
+  }
+  
+  async updateSetupStatus(companyId: number, updates: Partial<InsertSetupStatus>): Promise<SetupStatus> {
+    try {
+      // First try to update existing
+      const existing = await this.getSetupStatus(companyId);
+      
+      if (existing) {
+        const result = await this.db.update(setupStatus)
+          .set({ ...updates, lastUpdated: new Date() })
+          .where(eq(setupStatus.companyId, companyId))
+          .returning();
+        return result[0];
+      } else {
+        // Create new if doesn't exist
+        const result = await this.db.insert(setupStatus)
+          .values({
+            companyId,
+            warehouseConnected: false,
+            dataSourcesConfigured: false,
+            modelsDeployed: 0,
+            totalModels: 0,
+            ...updates
+          })
+          .returning();
+        return result[0];
+      }
+    } catch (error) {
+      console.error('Error updating setup status:', error);
+      throw error;
+    }
+  }
 
   // Analytics Schema Management
   async ensureAnalyticsSchema(companyId: number): Promise<{ success: boolean; error?: string }> {
@@ -951,6 +1069,218 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('Error deleting metric report:', error);
       throw error;
+    }
+  }
+
+  // Goals (tenant-scoped)
+  async getGoals(tenantId: number): Promise<Goal[]> {
+    try {
+      const result = await this.db.select()
+        .from(goals)
+        .where(eq(goals.tenantId, tenantId))
+        .orderBy(desc(goals.createdAt));
+      return result;
+    } catch (error) {
+      console.error('Error fetching goals:', error);
+      throw error;
+    }
+  }
+
+  async getGoalsByMetric(tenantId: number, metricKey: string): Promise<Goal[]> {
+    try {
+      const result = await this.db.select()
+        .from(goals)
+        .where(and(eq(goals.tenantId, tenantId), eq(goals.metricKey, metricKey)))
+        .orderBy(desc(goals.createdAt));
+      return result;
+    } catch (error) {
+      console.error('Error fetching goals by metric:', error);
+      throw error;
+    }
+  }
+
+  async createGoal(goal: InsertGoal): Promise<Goal> {
+    try {
+      const result = await this.db.insert(goals).values(goal).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error creating goal:', error);
+      throw error;
+    }
+  }
+
+  async updateGoal(id: number, updates: Partial<InsertGoal>): Promise<Goal | undefined> {
+    try {
+      const result = await this.db.update(goals)
+        .set(updates)
+        .where(eq(goals.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error updating goal:', error);
+      throw error;
+    }
+  }
+
+  async deleteGoal(id: number): Promise<boolean> {
+    try {
+      const result = await this.db.delete(goals)
+        .where(eq(goals.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+      throw error;
+    }
+  }
+
+  // Company-specific Metric Registry (using raw SQL for company schemas)
+  async getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      const query = `
+        SELECT metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
+        FROM ${companySchema}.metric_registry 
+        WHERE is_active = true 
+        ORDER BY updated_at DESC
+      `;
+      const result = await this.db.execute(sql.raw(query));
+      return result as MetricRegistry[];
+    } catch (error) {
+      console.error(`Error fetching metric registry for company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      const query = `
+        SELECT metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
+        FROM ${companySchema}.metric_registry 
+        WHERE metric_key = $1 
+        LIMIT 1
+      `;
+      const result = await this.db.execute(sql.raw(query, [metricKey]));
+      return (result as MetricRegistry[])[0];
+    } catch (error) {
+      console.error(`Error fetching metric registry entry for company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      const query = `
+        INSERT INTO ${companySchema}.metric_registry 
+        (metric_key, label, source_fact, expr_sql, filters, unit, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
+      `;
+      const result = await this.db.execute(sql.raw(query, [
+        entry.metricKey, entry.label, entry.sourceFact, entry.exprSql, 
+        entry.filters, entry.unit, entry.isActive ?? true
+      ]));
+      return (result as MetricRegistry[])[0];
+    } catch (error) {
+      console.error(`Error creating metric registry entry for company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      const setParts: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      if (updates.label !== undefined) {
+        setParts.push(`label = $${paramIndex++}`);
+        values.push(updates.label);
+      }
+      if (updates.sourceFact !== undefined) {
+        setParts.push(`source_fact = $${paramIndex++}`);
+        values.push(updates.sourceFact);
+      }
+      if (updates.exprSql !== undefined) {
+        setParts.push(`expr_sql = $${paramIndex++}`);
+        values.push(updates.exprSql);
+      }
+      if (updates.filters !== undefined) {
+        setParts.push(`filters = $${paramIndex++}`);
+        values.push(updates.filters);
+      }
+      if (updates.unit !== undefined) {
+        setParts.push(`unit = $${paramIndex++}`);
+        values.push(updates.unit);
+      }
+      if (updates.isActive !== undefined) {
+        setParts.push(`is_active = $${paramIndex++}`);
+        values.push(updates.isActive);
+      }
+      
+      setParts.push(`updated_at = NOW()`);
+      values.push(metricKey);
+
+      const query = `
+        UPDATE ${companySchema}.metric_registry 
+        SET ${setParts.join(', ')}
+        WHERE metric_key = $${paramIndex}
+        RETURNING metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
+      `;
+      
+      const result = await this.db.execute(sql.raw(query, values));
+      return (result as MetricRegistry[])[0];
+    } catch (error) {
+      console.error(`Error updating metric registry entry for company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<boolean> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      const query = `
+        DELETE FROM ${companySchema}.metric_registry 
+        WHERE metric_key = $1
+        RETURNING metric_key
+      `;
+      const result = await this.db.execute(sql.raw(query, [metricKey]));
+      return (result as any[]).length > 0;
+    } catch (error) {
+      console.error(`Error deleting metric registry entry for company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  // Company-specific metric registry setup
+  async setupCompanyMetricRegistry(companyId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const fs = await import('fs/promises');
+      
+      // Read the company metric registry template
+      const templateSql = await fs.readFile('./migrations/create_company_metric_registry.sql', 'utf8');
+      
+      // Replace placeholders with actual company values
+      const companySchema = `analytics_company_${companyId}`;
+      const companySql = templateSql
+        .replace(/{COMPANY_SCHEMA}/g, companySchema)
+        .replace(/{COMPANY_ID}/g, companyId.toString());
+      
+      // Execute the SQL to create company-specific metric registry tables
+      await this.db.execute(sql.raw(companySql));
+      
+      console.log(`✅ Metric registry setup completed for company ${companyId} in schema ${companySchema}`);
+      
+      return { success: true };
+    } catch (error) {
+      console.error(`❌ Failed to setup metric registry for company ${companyId}:`, error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 }

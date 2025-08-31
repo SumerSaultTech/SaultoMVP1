@@ -33,7 +33,15 @@
       "Bash(node:*)",
       "WebFetch(domain:fivetran.com)",
       "WebSearch",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(cat:*)",
+      "Bash(npx tsx:*)",
+      "Bash(del debug-metrics.js)",
+      "Bash(DATABASE_URL='postgresql://neondb_owner:npg_CBVImzrU5g7o@ep-shy-wind-a8hcztq4-pooler.eastus2.azure.neon.tech/neondb?sslmode=require&channel_binding=require' npx tsx debug-metrics.ts)",
+      "Bash(grep:*)",
+      "Bash(psql:*)",
+      "Bash(DATABASE_URL=\"$DATABASE_URL\" node run-migration.js)",
+      "Bash(DATABASE_URL='postgresql://neondb_owner:npg_CBVImzrU5g7o@ep-shy-wind-a8hcztq4-pooler.eastus2.azure.neon.tech/neondb?sslmode=require&channel_binding=require' node run-migration.js)"
     ],
     "deny": [],
     "ask": [],

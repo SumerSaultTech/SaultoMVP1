@@ -78,6 +78,7 @@ export const kpiMetrics = pgTable("kpi_metrics", {
 
 export const metricHistory = pgTable("metric_history", {
   id: serial("id").primaryKey(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   metricId: integer("metric_id").references(() => kpiMetrics.id),
   value: text("value").notNull(),
   recordedAt: timestamp("recorded_at").defaultNow(),
@@ -86,6 +87,7 @@ export const metricHistory = pgTable("metric_history", {
 
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   role: text("role").notNull(), // 'user', 'assistant'
   content: text("content").notNull(),
   timestamp: timestamp("timestamp").defaultNow(),
@@ -94,6 +96,7 @@ export const chatMessages = pgTable("chat_messages", {
 
 export const pipelineActivities = pgTable("pipeline_activities", {
   id: serial("id").primaryKey(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   type: text("type").notNull(), // 'sync', 'deploy', 'error', 'kpi_update'
   description: text("description").notNull(),
   status: text("status").notNull(), // 'success', 'error', 'warning'
@@ -103,6 +106,7 @@ export const pipelineActivities = pgTable("pipeline_activities", {
 
 export const setupStatus = pgTable("setup_status", {
   id: serial("id").primaryKey(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   warehouseConnected: boolean("warehouse_connected").default(false),
   dataSourcesConfigured: boolean("data_sources_configured").default(false),
   modelsDeployed: integer("models_deployed").default(0),
@@ -149,21 +153,37 @@ export const insertKpiMetricSchema = createInsertSchema(kpiMetrics).omit({
 export const insertMetricHistorySchema = createInsertSchema(metricHistory).omit({
   id: true,
   recordedAt: true,
+}).partial({
+  companyId: true,
+}).extend({
+  companyId: z.number().optional(),
 });
 
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
   id: true,
   timestamp: true,
+}).partial({
+  companyId: true,
+}).extend({
+  companyId: z.number().optional(),
 });
 
 export const insertPipelineActivitySchema = createInsertSchema(pipelineActivities).omit({
   id: true,
   timestamp: true,
+}).partial({
+  companyId: true,
+}).extend({
+  companyId: z.number().optional(),
 });
 
 export const insertSetupStatusSchema = createInsertSchema(setupStatus).omit({
   id: true,
   lastUpdated: true,
+}).partial({
+  companyId: true,
+}).extend({
+  companyId: z.number().optional(),
 });
 
 export const insertCompanySchema = createInsertSchema(companies).omit({
@@ -216,3 +236,44 @@ export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
 });
+
+// Metric Registry and Goals Tables
+export const goals = pgTable("goals", {
+  id: serial("id").primaryKey(),
+  tenantId: bigint("tenant_id", { mode: "number" }).references(() => companies.id).notNull(),
+  metricKey: text("metric_key").notNull(),
+  granularity: text("granularity").notNull(), // 'month', 'quarter', 'year'
+  periodStart: text("period_start").notNull(), // date string
+  target: numeric("target").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const metricRegistry = pgTable("metric_registry", {
+  metricKey: text("metric_key").primaryKey(),
+  label: text("label").notNull(),
+  sourceFact: text("source_fact").notNull(), // table reference
+  exprSql: text("expr_sql").notNull(), // SQL expression
+  filters: jsonb("filters"), // JSON filter tree
+  unit: text("unit"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertGoalSchema = createInsertSchema(goals).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  tenantId: z.number().optional(),
+});
+
+export const insertMetricRegistrySchema = createInsertSchema(metricRegistry).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types for Goals and Metric Registry
+export type Goal = typeof goals.$inferSelect;
+export type InsertGoal = z.infer<typeof insertGoalSchema>;
+export type MetricRegistry = typeof metricRegistry.$inferSelect;
+export type InsertMetricRegistry = z.infer<typeof insertMetricRegistrySchema>;

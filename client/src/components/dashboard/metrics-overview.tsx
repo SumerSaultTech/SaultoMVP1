@@ -197,10 +197,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   const isLoading = isDashboardLoading || isKpiLoading;
   
-  // Merge real Snowflake dashboard data with KPI metrics structure
+  // Merge real dashboard data with KPI metrics structure
   const metrics = (() => {
     if (!kpiMetrics || !Array.isArray(kpiMetrics) || kpiMetrics.length === 0) {
-      return defaultMetrics;
+      return []; // Return empty array when no metrics are defined
     }
 
     // If we have dashboard metrics from Snowflake, merge them with KPI structure
@@ -576,6 +576,29 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               </CardContent>
             </Card>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Early return for empty state - show only the setup message
+  if (metrics.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <div className="mx-auto max-w-md">
+            <Database className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              No Metrics Defined
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              You haven't defined any KPI metrics yet. Once you set up your metrics and have data in core_daily_metrics, they will appear here.
+            </p>
+            <Button onClick={() => window.location.href = '/metrics'} className="bg-primary hover:bg-primary/90">
+              <Database className="h-4 w-4 mr-2" />
+              Set Up Metrics
+            </Button>
+          </div>
         </div>
       </div>
     );

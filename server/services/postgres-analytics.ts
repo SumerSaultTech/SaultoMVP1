@@ -532,33 +532,35 @@ export class PostgresAnalyticsService {
 
   async getTableData(tableName: string, companyId: number, limit: number = 100): Promise<any[]> {
     try {
+      console.log(`🔍 getTableData called: table=${tableName}, company=${companyId}, limit=${limit}`);
+      
       // Find the correct schema for this table (handles CORE_ tables and tenant isolation)
       const schema = await this.findTableSchema(tableName, companyId);
       if (!schema) {
-        console.error(`Table ${tableName} not found or access denied for company ${companyId}`);
+        console.error(`❌ Table ${tableName} not found or access denied for company ${companyId}`);
         return [];
       }
       
-      const query = `
-        SELECT * 
-        FROM ${schema}.${tableName} 
-        ORDER BY CASE WHEN EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_schema = '${schema}' 
-          AND table_name = '${tableName}' 
-          AND column_name = 'loaded_at'
-        ) THEN loaded_at END DESC
-        LIMIT ${limit}
-      `;
+      console.log(`✅ Found schema for ${tableName}: ${schema}`);
+      
+      // Simple query without assuming any specific columns exist
+      const query = `SELECT * FROM ${schema}.${tableName} LIMIT ${limit}`;
+      
+      console.log(`🔍 Executing table data query: ${query.trim()}`);
       
       const result = await this.executeQuery(query);
+      console.log(`📊 Query result:`, result);
+      
       if (result.success && result.data) {
+        console.log(`✅ Returning ${result.data.length} rows for table ${tableName}`);
         return result.data;
       }
+      
+      console.log(`❌ No data returned for table ${tableName}`);
       return [];
       
     } catch (error) {
-      console.error(`Error getting data for table ${tableName}:`, error);
+      console.error(`❌ Error getting data for table ${tableName}:`, error);
       return [];
     }
   }

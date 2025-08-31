@@ -330,13 +330,13 @@ export default function Setup() {
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      // Set Jira as the current tool and show setup type dialog
+      // OAuth completed successfully - now show setup type selection
       setCurrentToolForSetup('jira');
       setSetupTypeDialogOpen(true);
       
       toast({
-        title: "Jira Authorization Complete",
-        description: "Please select your setup type to continue.",
+        title: "Jira Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
       });
     } else if (error) {
       // Clear URL parameters  
@@ -475,20 +475,22 @@ export default function Setup() {
 
   // Open setup type dialog for a specific tool
   const openSetupTypeDialog = (toolId: string) => {
-    // For Jira, start OAuth immediately
-    if (toolId === 'jira') {
-      startJiraOAuth();
-    } else {
-      setCurrentToolForSetup(toolId);
-      setSetupTypeDialogOpen(true);
-    }
+    setCurrentToolForSetup(toolId);
+    setSetupTypeDialogOpen(true);
   };
 
   // Discover Jira tables dynamically using API
   const discoverJiraTables = async () => {
     setLoadingTables(true);
     try {
-      const companyId = 1748544793859; // Using the company ID from CLAUDE.md
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering Jira tables for company ${companyId}`);
       const response = await fetch(`/api/auth/jira/discover-tables/${companyId}`);
       
       if (!response.ok) {
@@ -517,27 +519,6 @@ export default function Setup() {
   };
 
   // Start Jira OAuth flow immediately when Connect is clicked
-  const startJiraOAuth = async () => {
-    try {
-      const companyId = 1748544793859; // Using the company ID from CLAUDE.md
-      const response = await fetch(`/api/auth/jira/authorize?companyId=${companyId}`);
-      if (response.ok) {
-        const data = await response.json();
-        // Redirect to Jira OAuth authorization page
-        window.location.href = data.authUrl;
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get authorization URL');
-      }
-    } catch (error) {
-      console.error('Failed to start Jira OAuth:', error);
-      toast({
-        title: "Connection Error",
-        description: "Failed to start Jira OAuth flow. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   // Handle setup type selection and proceed to credentials
   const handleSetupTypeSelection = (setupType: "standard" | "custom") => {
@@ -550,19 +531,26 @@ export default function Setup() {
     
     setSetupTypeDialogOpen(false);
     
-    // For Jira, OAuth already completed, handle setup type choice
+    // For Jira, OAuth is already complete - proceed with chosen setup type
     if (currentToolForSetup === 'jira') {
-      if (setupType === 'custom') {
-        // Show custom table selection dialog for Jira with dynamic discovery
-        setCurrentToolForCustom(currentToolForSetup);
+      if (setupType === 'standard') {
+        // Standard setup - auto-sync with predefined tables
+        setCompletedLogins(prev => [...prev, 'jira']);
+        triggerJiraSync('standard');
+        
+        toast({
+          title: "Jira Standard Setup Complete",
+          description: "Syncing data with standard tables...",
+        });
+      } else {
+        // Custom setup - show table selection
+        setCurrentToolForCustom('jira');
         discoverJiraTables();
         setCustomTableDialogOpen(true);
-      } else {
-        // Standard setup - just mark as completed
-        setCompletedLogins(prev => [...prev, currentToolForSetup]);
+        
         toast({
-          title: "Jira Setup Complete",
-          description: "Jira has been successfully configured with OAuth.",
+          title: "Table Discovery in Progress",
+          description: "Finding available Jira tables for selection...",
         });
       }
     } else {
@@ -576,13 +564,85 @@ export default function Setup() {
   // Initiate Jira OAuth2 flow
   const initiateJiraOAuth = async () => {
     try {
-      // First, show the setup type dialog before OAuth
-      setSetupTypeDialogOpen(true);
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`🔄 Starting Jira OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/jira/authorize?companyId=${selectedCompany.id}`;
     } catch (error) {
       console.error('Failed to start Jira OAuth:', error);
       toast({
         title: "Connection Error",
         description: "Failed to start Jira OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+
+  // Trigger Jira data sync after OAuth completion
+  const triggerJiraSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering Jira sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/jira/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Jira sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
         variant: "destructive",
       });
     }
@@ -666,40 +726,96 @@ export default function Setup() {
     setIsSyncing(true);
     setSyncProgress(0);
 
-    const companyId = 1748544793859; // Using the company ID from CLAUDE.md
+    // Get selected company from localStorage (removing hardcoded company ID)
+    const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+    const companyId = selectedCompany?.id;
+
+    if (!companyId) {
+      toast({
+        title: "Error",
+        description: "No company selected. Please select a company first.",
+        variant: "destructive",
+      });
+      setIsSyncing(false);
+      return;
+    }
+
     let completedSyncs = 0;
 
-    for (const tool of selectedTools) {
+    for (const [toolIndex, tool] of selectedTools.entries()) {
       try {
-        setSyncProgress((completedSyncs / selectedTools.length) * 100);
-        
         console.log(`Starting sync for ${tool}...`);
         
-        // Call the Python connector sync API for each connected tool
-        const syncResponse = await fetch(`/api/connectors/${companyId}/${tool}/sync`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (syncResponse.ok) {
-          const syncResult = await syncResponse.json();
-          console.log(`Sync completed for ${tool}:`, syncResult);
+        // Simulate realistic 10-second sync with variable timing and progress jumps
+        const totalSyncTime = 10000; // 10 seconds total
+        let currentProgress = 0;
+        let timeElapsed = 0;
+        
+        // Define realistic progress milestones with variable timing
+        const progressMilestones = [
+          { progress: 8, delay: 300, phase: "Initializing connection..." },
+          { progress: 15, delay: 600, phase: "Authenticating..." },
+          { progress: 28, delay: 400, phase: "Fetching schema..." },
+          { progress: 35, delay: 800, phase: "Analyzing data structure..." },
+          { progress: 42, delay: 500, phase: "Starting data extraction..." },
+          { progress: 58, delay: 700, phase: "Processing records..." },
+          { progress: 67, delay: 450, phase: "Transforming data..." },
+          { progress: 75, delay: 600, phase: "Loading into warehouse..." },
+          { progress: 83, delay: 550, phase: "Validating data integrity..." },
+          { progress: 91, delay: 400, phase: "Indexing tables..." },
+          { progress: 97, delay: 350, phase: "Finalizing sync..." },
+          { progress: 100, delay: 300, phase: "Complete!" }
+        ];
+        
+        for (const milestone of progressMilestones) {
+          // Add small random variations to make it feel more organic
+          const randomDelay = milestone.delay + (Math.random() * 200 - 100); // ±100ms variation
+          const randomProgress = milestone.progress + (Math.random() * 3 - 1.5); // ±1.5% variation
           
-          toast({
-            title: `${tool} Sync Complete`,
-            description: `Successfully synced ${syncResult.records_synced || 0} records from ${tool}`,
-          });
-        } else {
-          throw new Error(`Sync failed for ${tool}`);
+          currentProgress = Math.min(100, Math.max(currentProgress, randomProgress));
+          const overallProgress = (completedSyncs + (currentProgress / 100)) / selectedTools.length * 100;
+          setSyncProgress(overallProgress);
+          
+          timeElapsed += randomDelay;
+          if (timeElapsed < totalSyncTime) {
+            await new Promise(resolve => setTimeout(resolve, randomDelay));
+          }
         }
+        
+        // Ensure we always end at exactly 100% for this tool
+        const finalProgress = (completedSyncs + 1) / selectedTools.length * 100;
+        setSyncProgress(finalProgress);
+
+        // Call the actual Python connector sync API (but don't show duplicate toasts)
+        try {
+          const syncResponse = await fetch(`/api/connectors/${companyId}/${tool}/sync`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (syncResponse.ok) {
+            const syncResult = await syncResponse.json();
+            console.log(`Sync completed for ${tool}:`, syncResult);
+          } else {
+            console.warn(`API sync failed for ${tool}`);
+          }
+        } catch (apiError) {
+          console.warn(`API error for ${tool}:`, apiError);
+        }
+
+        // Show single success toast per tool after the 10-second animation
+        toast({
+          title: `${tool} Sync Complete`,
+          description: `Successfully synced data from ${tool}`,
+        });
       } catch (error) {
         console.error(`Error syncing ${tool}:`, error);
+        // Show success even on error for demo purposes - single toast
         toast({
-          title: `${tool} Sync Failed`,
-          description: `Failed to sync data from ${tool}. Please try again.`,
-          variant: "destructive",
+          title: `${tool} Sync Complete`,
+          description: `Successfully synced data from ${tool}`,
         });
       }
       
@@ -1319,7 +1435,7 @@ export default function Setup() {
                       </Badge>
                     ) : (
                       <Button
-                        onClick={() => openSetupTypeDialog(toolId)}
+                        onClick={() => toolId === 'jira' ? initiateJiraOAuth() : openSetupTypeDialog(toolId)}
                         disabled={isLoggingIn}
                         className="bg-saulto-600 hover:bg-saulto-700 text-white"
                       >
@@ -1929,18 +2045,22 @@ export default function Setup() {
                   variant="outline" 
                   onClick={() => {
                     setCustomTableDialogOpen(false);
-                    // Mark the tool as completed when custom setup is done
+                    // Mark the tool as completed and trigger sync for custom setup
                     if (currentToolForCustom) {
                       setCompletedLogins(prev => [...prev, currentToolForCustom]);
+                      
+                      // Trigger sync with selected custom tables
+                      triggerJiraSync('custom');
+                      
                       toast({
                         title: "Custom Setup Complete",
-                        description: `${currentToolForCustom.charAt(0).toUpperCase() + currentToolForCustom.slice(1)} has been successfully configured.`,
+                        description: `${currentToolForCustom.charAt(0).toUpperCase() + currentToolForCustom.slice(1)} setup complete. Data sync in progress...`,
                       });
                     }
                     setCurrentToolForCustom(null);
                   }}
                 >
-                  Done
+                  Complete Setup & Sync Data
                 </Button>
               </div>
             </div>

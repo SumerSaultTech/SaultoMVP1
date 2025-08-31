@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import session from 'express-session';
 import { storage } from "./storage";
 import { pythonConnectorService } from "./services/python-connector-service";
 import { postgresAnalyticsService } from "./services/postgres-analytics";
@@ -112,6 +113,18 @@ const companiesArray: any[] = [
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Configure session middleware
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'saulto-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false, // Set to true in production with HTTPS
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+  }));
+  
   // Health check endpoint with service status
   app.get("/api/health", async (req, res) => {
     const health = {
@@ -160,7 +173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const authUrl = jiraOAuthService.getAuthorizationUrl(companyId, userId);
-      res.json({ authUrl });
+      res.redirect(authUrl);
     } catch (error) {
       console.error('Jira OAuth authorize error:', error);
       res.status(500).json({ error: "Failed to generate authorization URL" });
@@ -238,22 +251,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/jira/discover-tables/:companyId", async (req, res) => {
     try {
       const { companyId } = req.params;
-      console.log(`🔍 Table discovery for company: ${companyId}`);
+      console.log(`🔍 Jira table discovery for company: ${companyId}`);
       
       // Get the stored OAuth token for this company
       const dataSources = await storage.getDataSources(parseInt(companyId));
       console.log(`🔍 Found ${dataSources.length} data sources for company`);
       
-      const jiraSource = dataSources.find(ds => ds.type === 'jira' && ds.isActive);
-      console.log(`🔍 Active Jira source found:`, !!jiraSource);
+      // Find Jira source (active or inactive, since we can discover tables with valid tokens)
+      const jiraSource = dataSources.find(ds => ds.type === 'jira');
+      console.log(`🔍 Jira source found:`, !!jiraSource);
+      console.log(`🔍 Jira source active status:`, jiraSource?.isActive);
       
       if (!jiraSource) {
-        console.log(`❌ No active Jira connection found for company ${companyId}`);
-        return res.status(404).json({ error: "No active Jira connection found for this company" });
+        console.log(`❌ No Jira connection found for company ${companyId}`);
+        return res.status(404).json({ error: "No Jira connection found for this company" });
       }
       
-      const config = JSON.parse(jiraSource.config);
-      console.log(`🔍 Config parsed, accessToken exists:`, !!config.accessToken);
+      let config;
+      try {
+        config = JSON.parse(jiraSource.config);
+      } catch (parseError) {
+        console.log(`⚠️ Config parsing failed, trying to use as object:`, parseError.message);
+        // If JSON parsing fails, the config might already be an object (database storage issue)
+        config = typeof jiraSource.config === 'string' ? {} : jiraSource.config;
+      }
+      console.log(`🔍 Config loaded, accessToken exists:`, !!config.accessToken);
       console.log(`🔍 Resources in config:`, config.resources?.length || 0);
       
       const accessToken = config.accessToken;
@@ -435,6 +457,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('❌ Failed to delete company:', error);
       console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
       res.status(500).json({ message: "Failed to delete company" });
+    }
+  });
+
+  // Company selection endpoint
+  app.post("/api/companies/select", async (req, res) => {
+    try {
+      const { companyId } = req.body;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: "Company ID is required" });
+      }
+      
+      // Verify the company exists
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found" });
+      }
+      
+      // Initialize session if it doesn't exist
+      if (!req.session) {
+        req.session = {} as any;
+      }
+      
+      // Set the selected company in the session
+      req.session.selectedCompany = {
+        id: company.id,
+        name: company.name,
+        slug: company.slug
+      };
+      
+      console.log(`✅ Company selected: ${company.name} (ID: ${company.id})`);
+      res.json({ 
+        success: true, 
+        selectedCompany: req.session!.selectedCompany,
+        message: `Selected company: ${company.name}` 
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to select company:', error);
+      res.status(500).json({ message: "Failed to select company" });
+    }
+  });
+
+  // Get current session info including selected company
+  app.get("/api/session", async (req, res) => {
+    try {
+      res.json({
+        selectedCompany: req.session?.selectedCompany || null,
+        user: req.session?.user || null
+      });
+    } catch (error) {
+      console.error('❌ Failed to get session info:', error);
+      res.status(500).json({ message: "Failed to get session info" });
+    }
+  });
+
+  // Debug endpoint to check tables for a specific company
+  app.get("/api/debug/tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Debug: Checking tables for company ${companyId}`);
+      
+      const analyticsSchema = `analytics_company_${companyId}`;
+      
+      // Use the same logic as the postgres/tables endpoint
+      const query = `
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = '${analyticsSchema}'
+        ORDER BY table_name
+      `;
+      
+      console.log(`Executing PostgreSQL query: ${query}`);
+      const result = await postgresAnalyticsService.executeQuery(query);
+      const tables = Array.isArray(result) ? result.map((row: any) => row.table_name) : [];
+      
+      res.json({
+        companyId,
+        analyticsSchema,
+        tables,
+        tableCount: tables.length,
+        query
+      });
+    } catch (error) {
+      console.error('❌ Debug tables check failed:', error);
+      res.status(500).json({ 
+        message: "Failed to check tables", 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
     }
   });
 
@@ -653,7 +764,11 @@ The Saulto Analytics Team
   // Setup Status
   app.get("/api/setup-status", async (req, res) => {
     try {
-      const status = await storage.getSetupStatus();
+      const companyId = (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      const status = await storage.getSetupStatus(companyId);
       res.json(status);
     } catch (error) {
       res.status(500).json({ message: "Failed to get setup status" });
@@ -677,6 +792,7 @@ The Saulto Analytics Team
       
       // Log activity
       await storage.createPipelineActivity({
+        companyId: companyId,
         type: "sync",
         description: `Created ${dataSource.name} data source`,
         status: "success",
@@ -728,6 +844,7 @@ The Saulto Analytics Team
 
       // Log activity
       await storage.createPipelineActivity({
+        companyId: companyId,
         type: "sync",
         description: "One-click setup completed successfully",
         status: "success",
@@ -736,6 +853,7 @@ The Saulto Analytics Team
       res.json({ success: true, message: "Setup completed successfully" });
     } catch (error) {
       await storage.createPipelineActivity({
+        companyId: companyId,
         type: "error",
         description: `Setup failed: ${error.message}`,
         status: "error",
@@ -788,6 +906,7 @@ The Saulto Analytics Team
       res.json(result);
     } catch (error) {
       await storage.createPipelineActivity({
+        companyId: companyId,
         type: "error",
         description: `Model deployment failed: ${error.message}`,
         status: "error",
@@ -799,7 +918,12 @@ The Saulto Analytics Team
   // KPI Metrics
   app.get("/api/kpi-metrics", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      
+      const metrics = await storage.getKpiMetrics(companyId);
       res.json(metrics);
     } catch (error) {
       res.status(500).json({ message: "Failed to get KPI metrics" });
@@ -813,7 +937,11 @@ The Saulto Analytics Team
       const timePeriod = req.query.timePeriod as string || 'ytd';
       console.log(`Time period filter: ${timePeriod}`);
       
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      const metrics = await storage.getKpiMetrics(companyId);
       console.log(`Found ${metrics.length} metrics for dashboard`);
       
       const dashboardData = [];
@@ -823,7 +951,10 @@ The Saulto Analytics Team
         if (metric.sqlQuery) {
           try {
             // Use calculateMetric with the time period parameter and metric ID
-            const companyId = req.session?.selectedCompany?.id || 1748544793859;
+            const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
             const dashboardResult = await postgresAnalyticsService.calculateMetric(metric.name, companyId, timePeriod, metric.id, metric.sqlQuery);
             
             if (dashboardResult) {
@@ -855,8 +986,11 @@ The Saulto Analytics Team
 
   app.post("/api/kpi-metrics", async (req, res) => {
     try {
-      // Use MIAS_DATA company ID for metric creation
-      const dataWithCompanyId = { ...req.body, companyId: 1748544793859 };
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      const dataWithCompanyId = { ...req.body, companyId };
       console.log("Creating metric for MIAS_DATA company:", JSON.stringify(dataWithCompanyId, null, 2));
       
       // Handle filter processing if provided
@@ -1139,7 +1273,10 @@ Convert the user request into the appropriate filter structure:
 
   app.post("/api/kpi-metrics/calculate-all", async (req, res) => {
     try {
-      const companyId = 1748544793859; // MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       // For now, return empty results - would need to implement calculateAllMetrics in PostgreSQL service
       const results = [];
       res.json(results);
@@ -1151,7 +1288,10 @@ Convert the user request into the appropriate filter structure:
 
   app.get("/api/kpi-metrics/stale", async (req, res) => {
     try {
-      const companyId = 1748544793859; // MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       // For now, return empty stale metrics - would need to implement in PostgreSQL service
       const staleMetrics = [];
       res.json({ staleMetrics });
@@ -1164,7 +1304,10 @@ Convert the user request into the appropriate filter structure:
   // Metric Reports
   app.get("/api/metric-reports", async (req, res) => {
     try {
-      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       const reports = await storage.getMetricReports(companyId);
       res.json(reports);
     } catch (error) {
@@ -1207,7 +1350,10 @@ Convert the user request into the appropriate filter structure:
 
   app.post("/api/metric-reports", async (req, res) => {
     try {
-      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       const createdBy = req.session?.user?.id; // Don't default to 1 if no user
       
       const dataWithCompanyId = { 
@@ -1268,7 +1414,10 @@ Convert the user request into the appropriate filter structure:
     try {
       const reportId = parseInt(req.params.id);
       const timePeriod = req.query.timePeriod as string || 'monthly';
-      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       
       // Get the report
       const report = await storage.getMetricReport(reportId);
@@ -1469,7 +1618,10 @@ Annual forecast: ${yearlyProjection.toLocaleString()}. ${progress > 50 ? 'Expect
     try {
       const reportId = parseInt(req.params.id);
       const timePeriod = req.body.timePeriod || 'monthly';
-      const companyId = req.session?.selectedCompany?.id || 1748544793859;
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       
       // Get the report
       const report = await storage.getMetricReport(reportId);
@@ -1613,17 +1765,44 @@ CRITICAL REQUIREMENTS:
     }
   });
 
+  // TEMPORARY: Test endpoint with specific company ID
+  app.get("/api/debug-tables/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      console.log(`🔍 DEBUG: Testing tables for company ${companyId}`);
+      
+      const tables = await postgresAnalyticsService.getAvailableTables(companyId);
+      console.log(`📋 DEBUG: Found ${tables.length} tables:`, tables);
+      
+      res.json({ companyId, tablesCount: tables.length, tables });
+    } catch (error) {
+      console.error("Error in debug endpoint:", error);
+      res.status(500).json({ error: "Failed to fetch tables" });
+    }
+  });
+
   // Get list of tables from PostgreSQL analytics schemas
   app.get("/api/postgres/tables", async (req, res) => {
     try {
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      console.log(`🔍 /api/postgres/tables called - Company ID: ${companyId}, Session:`, req.session?.selectedCompany);
+      
+      if (!companyId) {
+        console.log("❌ No company selected for /api/postgres/tables");
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      
+      console.log(`📋 Fetching tables for company ${companyId}`);
       const tables = await postgresAnalyticsService.getAvailableTables(companyId);
+      console.log(`📋 Found ${tables.length} tables:`, tables);
       
       const tablesWithSource = tables.map(tableName => {
         // Determine external app source from table name patterns
         let external_source = "Unknown";
         
-        if (tableName.toLowerCase().includes("salesforce") || tableName.toLowerCase().includes("sfdc")) {
+        if (tableName.startsWith("CORE_")) {
+          external_source = "Core Tables";
+        } else if (tableName.toLowerCase().includes("salesforce") || tableName.toLowerCase().includes("sfdc")) {
           external_source = "Salesforce";
         } else if (tableName.toLowerCase().includes("jira") || tableName.toLowerCase().includes("atlassian")) {
           external_source = "Jira";
@@ -1663,7 +1842,10 @@ CRITICAL REQUIREMENTS:
   app.get("/api/postgres/columns/:tableName", async (req, res) => {
     try {
       const { tableName } = req.params;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      } // Use MIAS_DATA company ID
       
       const columns = await postgresAnalyticsService.getTableSchema(tableName, companyId);
       res.json(columns);
@@ -1682,7 +1864,10 @@ CRITICAL REQUIREMENTS:
       const { tableName } = req.params;
       const { limit } = req.query;
       const limitValue = limit ? parseInt(limit as string) : 100;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      } // Use MIAS_DATA company ID
       
       const data = await postgresAnalyticsService.getTableData(tableName, companyId, limitValue);
       
@@ -1705,7 +1890,10 @@ CRITICAL REQUIREMENTS:
   app.post("/api/postgres/query", async (req, res) => {
     try {
       const { sql } = req.body;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      } // Use MIAS_DATA company ID
       
       if (!sql) {
         return res.status(400).json({
@@ -1776,13 +1964,20 @@ CRITICAL REQUIREMENTS:
 
   app.post("/api/kpi-metrics/calculate", async (req, res) => {
     try {
-      const metrics = await storage.getKpiMetrics(1748544793859);
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      const metrics = await storage.getKpiMetrics(companyId);
       const results = [];
 
       for (const metric of metrics) {
         if (metric.sqlQuery) {
           try {
-            const companyId = req.session?.selectedCompany?.id || 1748544793859;
+            const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
             const result = await postgresAnalyticsService.executeQuery(metric.sqlQuery, companyId);
             await storage.updateKpiMetric(metric.id, {
               value: result.data?.[0]?.value || "0",
@@ -1803,7 +1998,10 @@ CRITICAL REQUIREMENTS:
   // Chat Messages
   app.get("/api/chat-messages", async (req, res) => {
     try {
-      const companyId = 1748544793859; // MIAS_DATA company ID
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       const allMessages = await storage.getChatMessages(companyId);
       
       console.log(`📥 Raw messages from DB: ${allMessages.length}`);
@@ -1862,12 +2060,18 @@ CRITICAL REQUIREMENTS:
 
   app.post("/api/chat-messages", async (req, res) => {
     try {
-      const validatedData = insertChatMessageSchema.parse(req.body);
+      const companyId = (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+      
+      const validatedData = insertChatMessageSchema.parse({ ...req.body, companyId });
       const userMessage = await storage.createChatMessage(validatedData);
 
       // Get AI response
       const aiResponse = await openaiService.getChatResponse(validatedData.content);
       const assistantMessage = await storage.createChatMessage({
+        companyId,
         role: "assistant",
         content: aiResponse.content,
         metadata: aiResponse.metadata,
@@ -1907,7 +2111,10 @@ CRITICAL REQUIREMENTS:
       // Try to get conversation history from storage
       let conversationHistory: any[] = [];
       try {
-        const companyId = 1748544793859; // MIAS_DATA company ID
+        const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
         const recentMessages = await storage.getChatMessages(companyId);
         
         // Convert to format expected by AI service
@@ -1926,16 +2133,18 @@ CRITICAL REQUIREMENTS:
       try {
         // Save user message
         await storage.createChatMessage({
+          companyId: companyId,
           role: "user",
           content: message,
-          metadata: { companyId: 1748544793859, userId: 1 }
+          metadata: { userId: 1 }
         });
         
         // Save AI response
         await storage.createChatMessage({
+          companyId: companyId,
           role: "assistant", 
           content: aiResponse.content,
-          metadata: { companyId: 1748544793859, userId: 1, source: aiResponse.metadata?.source || "openai" }
+          metadata: { userId: 1, source: aiResponse.metadata?.source || "openai" }
         });
       } catch (storageError) {
         console.warn("Could not save chat message to storage:", storageError);
@@ -1991,7 +2200,10 @@ CRITICAL REQUIREMENTS:
       // Get conversation history from storage
       let conversationHistory: any[] = [];
       try {
-        const companyId = 1748544793859; // MIAS_DATA company ID
+        const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
         const recentMessages = await storage.getChatMessages(companyId);
         
         // Convert to format expected by AI service
@@ -2113,8 +2325,12 @@ CRITICAL REQUIREMENTS:
   // Pipeline Activities
   app.get("/api/pipeline-activities", async (req, res) => {
     try {
+      const companyId = (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const activities = await storage.getPipelineActivities(limit);
+      const activities = await storage.getPipelineActivities(companyId, limit);
       res.json(activities);
     } catch (error) {
       res.status(500).json({ message: "Failed to get pipeline activities" });
@@ -2128,6 +2344,7 @@ CRITICAL REQUIREMENTS:
       const result = { success: true, message: "Manual sync using Python connectors" };
       
       await storage.createPipelineActivity({
+        companyId: companyId,
         type: "sync",
         description: "Manual sync triggered",
         status: "success",
@@ -2136,6 +2353,7 @@ CRITICAL REQUIREMENTS:
       res.json(result);
     } catch (error) {
       await storage.createPipelineActivity({
+        companyId: companyId,
         type: "error",
         description: `Manual sync failed: ${error.message}`,
         status: "error",
@@ -2278,7 +2496,10 @@ CRITICAL REQUIREMENTS:
   app.post("/api/metrics/ai/define", async (req, res) => {
     try {
       const { metricName, businessContext } = req.body;
-      const companyId = req.session?.selectedCompany?.id || 1748544793859; // Use MIAS_DATA company ID as default
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      } // Use MIAS_DATA company ID as default
       
       if (!metricName) {
         return res.status(400).json({ error: "Metric name is required" });
@@ -2398,12 +2619,14 @@ CRITICAL REQUIREMENTS:
         // Create a chat message record in our storage
         const timestamp = new Date().toISOString();
         await storage.createChatMessage({
+          companyId: companyId,
           role: "user",
           content: message,
           metadata: { timestamp, source: "saultochat" }
         });
 
         await storage.createChatMessage({
+          companyId: companyId,
           role: "assistant", 
           content: aiResponse.content,
           metadata: { timestamp, ...aiResponse.metadata }
@@ -2636,16 +2859,36 @@ CRITICAL REQUIREMENTS:
     try {
       const companyId = parseInt(req.params.companyId);
       
-      console.log(`✅ DEMO: Fetching connectors for company ${companyId}`);
+      console.log(`🔍 Fetching data sources for company ${companyId}`);
       
-      // Mock some demo connections - this simulates what would be returned
-      // after users have gone through the setup process
-      const demoConnections = [];
+      // Get actual data sources from database
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
       
-      // Check if demo setup has been completed (stored in localStorage on frontend)
-      // For now, return empty array but the setup will create entries as needed
+      // Transform to connector format expected by frontend
+      const connectors = dataSources.map(ds => {
+        let config = {};
+        try {
+          config = ds.config ? JSON.parse(ds.config) : {};
+        } catch (parseError) {
+          console.error(`Failed to parse config for data source ${ds.id}:`, parseError);
+          console.error(`Config value:`, ds.config);
+          config = {};
+        }
+        
+        return {
+          id: ds.id,
+          name: ds.name,
+          type: ds.type,
+          status: ds.isActive ? 'connected' : 'disconnected',
+          lastSyncAt: ds.lastSyncAt,
+          isActive: ds.isActive,
+          config
+        };
+      });
       
-      res.json(demoConnections);
+      console.log(`Found ${connectors.length} connectors for company ${companyId}`);
+      
+      res.json(connectors);
     } catch (error: any) {
       console.error("Error fetching connections:", error);
       res.status(500).json({ 
