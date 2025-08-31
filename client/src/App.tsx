@@ -34,18 +34,37 @@ function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean
     return <CompanySelection />;
   }
 
+  // Parse company data from localStorage
+  const companyData = selectedCompany ? JSON.parse(selectedCompany) : null;
+  const companyId = companyData?.id;
+
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/setup" component={Setup} />
-      <Route path="/data-browser" component={DataBrowser} />
-      <Route path="/integrations-canvas" component={IntegrationsCanvas} />
-      <Route path="/saultochat" component={SaultoChat} />
-      <Route path="/metrics" component={MetricsManagement} />
+      {/* Multi-tenant routes with company ID */}
+      <Route path={`/company/${companyId}`} component={Dashboard} />
+      <Route path={`/company/${companyId}/setup`} component={Setup} />
+      <Route path={`/company/${companyId}/data-browser`} component={DataBrowser} />
+      <Route path={`/company/${companyId}/integrations-canvas`} component={IntegrationsCanvas} />
+      <Route path={`/company/${companyId}/saultochat`} component={SaultoChat} />
+      <Route path={`/company/${companyId}/metrics`} component={MetricsManagement} />
+      <Route path={`/company/${companyId}/metric-reports/:id/view`} component={MetricReportViewer} />
+      <Route path={`/company/${companyId}/metric-reports`} component={MetricReports} />
+      <Route path={`/company/${companyId}/users`} component={UserManagement} />
+      <Route path={`/company/${companyId}/admin`} component={AdminPage} />
+      
+      {/* Legacy routes - redirect to company-specific routes */}
+      <Route path="/" component={() => <Dashboard />} />
+      <Route path="/setup" component={() => <Setup />} />
+      <Route path="/data-browser" component={() => <DataBrowser />} />
+      <Route path="/integrations-canvas" component={() => <IntegrationsCanvas />} />
+      <Route path="/saultochat" component={() => <SaultoChat />} />
+      <Route path="/metrics" component={() => <MetricsManagement />} />
       <Route path="/metric-reports/:id/view" component={MetricReportViewer} />
-      <Route path="/metric-reports" component={MetricReports} />
-      <Route path="/users" component={UserManagement} />
-      <Route path="/admin" component={AdminPage} />
+      <Route path="/metric-reports" component={() => <MetricReports />} />
+      <Route path="/users" component={() => <UserManagement />} />
+      <Route path="/admin" component={() => <AdminPage />} />
+      
+      {/* Global routes */}
       <Route path="/companies" component={CompanySelection} />
       <Route path="/login" component={Login} />
       <Route component={NotFound} />
@@ -62,11 +81,34 @@ function App() {
   );
 
   useEffect(() => {
+    // Sync localStorage company selection with backend on app start
+    const syncCompanySelection = async () => {
+      const storedCompany = localStorage.getItem("selectedCompany");
+      if (storedCompany && isAuthenticated) {
+        try {
+          const companyData = JSON.parse(storedCompany);
+          await fetch("/api/companies/select", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({ companyId: companyData.id })
+          });
+        } catch (error) {
+          console.error("Failed to sync company selection:", error);
+        }
+      }
+    };
+
     // Listen for storage changes
     const handleStorageChange = () => {
       setIsAuthenticated(localStorage.getItem("isAuthenticated") === "true");
       setSelectedCompany(localStorage.getItem("selectedCompany"));
     };
+
+    // Sync company selection when app starts
+    syncCompanySelection();
 
     window.addEventListener("storage", handleStorageChange);
     
@@ -77,7 +119,7 @@ function App() {
       window.removeEventListener("storage", handleStorageChange);
       clearInterval(interval);
     };
-  }, []);
+  }, [isAuthenticated]);
 
   return (
     <QueryClientProvider client={queryClient}>

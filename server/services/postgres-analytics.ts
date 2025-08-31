@@ -49,6 +49,32 @@ export class PostgresAnalyticsService {
     return `analytics_company_${companyId}`;
   }
 
+  // Helper method to find the correct schema for a table (STRICT tenant isolation)
+  private async findTableSchema(tableName: string, companyId: number): Promise<string | null> {
+    try {
+      const companySchema = this.getAnalyticsSchemaName(companyId);
+      
+      // STRICT TENANT ISOLATION: Only look in the specific company's schema
+      // This ensures no cross-tenant access to tables, including CORE_ tables
+      const query = `
+        SELECT table_schema 
+        FROM information_schema.tables 
+        WHERE table_name = '${tableName}' 
+        AND table_schema = '${companySchema}'
+        LIMIT 1
+      `;
+      
+      const result = await this.executeQuery(query);
+      if (result.success && result.data && result.data.length > 0) {
+        return result.data[0].table_schema;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error finding schema for table ${tableName}:`, error);
+      return null;
+    }
+  }
+
   async calculateMetric(metricName: string, companyId: number, timePeriod: string = 'monthly', metricId?: number, customSQL?: string): Promise<PostgresMetricData | null> {
     try {
       console.log(`Calculating PostgreSQL metric ${metricName} for company ${companyId}, period ${timePeriod}`);
@@ -444,8 +470,12 @@ export class PostgresAnalyticsService {
     try {
       const schema = this.getAnalyticsSchemaName(companyId);
       
+      console.log(`🔍 Getting available tables for company ${companyId} from schema '${schema}' (tenant-isolated)`);
+      
+      // STRICT TENANT ISOLATION: Only return tables from this specific company's schema
+      // This ensures no cross-tenant data leakage - each company only sees their own tables
       const query = `
-        SELECT table_name 
+        SELECT DISTINCT table_name 
         FROM information_schema.tables 
         WHERE table_schema = '${schema}'
         ORDER BY table_name
@@ -453,8 +483,12 @@ export class PostgresAnalyticsService {
       
       const result = await this.executeQuery(query);
       if (result.success && result.data) {
-        return result.data.map((row: any) => row.table_name);
+        const tables = result.data.map((row: any) => row.table_name);
+        console.log(`📋 Found ${tables.length} tables for company ${companyId}:`, tables);
+        return tables;
       }
+      
+      console.log(`📋 No tables found for company ${companyId} in schema '${schema}'`);
       return [];
       
     } catch (error) {
@@ -465,7 +499,12 @@ export class PostgresAnalyticsService {
 
   async getTableSchema(tableName: string, companyId: number): Promise<any[]> {
     try {
-      const schema = this.getAnalyticsSchemaName(companyId);
+      // Find the correct schema for this table (handles CORE_ tables and tenant isolation)
+      const schema = await this.findTableSchema(tableName, companyId);
+      if (!schema) {
+        console.error(`Table ${tableName} not found or access denied for company ${companyId}`);
+        return [];
+      }
       
       const query = `
         SELECT 
@@ -493,12 +532,22 @@ export class PostgresAnalyticsService {
 
   async getTableData(tableName: string, companyId: number, limit: number = 100): Promise<any[]> {
     try {
-      const schema = this.getAnalyticsSchemaName(companyId);
+      // Find the correct schema for this table (handles CORE_ tables and tenant isolation)
+      const schema = await this.findTableSchema(tableName, companyId);
+      if (!schema) {
+        console.error(`Table ${tableName} not found or access denied for company ${companyId}`);
+        return [];
+      }
       
       const query = `
         SELECT * 
         FROM ${schema}.${tableName} 
-        ORDER BY loaded_at DESC 
+        ORDER BY CASE WHEN EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_schema = '${schema}' 
+          AND table_name = '${tableName}' 
+          AND column_name = 'loaded_at'
+        ) THEN loaded_at END DESC
         LIMIT ${limit}
       `;
       

@@ -7,6 +7,32 @@ export default function Sidebar() {
   const [location] = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // Get company ID from localStorage
+  const getCompanyId = () => {
+    const selectedCompany = localStorage.getItem("selectedCompany");
+    if (selectedCompany) {
+      try {
+        const company = JSON.parse(selectedCompany);
+        return company.id;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const companyId = getCompanyId();
+
+  // Build company-specific navigation paths using unique company ID
+  const getNavPath = (path: string) => {
+    if (!companyId) return path; // Fallback to legacy paths
+    
+    if (path === "/") {
+      return `/company/${companyId}`;
+    }
+    return `/company/${companyId}${path}`;
+  };
+
   const navItems = [
     { path: "/", icon: BarChart3, label: "Dashboard" },
     { path: "/metric-reports", icon: FileText, label: "Metric Reports" },
@@ -20,8 +46,9 @@ export default function Sidebar() {
   ];
 
   const isActive = (path: string) => {
-    if (path === "/" && location === "/") return true;
-    if (path !== "/" && location.startsWith(path)) return true;
+    const navPath = getNavPath(path);
+    if (navPath.endsWith("/company/" + companyId) && location === navPath) return true;
+    if (path !== "/" && location.startsWith(navPath)) return true;
     return false;
   };
 
@@ -32,7 +59,7 @@ export default function Sidebar() {
       <div className={`bg-white border-b border-gray-200 ${isCollapsed ? 'px-2' : 'px-6'} py-4 transition-all duration-300`}>
         <div className="flex items-center justify-between">
           {!isCollapsed ? (
-            <Link href="/">
+            <Link href={getNavPath("/")}>
               <a className="cursor-pointer hover:opacity-80 transition-opacity">
                 <img 
                   src="/assets/logo.png" 
@@ -43,7 +70,7 @@ export default function Sidebar() {
             </Link>
           ) : (
             <div className="flex-1 flex justify-center">
-              <Link href="/">
+              <Link href={getNavPath("/")}>
                 <a className="cursor-pointer hover:opacity-80 transition-opacity">
                   <BarChart3 className="w-6 h-6 text-saulto-600" />
                 </a>
@@ -65,8 +92,9 @@ export default function Sidebar() {
       <nav className={`flex-1 ${isCollapsed ? 'px-2' : 'p-4'} py-4 space-y-2 overflow-y-auto transition-all duration-300`}>
         {navItems.map((item) => {
           const Icon = item.icon;
+          const navPath = getNavPath(item.path);
           return (
-            <Link key={item.path} href={item.path}>
+            <Link key={item.path} href={navPath}>
               <a 
                 className={`sidebar-nav-item ${isActive(item.path) ? "active" : ""} ${isCollapsed ? 'justify-center px-2' : ''}`}
                 title={isCollapsed ? item.label : undefined}

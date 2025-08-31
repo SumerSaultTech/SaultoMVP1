@@ -47,11 +47,36 @@ export default function CompanySelection() {
     },
   });
 
+  const selectCompanyMutation = useMutation({
+    mutationFn: async (companyId: number) => {
+      return await apiRequest("/api/companies/select", "POST", { companyId });
+    },
+    onSuccess: (data, companyId) => {
+      // Store the selected company in localStorage for persistence
+      const company = companies?.find(c => c.id === companyId);
+      if (company) {
+        localStorage.setItem("selectedCompany", JSON.stringify(company));
+      }
+      
+      toast({
+        title: "Success",
+        description: data.message || "Company selected successfully",
+      });
+      
+      // Navigate to company-specific dashboard URL using unique company ID
+      window.location.href = `/company/${companyId}`;
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to select company",
+        variant: "destructive",
+      });
+    },
+  });
+
   const selectCompany = (company: Company) => {
-    // Store the selected company in localStorage for now
-    localStorage.setItem("selectedCompany", JSON.stringify(company));
-    // Navigate to dashboard
-    window.location.href = "/";
+    selectCompanyMutation.mutate(company.id);
   };
 
   const handleCreateCompany = () => {

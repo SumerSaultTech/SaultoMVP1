@@ -24,7 +24,9 @@ function ColumnPreview({ tableName }: ColumnPreviewProps) {
   const { data: previewData, isLoading } = useQuery({
     queryKey: ["/api/postgres/table-data", tableName, "preview"],
     queryFn: async () => {
-      const response = await fetch(`/api/postgres/table-data/${tableName}?limit=3`);
+      const response = await fetch(`/api/postgres/table-data/${tableName}?limit=3`, {
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error('Failed to fetch preview data');
       return response.json();
     },
@@ -106,15 +108,20 @@ export default function DataBrowser() {
 
   // Fetch available tables from PostgreSQL
   const { data: tables, isLoading: tablesLoading, refetch: refetchTables, error: tablesError } = useQuery({
-    queryKey: ["/api/postgres/tables"],
+    queryKey: ["/api/postgres/tables"], // Remove Date.now() to allow proper caching
     queryFn: async () => {
       console.log('Fetching tables from /api/postgres/tables');
-      const response = await fetch("/api/postgres/tables");
+      const response = await fetch("/api/postgres/tables", {
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error('Failed to fetch tables');
       const data = await response.json();
       console.log('Tables data:', data);
       return data;
     },
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false, // Don't refetch when window gains focus
+    retry: 1, // Only retry once on failure
   });
 
   // Fetch data for selected table
@@ -128,7 +135,9 @@ export default function DataBrowser() {
       if (filterValue) params.append('filterValue', filterValue);
       
       const url = `/api/postgres/table-data/${selectedTable}${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        credentials: 'include'
+      });
       
       if (!response.ok) {
         throw new Error(`Failed to fetch table data: ${response.statusText}`);
@@ -139,9 +148,22 @@ export default function DataBrowser() {
     enabled: !!selectedTable,
   });
 
-  const filteredTables = tables?.filter((table: any) =>
-    table.table_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  const filteredTables = tables?.filter((table: any) => {
+    // Only show CORE-prefixed tables
+    const isCoreTable = table.table_name?.toLowerCase().startsWith('core_');
+    const matchesSearch = table.table_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    return isCoreTable && matchesSearch;
+  }) || [];
+  
+  // Debug logging
+  console.log('🔍 Data Browser Debug:', { 
+    tablesLoading, 
+    tablesError, 
+    tablesRaw: tables, 
+    filteredTables, 
+    searchTerm,
+    coreTablesOnly: true
+  });
 
   // Group tables by external source
   const groupedTables = filteredTables.reduce((groups: { [key: string]: any[] }, table: any) => {
