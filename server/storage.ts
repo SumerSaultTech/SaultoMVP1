@@ -113,6 +113,11 @@ export interface IStorage {
   // Schema Layer Operations
   executeQuery(query: string): Promise<{ success: boolean; data?: any[]; error?: string }>;
   checkTableExists(schema: string, tableName: string): Promise<boolean>;
+  
+  // Dynamic Schema Introspection
+  getCompanyDataSources(companyId: number): Promise<{ sourceType: string; tables: string[]; displayName: string }[]>;
+  getCompanyTableColumns(companyId: number, tableName: string): Promise<{ columnName: string; dataType: string; description?: string }[]>;
+  discoverCompanySchema(companyId: number): Promise<{ [sourceType: string]: { displayName: string; tables: { [tableName: string]: { columnName: string; dataType: string; description?: string }[] } } }>;
   getPipelineActivitiesByType(companyId: number, activityType: string): Promise<PipelineActivity[]>;
   insertPipelineActivity(activity: InsertPipelineActivity): Promise<PipelineActivity>;
 }
@@ -476,6 +481,38 @@ export class MemStorage implements IStorage {
     console.warn(`MemStorage.deleteCompanyMetricRegistryEntry called for company ${companyId} - returning false`);
     return false;
   }
+
+  // Dynamic Schema Introspection (stub implementations for MemStorage)
+  async getCompanyDataSources(companyId: number): Promise<{ sourceType: string; tables: string[]; displayName: string }[]> {
+    console.warn(`MemStorage.getCompanyDataSources called for company ${companyId} - returning mock data`);
+    return [
+      { sourceType: 'jira', tables: ['jira_issues', 'jira_projects'], displayName: 'Jira' },
+      { sourceType: 'salesforce', tables: ['salesforce_opportunities', 'salesforce_accounts'], displayName: 'Salesforce' }
+    ];
+  }
+
+  async getCompanyTableColumns(companyId: number, tableName: string): Promise<{ columnName: string; dataType: string; description?: string }[]> {
+    console.warn(`MemStorage.getCompanyTableColumns called for company ${companyId}, table ${tableName} - returning mock data`);
+    return [
+      { columnName: 'id', dataType: 'integer', description: 'Primary key' },
+      { columnName: 'created_at', dataType: 'timestamp', description: 'Creation timestamp' }
+    ];
+  }
+
+  async discoverCompanySchema(companyId: number): Promise<{ [sourceType: string]: { displayName: string; tables: { [tableName: string]: { columnName: string; dataType: string; description?: string }[] } } }> {
+    console.warn(`MemStorage.discoverCompanySchema called for company ${companyId} - returning mock data`);
+    return {
+      jira: {
+        displayName: 'Jira',
+        tables: {
+          jira_issues: [
+            { columnName: 'id', dataType: 'integer', description: 'Issue ID' },
+            { columnName: 'status', dataType: 'text', description: 'Issue status' }
+          ]
+        }
+      }
+    };
+  }
 }
 
 // DatabaseStorage is disabled - using Snowflake instead of PostgreSQL
@@ -531,7 +568,24 @@ export class DatabaseStorage implements IStorage {
   async createCompany(insertCompany: InsertCompany): Promise<Company> {
     try {
       const result = await this.db.insert(companies).values(insertCompany).returning();
-      return result[0];
+      const newCompany = result[0];
+      
+      // Automatically set up metric registry for the new company
+      try {
+        console.log(`🏗️ Setting up metric registry for new company: ${newCompany.name} (ID: ${newCompany.id})`);
+        const setupResult = await this.setupCompanyMetricRegistry(newCompany.id);
+        
+        if (setupResult.success) {
+          console.log(`✅ Metric registry successfully set up for company ${newCompany.id}`);
+        } else {
+          console.warn(`⚠️ Failed to setup metric registry for company ${newCompany.id}: ${setupResult.error}`);
+        }
+      } catch (setupError) {
+        console.error(`❌ Error during metric registry setup for company ${newCompany.id}:`, setupError);
+        // Don't fail company creation if metric registry setup fails
+      }
+      
+      return newCompany;
     } catch (error) {
       console.error('Failed to create company:', error);
       throw error;
@@ -1281,6 +1335,158 @@ export class DatabaseStorage implements IStorage {
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error'
       };
+    }
+  }
+
+  // Dynamic Schema Introspection
+  async getCompanyDataSources(companyId: number): Promise<{ sourceType: string; tables: string[]; displayName: string }[]> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      
+      // Get all tables in the company's analytics schema
+      const tablesQuery = `
+        SELECT table_name
+        FROM information_schema.tables 
+        WHERE table_schema = $1 
+        AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+      `;
+      
+      const tablesResult = await this.db.execute(sql.raw(tablesQuery, [companySchema]));
+      const tables = tablesResult as { table_name: string }[];
+      
+      // Group tables by their data source based on naming patterns
+      // Only include core business tables (exclude RAW, STG, INT layers and internal tables)
+      const sourceGroups: { [key: string]: { tables: string[]; displayName: string } } = {};
+      
+      for (const table of tables) {
+        const tableName = table.table_name;
+        
+        // Skip internal/technical tables
+        if (tableName.startsWith('raw_') || 
+            tableName.startsWith('stg_') || 
+            tableName.startsWith('int_') ||
+            tableName === 'goals' ||
+            tableName === 'metric_registry' ||
+            tableName === 'goals_daily') {
+          continue; // Skip these technical/internal tables
+        }
+        
+        let sourceType = 'unknown';
+        let displayName = 'Other';
+        
+        // Detect source type from table naming patterns (only core business tables)
+        if (tableName.startsWith('jira_') || tableName.includes('_jira_')) {
+          sourceType = 'jira';
+          displayName = 'Jira';
+        } else if (tableName.startsWith('salesforce_') || tableName.includes('_salesforce_')) {
+          sourceType = 'salesforce';
+          displayName = 'Salesforce';
+        } else if (tableName.startsWith('hubspot_') || tableName.includes('_hubspot_')) {
+          sourceType = 'hubspot';
+          displayName = 'HubSpot';
+        } else if (tableName.startsWith('stripe_') || tableName.includes('_stripe_')) {
+          sourceType = 'stripe';
+          displayName = 'Stripe';
+        } else if (tableName.startsWith('quickbooks_') || tableName.includes('_quickbooks_')) {
+          sourceType = 'quickbooks';
+          displayName = 'QuickBooks';
+        } else if (tableName.startsWith('google_') || tableName.includes('_google_')) {
+          sourceType = 'google';
+          displayName = 'Google';
+        } else if (tableName.startsWith('slack_') || tableName.includes('_slack_')) {
+          sourceType = 'slack';
+          displayName = 'Slack';
+        } else {
+          // Try to extract source from table name
+          const parts = tableName.split('_');
+          if (parts.length > 1) {
+            sourceType = parts[0];
+            displayName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+          }
+        }
+        
+        // Only include if we have actual business tables
+        if (sourceType !== 'unknown') {
+          if (!sourceGroups[sourceType]) {
+            sourceGroups[sourceType] = { tables: [], displayName };
+          }
+          sourceGroups[sourceType].tables.push(tableName);
+        }
+      }
+      
+      // Convert to array format
+      return Object.entries(sourceGroups).map(([sourceType, data]) => ({
+        sourceType,
+        tables: data.tables,
+        displayName: data.displayName
+      }));
+      
+    } catch (error) {
+      console.error(`Error getting data sources for company ${companyId}:`, error);
+      return [];
+    }
+  }
+
+  async getCompanyTableColumns(companyId: number, tableName: string): Promise<{ columnName: string; dataType: string; description?: string }[]> {
+    try {
+      const companySchema = `analytics_company_${companyId}`;
+      
+      const columnsQuery = `
+        SELECT 
+          column_name,
+          data_type,
+          is_nullable,
+          column_default,
+          col_description(pgc.oid, ordinal_position) as description
+        FROM information_schema.columns isc
+        LEFT JOIN pg_class pgc ON pgc.relname = table_name
+        LEFT JOIN pg_namespace pgn ON pgn.oid = pgc.relnamespace
+        WHERE isc.table_schema = $1 
+        AND isc.table_name = $2
+        AND pgn.nspname = $1
+        ORDER BY ordinal_position
+      `;
+      
+      const result = await this.db.execute(sql.raw(columnsQuery, [companySchema, tableName]));
+      const columns = result as { column_name: string; data_type: string; description?: string }[];
+      
+      return columns.map(col => ({
+        columnName: col.column_name,
+        dataType: col.data_type,
+        description: col.description || undefined
+      }));
+      
+    } catch (error) {
+      console.error(`Error getting columns for table ${tableName} in company ${companyId}:`, error);
+      return [];
+    }
+  }
+
+  async discoverCompanySchema(companyId: number): Promise<{ [sourceType: string]: { displayName: string; tables: { [tableName: string]: { columnName: string; dataType: string; description?: string }[] } } }> {
+    try {
+      // Get all data sources for the company
+      const dataSources = await this.getCompanyDataSources(companyId);
+      const schema: { [sourceType: string]: { displayName: string; tables: { [tableName: string]: { columnName: string; dataType: string; description?: string }[] } } } = {};
+      
+      // For each data source, get the column details for all its tables
+      for (const source of dataSources) {
+        schema[source.sourceType] = {
+          displayName: source.displayName,
+          tables: {}
+        };
+        
+        for (const tableName of source.tables) {
+          const columns = await this.getCompanyTableColumns(companyId, tableName);
+          schema[source.sourceType].tables[tableName] = columns;
+        }
+      }
+      
+      return schema;
+      
+    } catch (error) {
+      console.error(`Error discovering schema for company ${companyId}:`, error);
+      return {};
     }
   }
 }

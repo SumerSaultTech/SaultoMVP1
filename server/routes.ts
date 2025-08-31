@@ -3100,6 +3100,66 @@ CRITICAL REQUIREMENTS:
     }
   });
 
+  // Dynamic Schema Discovery API Endpoints
+  app.get('/api/company/data-sources', async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+
+      const dataSources = await storage.getCompanyDataSources(companyId);
+      res.json({ success: true, dataSources });
+    } catch (error) {
+      console.error('Error fetching company data sources:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to fetch data sources',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get('/api/company/table-columns/:tableName', async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+
+      const { tableName } = req.params;
+      const columns = await storage.getCompanyTableColumns(companyId, tableName);
+      
+      res.json({ success: true, columns });
+    } catch (error) {
+      console.error(`Error fetching columns for table ${req.params.tableName}:`, error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to fetch table columns',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get('/api/company/discover-schema', async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+
+      const schema = await storage.discoverCompanySchema(companyId);
+      res.json({ success: true, schema });
+    } catch (error) {
+      console.error('Error discovering company schema:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to discover schema',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

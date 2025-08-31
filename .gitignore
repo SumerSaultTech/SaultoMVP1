@@ -10,6 +10,9 @@ dist/
 .env.development
 .env.production
 
+# Claude Code settings (contains sensitive command history)
+.claude/
+
 # Python
 __pycache__/
 *.pyc

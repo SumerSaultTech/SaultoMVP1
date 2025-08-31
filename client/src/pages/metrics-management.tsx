@@ -60,6 +60,7 @@ export default function MetricsManagement() {
   const [currentStep, setCurrentStep] = useState(1);
   const [availableTables, setAvailableTables] = useState<string[]>([]);
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
+  const [availableDataSources, setAvailableDataSources] = useState<{ sourceType: string; tables: string[]; displayName: string }[]>([]);
   const [selectKey, setSelectKey] = useState(0); // Force re-render of Select components
   const [formData, setFormData] = useState<MetricFormData>({
     name: "",
@@ -83,6 +84,12 @@ export default function MetricsManagement() {
 
   const { data: metrics = [], isLoading } = useQuery({
     queryKey: ["/api/kpi-metrics"],
+  });
+
+  // Fetch dynamic data sources for the current company
+  const { data: companyDataSources = [], isLoading: isLoadingDataSources } = useQuery({
+    queryKey: ["/api/company/data-sources"],
+    select: (response) => response.dataSources || [],
   });
 
   const metricsArray = Array.isArray(metrics) ? metrics : [];
@@ -292,43 +299,23 @@ export default function MetricsManagement() {
     return METRIC_CATEGORIES.find(cat => cat.value === category) || METRIC_CATEGORIES[0];
   };
 
-  // Get available tables based on main data source
+  // Get available tables based on main data source (using dynamic data)
   const getAvailableTables = (mainDataSource: string): string[] => {
-    const tablesBySource: { [key: string]: string[] } = {
-      salesforce: ["opportunities", "accounts", "contacts", "leads", "cases"],
-      hubspot: ["deals", "companies", "contacts", "tickets", "products"],
-      jira: ["issues", "projects", "sprints", "users", "worklogs"],
-      custom: ["transactions", "customers", "orders", "products", "users"]
-    };
-    return tablesBySource[mainDataSource] || [];
+    const sourceData = companyDataSources.find(source => source.sourceType === mainDataSource);
+    return sourceData ? sourceData.tables : [];
   };
 
-  // Get available columns based on selected table
-  const getAvailableColumns = (mainDataSource: string, table: string): string[] => {
-    const columnsByTable: { [key: string]: { [key: string]: string[] } } = {
-      salesforce: {
-        opportunities: ["amount", "probability", "stage", "close_date", "account_id"],
-        accounts: ["annual_revenue", "number_of_employees", "industry", "created_date"],
-        contacts: ["lead_source", "created_date", "last_activity_date"],
-        leads: ["converted", "score", "source", "created_date"],
-        cases: ["priority", "status", "resolution_time", "created_date"]
-      },
-      hubspot: {
-        deals: ["deal_amount", "deal_stage", "close_date", "probability"],
-        companies: ["annual_revenue", "num_employees", "industry", "created_date"],
-        contacts: ["lifecycle_stage", "lead_score", "created_date"],
-        tickets: ["priority", "status", "time_to_resolution", "created_date"],
-        products: ["price", "quantity", "revenue", "created_date"]
-      },
-      jira: {
-        issues: ["story_points", "time_spent", "priority", "status", "created_date"],
-        projects: ["issue_count", "completed_issues", "created_date"],
-        sprints: ["velocity", "completed_points", "start_date", "end_date"],
-        users: ["issues_assigned", "issues_resolved", "created_date"],
-        worklogs: ["time_spent", "work_date", "issue_id"]
-      }
-    };
-    return columnsByTable[mainDataSource]?.[table] || [];
+  // Get available columns based on selected table (using dynamic API)
+  const fetchAvailableColumns = async (table: string): Promise<string[]> => {
+    if (!table) return [];
+    
+    try {
+      const response = await apiRequest(`/api/company/table-columns/${table}`);
+      return response.columns?.map((col: { columnName: string }) => col.columnName) || [];
+    } catch (error) {
+      console.error('Error fetching table columns:', error);
+      return [];
+    }
   };
 
   // Auto-generate unit based on format
@@ -406,6 +393,49 @@ export default function MetricsManagement() {
     const autoUnit = getUnitFromFormat(formData.format);
     setFormData(prev => ({ ...prev, unit: autoUnit }));
   }, [formData.format]);
+
+  // Update available tables when main data source changes
+  React.useEffect(() => {
+    if (formData.mainDataSource) {
+      const tables = getAvailableTables(formData.mainDataSource);
+      setAvailableTables(tables);
+      // Clear table and value column when data source changes
+      setFormData(prev => ({ ...prev, table: "", valueColumn: "" }));
+      setAvailableColumns([]);
+    } else {
+      setAvailableTables([]);
+      setAvailableColumns([]);
+    }
+  }, [formData.mainDataSource, companyDataSources]);
+
+  // Update available columns when table changes
+  React.useEffect(() => {
+    if (formData.table) {
+      fetchAvailableColumns(formData.table).then(columns => {
+        setAvailableColumns(columns);
+        // Clear value column if it's not in the new columns list
+        if (formData.valueColumn && !columns.includes(formData.valueColumn)) {
+          setFormData(prev => ({ ...prev, valueColumn: "" }));
+        }
+      });
+    } else {
+      setAvailableColumns([]);
+    }
+  }, [formData.table]);
+
+  // Auto-update unit when format changes
+  React.useEffect(() => {
+    const autoUnit = getUnitFromFormat(formData.format);
+    setFormData(prev => ({ ...prev, unit: autoUnit }));
+  }, [formData.format]);
+
+  // Auto-select first available data source when data sources are loaded
+  React.useEffect(() => {
+    if (companyDataSources.length > 0 && !formData.mainDataSource) {
+      const firstSource = companyDataSources[0];
+      setFormData(prev => ({ ...prev, mainDataSource: firstSource.sourceType }));
+    }
+  }, [companyDataSources, formData.mainDataSource]);
 
   // Auto-generate tags when relevant fields change
   React.useEffect(() => {
@@ -900,15 +930,29 @@ export default function MetricsManagement() {
                               key={`mainDataSource-${selectKey}`}
                               value={formData.mainDataSource || ""} 
                               onValueChange={(value) => setFormData({ ...formData, mainDataSource: value })}
+                              disabled={isLoadingDataSources}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Select main data source" />
+                                <SelectValue placeholder={
+                                  isLoadingDataSources 
+                                    ? "Loading data sources..." 
+                                    : companyDataSources.length === 0 
+                                      ? "No data sources available" 
+                                      : "Select main data source"
+                                } />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="salesforce">Salesforce</SelectItem>
-                                <SelectItem value="hubspot">HubSpot</SelectItem>
-                                <SelectItem value="jira">Jira</SelectItem>
-                                <SelectItem value="custom">Custom Database</SelectItem>
+                                {companyDataSources.length > 0 ? (
+                                  companyDataSources.map((source) => (
+                                    <SelectItem key={source.sourceType} value={source.sourceType}>
+                                      {source.displayName} ({source.tables.length} tables)
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="no-sources" disabled>
+                                    No data sources available
+                                  </SelectItem>
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
