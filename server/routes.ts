@@ -23,6 +23,11 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { filterToSQL, buildMetricSQL, generateMetricTemplate } from "./services/filter-to-sql";
+import { validateTenantAccess, validateCompanyParam, getValidatedCompanyId, getSessionCompanyId } from "./middleware/tenant-validation";
+import { createTenantScopedSQL } from "./services/tenant-query-builder";
+import { requireAdmin, auditAdminAction } from "./middleware/admin-middleware";
+import { rbacService, PERMISSIONS } from "./services/rbac-service";
+import { mfaService } from "./services/mfa-service";
 
 
 // File upload configuration
@@ -124,6 +129,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
   }));
+
+  // Add tenant validation middleware for multi-tenant security
+  app.use('/api', validateTenantAccess);
   
   // Health check endpoint with service status
   app.get("/api/health", async (req, res) => {
@@ -378,6 +386,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Authentication
+  app.post("/api/auth/login", async (req, res) => {
+    console.log("🔑 Login attempt started:", { username: req.body.username, hasPassword: !!req.body.password });
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+
+      // Get user by username
+      const user = await storage.getUserByUsername(username);
+      
+      if (!user) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      // For now, we'll do a simple password check (in production, use bcrypt)
+      if (user.password !== password) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      // Check if user has admin permissions (replaces simple email check)
+      const userPermissions = await rbacService.getUserPermissions(user.id);
+      const isAdmin = userPermissions.includes(PERMISSIONS.ADMIN_PANEL);
+      
+      // Set user in session
+      req.session!.user = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        permissions: userPermissions
+      };
+
+      // Update last login time
+      await storage.updateUser(user.id, { lastLoginAt: new Date() });
+
+      // Check if MFA is enabled for this user
+      const mfaEnabled = await mfaService.isMFAEnabled(user.id);
+      
+      // For admin users, ALWAYS clear any existing company selection - they must choose
+      // For regular users, set their company automatically for tenant isolation
+      if (isAdmin) {
+        // Clear any previous company selection for admin users
+        req.session!.selectedCompany = null;
+        console.log(`🔧 Admin login: Cleared previous company selection for admin user ${user.username}`);
+      } else if (user.companyId) {
+        const company = await storage.getCompany(user.companyId);
+        if (company) {
+          req.session!.selectedCompany = {
+            id: company.id,
+            name: company.name,
+            slug: company.slug
+          };
+        }
+      }
+
+      // Log successful login
+      await rbacService.logAction({
+        userId: user.id,
+        action: 'auth.login',
+        details: { 
+          isAdmin, 
+          mfaEnabled,
+          userAgent: req.get('User-Agent')
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          isAdmin: isAdmin,
+          permissions: userPermissions,
+          mfaEnabled: mfaEnabled
+        },
+        company: req.session!.selectedCompany || null,
+        requiresMFA: mfaEnabled && !req.session!.mfaVerified
+      });
+
+    } catch (error) {
+      console.error('❌ Login error:', error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    const userId = (req.session as any)?.user?.id;
+    const selectedCompany = (req.session as any)?.selectedCompany;
+    
+    // Log logout action if we have user info
+    if (userId) {
+      try {
+        await rbacService.logAction({
+          userId,
+          action: 'auth.logout',
+          details: { 
+            hadCompanySelected: !!selectedCompany,
+            companyName: selectedCompany?.name
+          },
+          req,
+        });
+      } catch (error) {
+        console.error('Failed to log logout action:', error);
+      }
+    }
+    
+    req.session?.destroy((err) => {
+      if (err) {
+        console.error('❌ Logout error:', err);
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      console.log('✅ User logged out, session destroyed');
+      res.json({ success: true });
+    });
+  });
+
+  
   // Companies
   app.get("/api/companies", async (req, res) => {
     try {
@@ -386,6 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: company.id,
         name: company.name,
         slug: company.slug,
+        schemaName: `analytics_company_${company.id}`,
         isActive: company.isActive
       })));
     } catch (error) {
@@ -618,9 +754,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Users
   app.get("/api/users", async (req, res) => {
     try {
-      const users = await storage.getUsers();
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+
+      // Get only users from the currently selected company
+      const users = await storage.getUsersByCompany(selectedCompany.id);
       res.json(users);
     } catch (error) {
+      console.error('Failed to get company users:', error);
       res.status(500).json({ message: "Failed to get users" });
     }
   });
@@ -1037,6 +1181,29 @@ The Saulto Analytics Team
       const validatedData = insertKpiMetricSchema.parse(dataWithCompanyId);
       const metric = await storage.createKpiMetric(validatedData);
       console.log("Successfully saved metric:", metric.name);
+
+      // Also save to metric registry if metricConfig is provided
+      if (dataWithCompanyId.metricConfig) {
+        try {
+          console.log("💾 Saving metric to registry:", dataWithCompanyId.metricConfig);
+          await storage.saveMetricToRegistry(companyId, {
+            metric_key: dataWithCompanyId.metricConfig.metric_key,
+            label: dataWithCompanyId.metricConfig.label,
+            source_table: dataWithCompanyId.metricConfig.source_fact || dataWithCompanyId.metricConfig.source_table,
+            expr_sql: dataWithCompanyId.metricConfig.expr_sql,
+            filters: dataWithCompanyId.metricConfig.filters || dataWithCompanyId.filterConfig,
+            unit: dataWithCompanyId.metricConfig.unit,
+            date_column: dataWithCompanyId.metricConfig.date_column || 'created_at',
+            description: dataWithCompanyId.metricConfig.description || dataWithCompanyId.description,
+            tags: dataWithCompanyId.metricConfig.tags || []
+          });
+          console.log("✅ Metric saved to registry successfully");
+        } catch (registryError) {
+          console.error("⚠️ Failed to save to metric registry:", registryError);
+          // Don't fail the whole request if registry save fails
+        }
+      }
+
       res.json(metric);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1046,6 +1213,254 @@ The Saulto Analytics Team
         console.log("Server error:", error);
         res.status(500).json({ message: "Failed to create KPI metric" });
       }
+    }
+  });
+
+  // New Metrics Series Endpoint (uses date dimension + metric registry)
+  app.get("/api/company/metrics-series", async (req, res) => {
+    try {
+      // Use validated company ID from middleware
+      const companyId = getValidatedCompanyId(req);
+
+      const { start_date, end_date, granularity = 'month' } = req.query as { 
+        start_date?: string; 
+        end_date?: string; 
+        granularity?: string; 
+      };
+
+      if (!start_date || !end_date) {
+        return res.status(400).json({ message: "start_date and end_date are required" });
+      }
+
+      console.log(`📊 Building metrics series for company ${companyId}: ${start_date} to ${end_date} by ${granularity}`);
+      
+      // Get active metrics from registry
+      const metrics = await storage.getCompanyMetricRegistry(companyId);
+      console.log(`📋 Found ${metrics.length} active metrics in registry`);
+
+      if (metrics.length === 0) {
+        return res.json([]);
+      }
+
+      // Build the spine CTE
+      const spineCTE = `
+        spine AS (
+          SELECT CASE '${granularity}'
+            WHEN 'day'    THEN d.dt
+            WHEN 'week'   THEN d.week_start
+            WHEN 'month'  THEN d.month_start
+            WHEN 'quarter' THEN d.quarter_start
+            WHEN 'year'   THEN d.year_start
+          END AS ts
+          FROM shared_utils.dim_date d
+          WHERE d.dt >= '${start_date}'::date AND d.dt < '${end_date}'::date
+          GROUP BY 1
+        )`;
+
+      // Build CTEs for each data source using tenant-scoped schema
+      const tenantBuilder = createTenantScopedSQL(postgresAnalyticsService.sql, companyId);
+      const sourceCTEs: string[] = [];
+      const metricSelects: string[] = [];
+
+      // Group metrics by source table to avoid duplicate CTEs
+      const metricsBySource = new Map<string, any[]>();
+      metrics.forEach(metric => {
+        const sourceTable = metric.source_table;
+        if (!metricsBySource.has(sourceTable)) {
+          metricsBySource.set(sourceTable, []);
+        }
+        metricsBySource.get(sourceTable)!.push(metric);
+      });
+
+      // Build source CTEs
+      metricsBySource.forEach((sourceMetrics, sourceTable) => {
+        const sourceName = sourceTable.replace('core_', '').replace('_', '');
+        const dateColumn = sourceMetrics[0].date_column || 'created_at';
+        
+        // Build aggregations for this source
+        const aggregations = sourceMetrics.map(metric => {
+          const whereClause = metric.filters ? 
+            `WHERE ${metric.filters}` : '';
+          
+          return `${metric.expr_sql} AS ${metric.metric_key}`;
+        }).join(',\n    ');
+
+        sourceCTEs.push(`
+          ${sourceName} AS (
+            SELECT
+              CASE '${granularity}'
+                WHEN 'day'    THEN d.dt
+                WHEN 'week'   THEN d.week_start
+                WHEN 'month'  THEN d.month_start
+                WHEN 'quarter' THEN d.quarter_start
+                WHEN 'year'   THEN d.year_start
+              END AS ts,
+              ${aggregations}
+            FROM ${tenantBuilder.schema}.${sourceTable} f
+            JOIN shared_utils.dim_date d ON d.dt = f.${dateColumn}::date
+            WHERE f.${dateColumn} >= '${start_date}'::date AND f.${dateColumn} < '${end_date}'::date
+            GROUP BY 1
+          )`);
+
+        // Add UNION selects for each metric from this source
+        sourceMetrics.forEach(metric => {
+          metricSelects.push(`SELECT ts, '${metric.label}' AS series, ${metric.metric_key} AS value FROM ${sourceName}`);
+        });
+      });
+
+      // Build complete query
+      const fullQuery = `
+        WITH params AS (
+          SELECT '${start_date}'::date AS start_date, '${end_date}'::date AS end_date, '${granularity}'::text AS g
+        ),
+        ${spineCTE},
+        ${sourceCTEs.join(',\n        ')},
+        metrics AS (
+          ${metricSelects.join('\n          UNION ALL ')}
+        )
+        SELECT s.ts, m.series, COALESCE(m.value, 0) AS value
+        FROM spine s
+        LEFT JOIN metrics m USING (ts)
+        WHERE m.series IS NOT NULL
+        ORDER BY s.ts, m.series
+      `;
+
+      console.log(`🔍 Generated metrics series query:\n${fullQuery}`);
+      
+      // Execute the query
+      const result = await postgresAnalyticsService.executeQuery(fullQuery, companyId);
+      
+      console.log(`✅ Metrics series query returned ${result.data?.length || 0} rows`);
+      res.json(result.data || []);
+
+    } catch (error) {
+      console.error("❌ Error generating metrics series:", error);
+      res.status(500).json({ 
+        message: "Failed to generate metrics series",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Populate Metric Registry with Jira metrics (for testing/setup)
+  app.post("/api/company/metric-registry/populate", async (req, res) => {
+    try {
+      const companyId = getValidatedCompanyId(req);
+      
+      console.log(`🔄 Populating metric registry for company ${companyId}...`);
+      
+      // Ensure analytics schema exists
+      const dbStorage = storage as any;
+      await dbStorage.ensureAnalyticsSchema(companyId);
+      
+      // Setup metric registry tables
+      await dbStorage.setupCompanyMetricRegistry(companyId);
+      
+      // Define Jira metrics for line charts
+      const jiraMetrics = [
+        {
+          metric_key: 'jira_story_points_completed',
+          label: 'Story Points Completed',
+          source_table: 'core_jira_issues', 
+          expr_sql: 'SUM(COALESCE(f.story_points, 0))',
+          date_column: 'resolved_at',
+          unit: 'count',
+          description: 'Total story points completed per time period',
+          tags: ['jira', 'productivity']
+        },
+        {
+          metric_key: 'jira_issues_resolved',
+          label: 'Issues Resolved',
+          source_table: 'core_jira_issues',
+          expr_sql: 'COUNT(*)',
+          date_column: 'resolved_at', 
+          unit: 'count',
+          description: 'Number of issues resolved per time period',
+          tags: ['jira', 'productivity']
+        },
+        {
+          metric_key: 'jira_avg_cycle_time',
+          label: 'Avg Cycle Time (Days)',
+          source_table: 'core_jira_issues',
+          expr_sql: 'AVG(EXTRACT(DAY FROM (f.resolved_at - f.created_at)))',
+          date_column: 'resolved_at',
+          unit: 'days',
+          description: 'Average cycle time from creation to resolution',
+          tags: ['jira', 'performance']
+        }
+      ];
+      
+      const results = [];
+      for (const metric of jiraMetrics) {
+        try {
+          console.log(`Adding metric: ${metric.label}`);
+          
+          await storage.saveMetricToRegistry(companyId, {
+            metric_key: metric.metric_key,
+            label: metric.label,
+            source_table: metric.source_table,
+            expr_sql: metric.expr_sql,
+            filters: null,
+            unit: metric.unit,
+            date_column: metric.date_column,
+            description: metric.description,
+            tags: metric.tags
+          });
+          
+          results.push({ metric_key: metric.metric_key, status: 'success' });
+          console.log(`✅ Added ${metric.label}`);
+        } catch (error) {
+          console.error(`❌ Failed to add ${metric.label}:`, error);
+          results.push({ metric_key: metric.metric_key, status: 'error', error: error.message });
+        }
+      }
+      
+      // Verify populated registry
+      const populatedRegistry = await storage.getCompanyMetricRegistry(companyId);
+      console.log(`✅ Registry now contains ${populatedRegistry.length} metrics`);
+      
+      res.json({
+        success: true,
+        message: `Populated ${results.filter(r => r.status === 'success').length} metrics`,
+        companyId,
+        results,
+        registryCount: populatedRegistry.length
+      });
+      
+    } catch (error) {
+      console.error("❌ Error populating metric registry:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to populate metric registry",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get Metric Registry for a company
+  app.get("/api/company/metric-registry", async (req, res) => {
+    try {
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+
+      const metrics = await storage.getCompanyMetricRegistry(companyId);
+      console.log(`📊 Retrieved ${metrics.length} metrics from registry for company ${companyId}`);
+      
+      res.json({
+        success: true,
+        companyId,
+        metrics,
+        count: metrics.length
+      });
+      
+    } catch (error) {
+      console.error("❌ Error retrieving metric registry:", error);
+      res.status(500).json({ 
+        message: "Failed to retrieve metric registry",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
@@ -2364,17 +2779,247 @@ CRITICAL REQUIREMENTS:
 
   // Admin API endpoints for multi-tenant management
 
-  app.get("/api/admin/companies", async (req, res) => {
+  app.get("/api/admin/companies", requireAdmin, async (req, res) => {
     try {
-      console.log("Fetching companies, current list:", companiesArray);
-      res.json(companiesArray);
+      console.log("Fetching companies from database...");
+      
+      // Get all companies from the database
+      const companies = await storage.getCompanies();
+      console.log("Found companies from database:", companies);
+      
+      // Add schema name and restore info to each company
+      const companiesWithDetails = companies.map(company => ({
+        ...company,
+        schemaName: `analytics_company_${company.id}`, // Show the analytics schema name
+        databaseName: `analytics_company_${company.id}`, // For admin page compatibility
+        status: company.isActive ? 'active' : 'inactive',
+        userCount: 0, // TODO: Add actual user count
+        createdAt: new Date(company.createdAt).toLocaleDateString(),
+        isDeleted: !!company.deletedAt,
+        canRestore: company.deletedAt && company.canRestore,
+        daysUntilPermanentDeletion: company.deletedAt ? 
+          Math.max(0, 30 - Math.floor((Date.now() - new Date(company.deletedAt).getTime()) / (1000 * 60 * 60 * 24))) : null
+      }));
+      
+      // Return the enhanced company data
+      res.json(companiesWithDetails);
     } catch (error: any) {
       console.error("Failed to get companies:", error);
       res.status(500).json({ message: "Failed to get companies" });
     }
   });
 
+  // Admin endpoint: Access company site (launch dashboard)
+  app.post("/api/admin/companies/:companyId/access", requireAdmin, auditAdminAction('company.access', 'company'), async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const company = await storage.getCompany(companyId);
+      
+      if (!company) {
+        return res.status(404).json({ success: false, error: "Company not found" });
+      }
 
+      if (company.deletedAt) {
+        return res.status(400).json({ success: false, error: "Cannot access deleted company" });
+      }
+
+      // Set the company in the admin's session (just like regular company selection)
+      (req.session as any).selectedCompany = {
+        id: company.id,
+        name: company.name,
+        slug: company.slug
+      };
+
+      res.json({ 
+        success: true, 
+        message: `Access granted to ${company.name}`,
+        redirectTo: `/dashboard` // Frontend should redirect to dashboard
+      });
+    } catch (error: any) {
+      console.error("Error accessing company:", error);
+      res.status(500).json({ success: false, error: "Failed to access company" });
+    }
+  });
+
+  // Admin endpoint: Soft delete company
+  app.delete("/api/admin/companies/:companyId", requireAdmin, auditAdminAction('company.delete', 'company'), async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { reason } = req.body;
+      const adminId = (req.session as any)?.user?.id;
+
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ success: false, error: "Company not found" });
+      }
+
+      if (company.deletedAt) {
+        return res.status(400).json({ success: false, error: "Company is already deleted" });
+      }
+
+      // Perform soft delete
+      const result = await storage.softDeleteCompany(companyId, adminId, reason || 'No reason provided');
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: `Company "${company.name}" has been soft deleted. Can be restored within 30 days.`,
+          deletedAt: new Date().toISOString(),
+          canRestore: true
+        });
+      } else {
+        res.status(500).json({ success: false, error: result.error });
+      }
+    } catch (error: any) {
+      console.error("Error soft deleting company:", error);
+      res.status(500).json({ success: false, error: "Failed to delete company" });
+    }
+  });
+
+  // Admin endpoint: Restore soft-deleted company
+  app.post("/api/admin/companies/:companyId/restore", requireAdmin, auditAdminAction('company.restore', 'company'), async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const adminId = (req.session as any)?.user?.id;
+
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ success: false, error: "Company not found" });
+      }
+
+      if (!company.deletedAt) {
+        return res.status(400).json({ success: false, error: "Company is not deleted" });
+      }
+
+      // Check if within 30-day restore window
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      if (new Date(company.deletedAt) < thirtyDaysAgo) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Company was deleted more than 30 days ago and cannot be restored" 
+        });
+      }
+
+      // Perform restore
+      const result = await storage.restoreCompany(companyId, adminId);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: `Company "${company.name}" has been restored successfully.`,
+          restoredAt: new Date().toISOString()
+        });
+      } else {
+        res.status(500).json({ success: false, error: result.error });
+      }
+    } catch (error: any) {
+      console.error("Error restoring company:", error);
+      res.status(500).json({ success: false, error: "Failed to restore company" });
+    }
+  });
+
+  // Admin endpoint: Get deleted companies (for restore interface)
+  app.get("/api/admin/companies/deleted", requireAdmin, async (req, res) => {
+    try {
+      const deletedCompanies = await storage.getDeletedCompanies();
+      
+      // Add restore eligibility info
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const companiesWithRestoreInfo = deletedCompanies.map(company => ({
+        ...company,
+        schemaName: `analytics_company_${company.id}`,
+        canRestore: company.deletedAt && new Date(company.deletedAt) > thirtyDaysAgo,
+        daysUntilPermanentDeletion: company.deletedAt ? 
+          Math.max(0, 30 - Math.floor((Date.now() - new Date(company.deletedAt).getTime()) / (1000 * 60 * 60 * 24))) : 0
+      }));
+
+      res.json(companiesWithRestoreInfo);
+    } catch (error: any) {
+      console.error("Error fetching deleted companies:", error);
+      res.status(500).json({ success: false, error: "Failed to fetch deleted companies" });
+    }
+  });
+
+  // Admin endpoint: Clear company selection (force admin to choose again)
+  app.post("/api/admin/clear-company", requireAdmin, auditAdminAction('admin.clear_company', 'session'), async (req, res) => {
+    try {
+      const previousCompany = (req.session as any)?.selectedCompany;
+      
+      // Clear the selected company
+      (req.session as any).selectedCompany = null;
+      
+      res.json({ 
+        success: true, 
+        message: previousCompany 
+          ? `Cleared selection of ${previousCompany.name}. Please select a company.`
+          : "No company was selected. Please select a company.",
+        requiresCompanySelection: true
+      });
+    } catch (error: any) {
+      console.error("Error clearing company selection:", error);
+      res.status(500).json({ success: false, error: "Failed to clear company selection" });
+    }
+  });
+
+  // Admin endpoint: Switch to different company (quick switch)
+  app.post("/api/admin/switch-company/:companyId", requireAdmin, auditAdminAction('admin.switch_company', 'company'), async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const company = await storage.getCompany(companyId);
+      
+      if (!company) {
+        return res.status(404).json({ success: false, error: "Company not found" });
+      }
+
+      if (company.deletedAt) {
+        return res.status(400).json({ success: false, error: "Cannot switch to deleted company" });
+      }
+
+      const previousCompany = (req.session as any)?.selectedCompany;
+      
+      // Switch to the new company
+      (req.session as any).selectedCompany = {
+        id: company.id,
+        name: company.name,
+        slug: company.slug
+      };
+
+      res.json({ 
+        success: true, 
+        message: previousCompany 
+          ? `Switched from ${previousCompany.name} to ${company.name}`
+          : `Now accessing ${company.name}`,
+        selectedCompany: {
+          id: company.id,
+          name: company.name,
+          slug: company.slug
+        }
+      });
+    } catch (error: any) {
+      console.error("Error switching company:", error);
+      res.status(500).json({ success: false, error: "Failed to switch company" });
+    }
+  });
+
+  // Admin endpoint: Get current company selection status
+  app.get("/api/admin/current-company", requireAdmin, async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      
+      res.json({
+        success: true,
+        selectedCompany: selectedCompany || null,
+        requiresCompanySelection: !selectedCompany
+      });
+    } catch (error: any) {
+      console.error("Error getting current company:", error);
+      res.status(500).json({ success: false, error: "Failed to get current company" });
+    }
+  });
 
   app.get("/api/metrics/kpi", async (req, res) => {
     try {
@@ -3103,7 +3748,13 @@ CRITICAL REQUIREMENTS:
   // Dynamic Schema Discovery API Endpoints
   app.get('/api/company/data-sources', async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      console.log('🔍 Session debug:', {
+        hasSession: !!req.session,
+        selectedCompany: req.session?.selectedCompany,
+        sessionId: req.sessionID
+      });
+      
+      const companyId = req.session?.selectedCompany?.id;
       if (!companyId) {
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }
@@ -3122,13 +3773,22 @@ CRITICAL REQUIREMENTS:
 
   app.get('/api/company/table-columns/:tableName', async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      console.log('🔍 Table columns request session debug:', {
+        hasSession: !!req.session,
+        selectedCompany: req.session?.selectedCompany,
+        sessionId: req.session?.id,
+        tableName: req.params.tableName
+      });
+
+      const companyId = req.session?.selectedCompany?.id;
       if (!companyId) {
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }
 
       const { tableName } = req.params;
+      console.log(`📋 Fetching columns for table ${tableName} in company ${companyId}`);
       const columns = await storage.getCompanyTableColumns(companyId, tableName);
+      console.log(`✅ Found ${columns?.length || 0} columns for table ${tableName}`);
       
       res.json({ success: true, columns });
     } catch (error) {
@@ -3143,7 +3803,7 @@ CRITICAL REQUIREMENTS:
 
   app.get('/api/company/discover-schema', async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      const companyId = req.session?.selectedCompany?.id;
       if (!companyId) {
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }

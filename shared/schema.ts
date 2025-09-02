@@ -8,6 +8,11 @@ export const companies = pgTable("companies", {
   slug: text("slug").unique().notNull(), // Used for analytics schema naming: analytics_company_{id}
   createdAt: timestamp("created_at").defaultNow(),
   isActive: boolean("is_active").default(true),
+  // Soft delete fields
+  deletedAt: timestamp("deleted_at"), // When company was soft deleted
+  deletedBy: integer("deleted_by").references(() => users.id), // Admin who deleted it
+  deleteReason: text("delete_reason"), // Reason for deletion
+  canRestore: boolean("can_restore").default(true), // Can be restored within 30 days
 });
 
 export const users = pgTable("users", {
@@ -20,8 +25,43 @@ export const users = pgTable("users", {
   status: text("status").default("active"), // 'active', 'invited', 'disabled'
   companyId: bigint("company_id", { mode: "number" }).references(() => companies.id),
   role: text("role").default("user"), // 'admin', 'user', 'viewer'
+  permissions: jsonb("permissions").default([]), // Array of permission strings
+  mfaEnabled: boolean("mfa_enabled").default(false),
+  mfaSecret: text("mfa_secret"), // TOTP secret for 2FA
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Permissions table for RBAC
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(), // e.g., 'companies:read', 'users:write'
+  description: text("description"),
+  category: text("category"), // e.g., 'companies', 'users', 'audit'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Role-Permission mapping
+export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull(), // 'admin', 'user', 'viewer'
+  permissionId: integer("permission_id").references(() => permissions.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Audit log for admin actions
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  action: text("action").notNull(), // e.g., 'company.select', 'user.impersonate'
+  resource: text("resource"), // e.g., 'company:123', 'user:456'
+  details: jsonb("details"), // Additional context
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  sessionId: text("session_id"),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const dataSources = pgTable("data_sources", {
@@ -272,8 +312,32 @@ export const insertMetricRegistrySchema = createInsertSchema(metricRegistry).omi
   updatedAt: true,
 });
 
+// Schema validation for new tables
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types for Goals and Metric Registry
 export type Goal = typeof goals.$inferSelect;
 export type InsertGoal = z.infer<typeof insertGoalSchema>;
 export type MetricRegistry = typeof metricRegistry.$inferSelect;
 export type InsertMetricRegistry = z.infer<typeof insertMetricRegistrySchema>;
+
+// Types for new RBAC and audit tables
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

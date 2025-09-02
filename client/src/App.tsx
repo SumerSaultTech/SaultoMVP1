@@ -11,7 +11,6 @@ import DataBrowser from "@/pages/data-browser";
 import CompanySelection from "@/pages/company-selection";
 import Login from "@/pages/login";
 
-import AdminPage from "@/pages/admin";
 import MetricsManagement from "@/pages/metrics-management";
 import UserManagement from "@/pages/user-management";
 import SaultoChat from "@/pages/saultochat";
@@ -50,7 +49,6 @@ function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean
       <Route path={`/company/${companyId}/metric-reports/:id/view`} component={MetricReportViewer} />
       <Route path={`/company/${companyId}/metric-reports`} component={MetricReports} />
       <Route path={`/company/${companyId}/users`} component={UserManagement} />
-      <Route path={`/company/${companyId}/admin`} component={AdminPage} />
       
       {/* Legacy routes - redirect to company-specific routes */}
       <Route path="/" component={() => <Dashboard />} />
@@ -62,7 +60,6 @@ function Router({ isAuthenticated, selectedCompany }: { isAuthenticated: boolean
       <Route path="/metric-reports/:id/view" component={MetricReportViewer} />
       <Route path="/metric-reports" component={() => <MetricReports />} />
       <Route path="/users" component={() => <UserManagement />} />
-      <Route path="/admin" component={() => <AdminPage />} />
       
       {/* Global routes */}
       <Route path="/companies" component={CompanySelection} />

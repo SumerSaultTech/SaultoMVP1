@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Database, BarChart3, Settings, Shield, Target, LogOut, Users, MessageCircle, GitBranch, FileText, Menu, ChevronLeft } from "lucide-react";
+import { Database, BarChart3, Settings, Shield, Target, LogOut, Users, MessageCircle, GitBranch, FileText, Menu, ChevronLeft, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
@@ -23,6 +23,26 @@ export default function Sidebar() {
 
   const companyId = getCompanyId();
 
+  // Get user data from localStorage to check if sysadmin
+  const getUserData = () => {
+    const isAuthenticated = localStorage.getItem("isAuthenticated");
+    if (isAuthenticated === "true") {
+      // Check if user data is stored (from login response)
+      const userData = localStorage.getItem("userData");
+      if (userData) {
+        try {
+          return JSON.parse(userData);
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+    return null;
+  };
+
+  const userData = getUserData();
+  const isSysAdmin = userData?.isAdmin === true;
+
   // Build company-specific navigation paths using unique company ID
   const getNavPath = (path: string) => {
     if (!companyId) return path; // Fallback to legacy paths
@@ -41,7 +61,6 @@ export default function Sidebar() {
     { path: "/metrics", icon: Target, label: "Metrics Management" },
     { path: "/data-browser", icon: Database, label: "Data Browser" },
     { path: "/setup", icon: Settings, label: "Setup & Config" },
-    { path: "/admin", icon: Shield, label: "Admin Panel" },
     { path: "/users", icon: Users, label: "User Management" },
   ];
 
@@ -107,8 +126,26 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Logout Button */}
-      <div className={`${isCollapsed ? 'px-2' : 'p-4'} py-4 border-t border-gray-200 transition-all duration-300`}>
+      {/* Sysadmin Company Switch & Logout Buttons */}
+      <div className={`${isCollapsed ? 'px-2' : 'p-4'} py-4 border-t border-gray-200 transition-all duration-300 space-y-2`}>
+        {/* Switch Company Button - Only for Sysadmins */}
+        {isSysAdmin && (
+          <Button
+            onClick={() => {
+              // Clear company selection and redirect to company selection page
+              localStorage.removeItem("selectedCompany");
+              window.location.href = "/companies";
+            }}
+            variant="outline"
+            className={`w-full flex items-center justify-center space-x-2 text-green-600 hover:text-green-800 border-green-200 hover:border-green-300 ${isCollapsed ? 'p-2' : ''}`}
+            title={isCollapsed ? "Switch Company" : undefined}
+          >
+            <Building2 className="w-4 h-4" />
+            {!isCollapsed && <span>Switch Company</span>}
+          </Button>
+        )}
+        
+        {/* Sign Out Button */}
         <Button
           onClick={() => {
             localStorage.clear();

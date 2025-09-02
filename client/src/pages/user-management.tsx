@@ -41,12 +41,60 @@ export default function UserManagement() {
     role: "user"
   });
 
+  // Pre-select current company for non-sysadmins
+  const resetNewUserForm = () => {
+    const defaultCompanyId = (!isSysAdmin && currentCompany) ? currentCompany.id.toString() : "";
+    setNewUser({ 
+      firstName: "", 
+      lastName: "", 
+      email: "", 
+      companyId: defaultCompanyId, 
+      role: "user" 
+    });
+  };
+
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
   });
 
+  // For regular users, only show current company. For sysadmins, show all companies.
+  const getUserData = () => {
+    const userData = localStorage.getItem("userData");
+    if (userData) {
+      try {
+        return JSON.parse(userData);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const getCurrentCompany = () => {
+    const selectedCompany = localStorage.getItem("selectedCompany");
+    if (selectedCompany) {
+      try {
+        return JSON.parse(selectedCompany);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const userData = getUserData();
+  const currentCompany = getCurrentCompany();
+  const isSysAdmin = userData?.isAdmin === true;
+
   const { data: companies, isLoading: companiesLoading } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
+    select: (data) => {
+      // If not a sysadmin, only show current company
+      if (!isSysAdmin && currentCompany) {
+        return data.filter(company => company.id === currentCompany.id);
+      }
+      return data;
+    }
   });
 
   const createUserMutation = useMutation({
@@ -63,7 +111,7 @@ export default function UserManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setShowCreateForm(false);
-      setNewUser({ firstName: "", lastName: "", email: "", companyId: "", role: "user" });
+      resetNewUserForm();
       toast({
         title: "Invitation Sent",
         description: "User invitation has been sent successfully. They will receive an email to set up their account.",
@@ -145,7 +193,10 @@ export default function UserManagement() {
           </p>
         </div>
         <Button 
-          onClick={() => setShowCreateForm(true)}
+          onClick={() => {
+            resetNewUserForm();
+            setShowCreateForm(true);
+          }}
           className="flex items-center gap-2"
         >
           <Plus className="h-4 w-4" />
@@ -322,7 +373,7 @@ export default function UserManagement() {
               <Button 
                 onClick={() => {
                   setShowCreateForm(false);
-                  setNewUser({ firstName: "", lastName: "", email: "", companyId: "", role: "user" });
+                  resetNewUserForm();
                 }}
                 variant="outline"
               >
@@ -401,7 +452,10 @@ export default function UserManagement() {
               <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No users found</h3>
               <p className="text-gray-600 mb-4">Get started by creating your first user.</p>
-              <Button onClick={() => setShowCreateForm(true)}>
+              <Button onClick={() => {
+                resetNewUserForm();
+                setShowCreateForm(true);
+              }}>
                 Create User
               </Button>
             </CardContent>

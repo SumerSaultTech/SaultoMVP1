@@ -12,7 +12,7 @@ interface Company {
   id: number;
   name: string;
   slug: string;
-  snowflakeDatabase: string;
+  schemaName: string;
   isActive: boolean;
 }
 
@@ -26,7 +26,7 @@ export default function CompanySelection() {
   });
 
   const createCompanyMutation = useMutation({
-    mutationFn: async (data: { name: string; slug: string; snowflakeDatabase: string }) => {
+    mutationFn: async (data: { name: string; slug: string }) => {
       return await apiRequest("/api/companies", "POST", data);
     },
     onSuccess: () => {
@@ -90,12 +90,10 @@ export default function CompanySelection() {
     }
 
     const slug = newCompanyName.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
-    const snowflakeDatabase = `${slug}_db`;
 
     createCompanyMutation.mutate({
       name: newCompanyName,
       slug,
-      snowflakeDatabase,
     });
   };
 
@@ -135,7 +133,7 @@ export default function CompanySelection() {
                           {company.name}
                         </h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Database: {company.snowflakeDatabase}
+                          Schema: {company.schemaName}
                         </p>
                       </div>
                     </div>

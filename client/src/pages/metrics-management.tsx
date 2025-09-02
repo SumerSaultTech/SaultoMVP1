@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Sparkles } from "lucide-react";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, apiRequestJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
 import FilterBuilder, { type FilterTree } from "@/components/metrics/filter-builder";
@@ -34,8 +34,20 @@ interface MetricFormData {
   mainDataSource?: string;
   table?: string;
   valueColumn?: string;
+  aggregationType?: string;
   unit?: string;
   tags?: string[];
+  dateColumn?: string;
+  useCalculatedField?: boolean;
+  calculationType?: string;
+  dateFromColumn?: string;
+  dateToColumn?: string;
+  timeUnit?: string;
+  conditionalField?: string;
+  conditionalOperator?: string;
+  conditionalValue?: string;
+  convertToNumber?: boolean;
+  handleNulls?: boolean;
 }
 
 
@@ -50,6 +62,14 @@ const METRIC_FORMATS = [
   { value: "currency", label: "Currency ($)" },
   { value: "percentage", label: "Percentage (%)" },
   { value: "number", label: "Number" },
+];
+
+const AGGREGATION_TYPES = [
+  { value: "SUM", label: "Sum" },
+  { value: "AVG", label: "Average" },
+  { value: "COUNT", label: "Count" },
+  { value: "MIN", label: "Minimum" },
+  { value: "MAX", label: "Maximum" },
 ];
 
 export default function MetricsManagement() {
@@ -80,6 +100,18 @@ export default function MetricsManagement() {
     dataSource: "",
     metricType: "revenue",
     valueColumn: "",
+    aggregationType: "SUM",
+    dateColumn: "",
+    useCalculatedField: false,
+    calculationType: "time_difference",
+    dateFromColumn: "",
+    dateToColumn: "",
+    timeUnit: "days",
+    conditionalField: "",
+    conditionalOperator: "=",
+    conditionalValue: "",
+    convertToNumber: false,
+    handleNulls: true,
   });
 
   const { data: metrics = [], isLoading } = useQuery({
@@ -90,6 +122,15 @@ export default function MetricsManagement() {
   const { data: companyDataSources = [], isLoading: isLoadingDataSources } = useQuery({
     queryKey: ["/api/company/data-sources"],
     select: (response) => response.dataSources || [],
+    enabled: true, // Always try to fetch - let backend handle "no company" case
+    retry: 2,
+    retryDelay: 1000,
+    onSuccess: (data) => {
+      console.log('✅ Data sources loaded successfully:', data);
+    },
+    onError: (error) => {
+      console.log('❌ Data sources query failed:', error);
+    },
   });
 
   const metricsArray = Array.isArray(metrics) ? metrics : [];
@@ -174,8 +215,20 @@ export default function MetricsManagement() {
       mainDataSource: "",
       table: "",
       valueColumn: "",
+      aggregationType: "SUM",
       unit: "",
       tags: [],
+      dateColumn: "",
+      useCalculatedField: false,
+      calculationType: "time_difference",
+      dateFromColumn: "",
+      dateToColumn: "",
+      timeUnit: "days",
+      conditionalField: "",
+      conditionalOperator: "=",
+      conditionalValue: "",
+      convertToNumber: false,
+      handleNulls: true,
     });
     setEditingMetric(null);
     setCurrentStep(1);
@@ -201,8 +254,20 @@ export default function MetricsManagement() {
       mainDataSource: "",
       table: "",
       valueColumn: "",
+      aggregationType: "SUM",
       unit: "",
       tags: [],
+      dateColumn: "",
+      useCalculatedField: false,
+      calculationType: "time_difference",
+      dateFromColumn: "",
+      dateToColumn: "",
+      timeUnit: "days",
+      conditionalField: "",
+      conditionalOperator: "=",
+      conditionalValue: "",
+      convertToNumber: false,
+      handleNulls: true,
     });
     setIsDialogOpen(true);
   };
@@ -249,18 +314,105 @@ export default function MetricsManagement() {
     // Generate metric_key from name
     const metricKey = formData.name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
     
-    // Generate SQL expressions based on format and value column
-    const generateExprSQL = (format: string, valueColumn: string) => {
-      switch (format) {
-        case 'currency':
-          return `sum(${valueColumn})`;
-        case 'percentage':
-          return `(count(case when ${valueColumn} > 0 then 1 end) * 100.0) / count(*)`;
-        case 'number':
-          return `count(*)`;
-        default:
-          return `sum(${valueColumn})`;
+    // Generate SQL expressions based on aggregation type, value column, and calculated fields
+    const generateExprSQL = (aggregationType: string, valueColumn: string, format: string, calculatedConfig: any) => {
+      // Handle calculated fields
+      if (formData.useCalculatedField && calculatedConfig) {
+        if (calculatedConfig.calculationType === 'time_difference') {
+          const fromCol = calculatedConfig.dateFromColumn;
+          const toCol = calculatedConfig.dateToColumn === 'CURRENT_DATE' ? 'CURRENT_DATE' : calculatedConfig.dateToColumn;
+          const unit = calculatedConfig.timeUnit || 'days';
+          
+          let expr;
+          if (unit === 'days') {
+            expr = `EXTRACT(DAY FROM (${toCol} - ${fromCol}))`;
+          } else if (unit === 'hours') {
+            expr = `EXTRACT(EPOCH FROM (${toCol} - ${fromCol})) / 3600`;
+          } else if (unit === 'weeks') {
+            expr = `EXTRACT(DAY FROM (${toCol} - ${fromCol})) / 7`;
+          } else {
+            expr = `EXTRACT(DAY FROM (${toCol} - ${fromCol}))`;
+          }
+          
+          if (aggregationType === 'AVG') {
+            expr = `AVG(${expr})`;
+          } else if (aggregationType === 'SUM') {
+            expr = `SUM(${expr})`;
+          } else if (aggregationType === 'COUNT') {
+            expr = `COUNT(${expr})`;
+          } else {
+            expr = `AVG(${expr})`; // Default to average for time differences
+          }
+          
+          // Handle NULL replacement
+          if (calculatedConfig.handleNulls) {
+            expr = `COALESCE(${expr}, 0)`;
+          }
+          
+          return expr;
+        }
+        
+        if (calculatedConfig.calculationType === 'conditional_count') {
+          const field = calculatedConfig.conditionalField;
+          const operator = calculatedConfig.conditionalOperator;
+          let value = calculatedConfig.conditionalValue;
+          
+          // Add quotes for string values (except for numbers)
+          if (isNaN(Number(value)) && operator !== 'IS NULL' && operator !== 'IS NOT NULL') {
+            value = `'${value}'`;
+          }
+          
+          return `COUNT(CASE WHEN ${field} ${operator} ${value} THEN 1 END)`;
+        }
+        
+        if (calculatedConfig.calculationType === 'conditional_sum') {
+          const field = calculatedConfig.conditionalField;
+          const operator = calculatedConfig.conditionalOperator;
+          let condValue = calculatedConfig.conditionalValue;
+          
+          // Add quotes for string values
+          if (isNaN(Number(condValue)) && operator !== 'IS NULL' && operator !== 'IS NOT NULL') {
+            condValue = `'${condValue}'`;
+          }
+          
+          let sumColumn = valueColumn || 'amount';
+          if (calculatedConfig.convertToNumber) {
+            sumColumn = `CAST(${sumColumn} AS NUMERIC)`;
+          }
+          
+          let expr = `SUM(CASE WHEN ${field} ${operator} ${condValue} THEN ${sumColumn} ELSE 0 END)`;
+          
+          if (calculatedConfig.handleNulls) {
+            expr = `COALESCE(${expr}, 0)`;
+          }
+          
+          return expr;
+        }
       }
+      
+      // Handle regular aggregations (existing logic)
+      if (format === 'percentage' && valueColumn && aggregationType === 'PERCENTAGE') {
+        return `(count(case when ${valueColumn} > 0 then 1 end) * 100.0) / count(*)`;
+      }
+      if (aggregationType === 'COUNT') {
+        return `count(*)`;
+      }
+      if (!valueColumn) {
+        return `count(*)`;
+      }
+      
+      let expr = `${aggregationType.toLowerCase()}(${valueColumn})`;
+      
+      // Apply data handling options for regular fields too
+      if (formData.convertToNumber && valueColumn) {
+        expr = `${aggregationType.toLowerCase()}(CAST(${valueColumn} AS NUMERIC))`;
+      }
+      
+      if (formData.handleNulls) {
+        expr = `COALESCE(${expr}, 0)`;
+      }
+      
+      return expr;
     };
 
     // Generate WHERE SQL from filter config if available
@@ -280,8 +432,19 @@ export default function MetricsManagement() {
         label: formData.name,
         unit: formData.unit || 'count',
         source_fact: formData.table || 'unknown_table',
-        expr_sql: generateExprSQL(formData.format, formData.valueColumn || 'amount'),
+        expr_sql: generateExprSQL(formData.aggregationType || 'SUM', formData.valueColumn || 'amount', formData.format, {
+          calculationType: formData.calculationType,
+          dateFromColumn: formData.dateFromColumn,
+          dateToColumn: formData.dateToColumn,
+          timeUnit: formData.timeUnit,
+          conditionalField: formData.conditionalField,
+          conditionalOperator: formData.conditionalOperator,
+          conditionalValue: formData.conditionalValue,
+          convertToNumber: formData.convertToNumber,
+          handleNulls: formData.handleNulls
+        }),
         where_sql: generateWhereSQL(formData.filterConfig),
+        date_column: formData.dateColumn || 'created_at',
         is_active: true,
         tags: formData.tags || [],
         description: formData.description
@@ -307,13 +470,19 @@ export default function MetricsManagement() {
 
   // Get available columns based on selected table (using dynamic API)
   const fetchAvailableColumns = async (table: string): Promise<string[]> => {
-    if (!table) return [];
+    if (!table) {
+      console.log('🔍 fetchAvailableColumns called with empty table');
+      return [];
+    }
+    
+    console.log(`🔍 fetchAvailableColumns called for table: ${table}`);
     
     try {
-      const response = await apiRequest(`/api/company/table-columns/${table}`);
+      const response = await apiRequestJson('GET', `/api/company/table-columns/${table}`);
+      console.log(`✅ Columns fetched for ${table}:`, response.columns);
       return response.columns?.map((col: { columnName: string }) => col.columnName) || [];
     } catch (error) {
-      console.error('Error fetching table columns:', error);
+      console.error(`❌ Failed to fetch columns for table ${table}:`, error);
       return [];
     }
   };
@@ -366,7 +535,7 @@ export default function MetricsManagement() {
       const tables = getAvailableTables(formData.mainDataSource);
       setAvailableTables(tables);
       // Clear table and value column when data source changes
-      setFormData(prev => ({ ...prev, table: "", valueColumn: "" }));
+      setFormData(prev => ({ ...prev, table: "", valueColumn: "", aggregationType: "SUM" }));
       setAvailableColumns([]);
     } else {
       setAvailableTables([]);
@@ -376,14 +545,23 @@ export default function MetricsManagement() {
 
   // Update available columns when table changes
   React.useEffect(() => {
+    console.log('🔍 Table useEffect triggered:', { 
+      mainDataSource: formData.mainDataSource, 
+      table: formData.table 
+    });
+    
     if (formData.mainDataSource && formData.table) {
-      const columns = getAvailableColumns(formData.mainDataSource, formData.table);
-      setAvailableColumns(columns);
-      // Clear value column if it's not in the new columns list
-      if (formData.valueColumn && !columns.includes(formData.valueColumn)) {
-        setFormData(prev => ({ ...prev, valueColumn: "" }));
-      }
+      console.log('✅ Both mainDataSource and table are set, fetching columns...');
+      fetchAvailableColumns(formData.table).then(columns => {
+        console.log('✅ Setting available columns:', columns);
+        setAvailableColumns(columns);
+        // Clear value column if it's not in the new columns list
+        if (formData.valueColumn && !columns.includes(formData.valueColumn)) {
+          setFormData(prev => ({ ...prev, valueColumn: "", aggregationType: "SUM" }));
+        }
+      });
     } else {
+      console.log('⚠️ Either mainDataSource or table is missing, clearing columns');
       setAvailableColumns([]);
     }
   }, [formData.mainDataSource, formData.table]);
@@ -400,7 +578,7 @@ export default function MetricsManagement() {
       const tables = getAvailableTables(formData.mainDataSource);
       setAvailableTables(tables);
       // Clear table and value column when data source changes
-      setFormData(prev => ({ ...prev, table: "", valueColumn: "" }));
+      setFormData(prev => ({ ...prev, table: "", valueColumn: "", aggregationType: "SUM" }));
       setAvailableColumns([]);
     } else {
       setAvailableTables([]);
@@ -408,20 +586,6 @@ export default function MetricsManagement() {
     }
   }, [formData.mainDataSource, companyDataSources]);
 
-  // Update available columns when table changes
-  React.useEffect(() => {
-    if (formData.table) {
-      fetchAvailableColumns(formData.table).then(columns => {
-        setAvailableColumns(columns);
-        // Clear value column if it's not in the new columns list
-        if (formData.valueColumn && !columns.includes(formData.valueColumn)) {
-          setFormData(prev => ({ ...prev, valueColumn: "" }));
-        }
-      });
-    } else {
-      setAvailableColumns([]);
-    }
-  }, [formData.table]);
 
   // Auto-update unit when format changes
   React.useEffect(() => {
@@ -429,13 +593,35 @@ export default function MetricsManagement() {
     setFormData(prev => ({ ...prev, unit: autoUnit }));
   }, [formData.format]);
 
+  // Debug logging for data sources
+  React.useEffect(() => {
+    console.log('🔍 Data sources state:', {
+      companyDataSources,
+      isLoadingDataSources,
+      length: companyDataSources.length
+    });
+  }, [companyDataSources, isLoadingDataSources]);
+
   // Auto-select first available data source when data sources are loaded
   React.useEffect(() => {
     if (companyDataSources.length > 0 && !formData.mainDataSource) {
       const firstSource = companyDataSources[0];
+      console.log('🎯 Auto-selecting first data source:', firstSource);
       setFormData(prev => ({ ...prev, mainDataSource: firstSource.sourceType }));
     }
   }, [companyDataSources, formData.mainDataSource]);
+
+  // Auto-select first available table when data source is selected
+  React.useEffect(() => {
+    if (formData.mainDataSource && !formData.table) {
+      const availableTables = getAvailableTables(formData.mainDataSource);
+      if (availableTables.length > 0) {
+        const firstTable = availableTables[0];
+        console.log('🎯 Auto-selecting first table:', firstTable);
+        setFormData(prev => ({ ...prev, table: firstTable }));
+      }
+    }
+  }, [formData.mainDataSource, formData.table]);
 
   // Auto-generate tags when relevant fields change
   React.useEffect(() => {
@@ -826,6 +1012,34 @@ export default function MetricsManagement() {
                                     }
                                   }
                                   
+                                  // Smart date column detection
+                                  let dateColumn = 'created_at';
+                                  if (mainDataSource === 'jira') {
+                                    if (name.includes('resolved') || name.includes('completed') || description.includes('resolved') || description.includes('completed')) {
+                                      dateColumn = 'resolved_at';
+                                    } else if (name.includes('closed') || description.includes('closed')) {
+                                      dateColumn = 'closed_at';
+                                    } else if (name.includes('updated') || description.includes('updated')) {
+                                      dateColumn = 'updated_at';
+                                    } else {
+                                      dateColumn = 'created_at';
+                                    }
+                                  } else if (mainDataSource === 'salesforce') {
+                                    if (name.includes('closed') || description.includes('closed') || name.includes('won') || description.includes('won')) {
+                                      dateColumn = 'closed_date';
+                                    } else if (name.includes('created') || description.includes('created')) {
+                                      dateColumn = 'created_date';
+                                    } else {
+                                      dateColumn = 'created_date';
+                                    }
+                                  } else if (mainDataSource === 'hubspot') {
+                                    if (name.includes('closed') || description.includes('closed')) {
+                                      dateColumn = 'close_date';
+                                    } else {
+                                      dateColumn = 'created_at';
+                                    }
+                                  }
+                                  
                                   // Smart value column detection
                                   let valueColumn = 'amount';
                                   if (format === 'currency') {
@@ -865,7 +1079,8 @@ export default function MetricsManagement() {
                                   return {
                                     mainDataSource,
                                     table,
-                                    valueColumn
+                                    valueColumn,
+                                    dateColumn
                                   };
                                 };
                                 
@@ -875,13 +1090,16 @@ export default function MetricsManagement() {
                                 
                                 // Update available tables and columns manually
                                 const newTables = getAvailableTables(smartConfig.mainDataSource);
-                                const newColumns = getAvailableColumns(smartConfig.mainDataSource, smartConfig.table);
                                 console.log('New tables:', newTables);
-                                console.log('New columns:', newColumns);
                                 
-                                // Update available options first
+                                // Fetch columns asynchronously
+                                fetchAvailableColumns(smartConfig.table).then(newColumns => {
+                                  console.log('New columns:', newColumns);
+                                  setAvailableColumns(newColumns);
+                                });
+                                
+                                // Update available tables
                                 setAvailableTables(newTables);
-                                setAvailableColumns(newColumns);
                                 setSelectKey(prev => prev + 1); // Force re-render of Select components
                                 
                                 // Update form data in sequence to ensure dependencies work
@@ -890,12 +1108,14 @@ export default function MetricsManagement() {
                                   mainDataSource: smartConfig.mainDataSource
                                 }));
                                 
-                                // Small delay then update table and value column
+                                // Small delay then update table, value column, and date column
                                 setTimeout(() => {
                                   setFormData(prevFormData => ({ 
                                     ...prevFormData, 
                                     table: smartConfig.table,
-                                    valueColumn: smartConfig.valueColumn
+                                    valueColumn: smartConfig.valueColumn,
+                                    dateColumn: smartConfig.dateColumn,
+                                    aggregationType: "SUM"
                                   }));
                                 }, 50);
                                 
@@ -903,7 +1123,7 @@ export default function MetricsManagement() {
                                 setTimeout(() => {
                                   toast({
                                     title: "AI Configuration Applied",
-                                    description: `Configured ${smartConfig.mainDataSource} → ${smartConfig.table} → ${smartConfig.valueColumn}`,
+                                    description: `Configured ${smartConfig.mainDataSource} → ${smartConfig.table} → ${smartConfig.valueColumn} (${smartConfig.dateColumn})`,
                                   });
                                 }, 100);
                               } else {
@@ -923,7 +1143,7 @@ export default function MetricsManagement() {
                             Configure with AI
                           </Button>
                         </div>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Main Data Source</label>
                             <Select 
@@ -991,6 +1211,266 @@ export default function MetricsManagement() {
                                 {availableColumns.map((column) => (
                                   <SelectItem key={column} value={column}>
                                     {column}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        
+                        {/* Calculated Field Toggle */}
+                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                          <div className="flex items-center space-x-3 mb-4">
+                            <Checkbox 
+                              id="useCalculatedField"
+                              checked={formData.useCalculatedField}
+                              onCheckedChange={(checked) => {
+                                setFormData({ ...formData, useCalculatedField: !!checked });
+                                // Reset calculation fields when toggling
+                                if (!checked) {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    useCalculatedField: false,
+                                    calculationType: "time_difference",
+                                    dateFromColumn: "",
+                                    dateToColumn: "",
+                                    timeUnit: "days"
+                                  }));
+                                }
+                              }}
+                            />
+                            <Label htmlFor="useCalculatedField" className="text-sm font-medium cursor-pointer">
+                              Use Calculated Field
+                            </Label>
+                          </div>
+                          
+                          {formData.useCalculatedField && (
+                            <div className="space-y-4">
+                              {/* Calculation Type */}
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-1 block">Calculation Type</label>
+                                <Select 
+                                  value={formData.calculationType} 
+                                  onValueChange={(value) => setFormData({ ...formData, calculationType: value })}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="time_difference">Time Difference</SelectItem>
+                                    <SelectItem value="conditional_count">Conditional Count</SelectItem>
+                                    <SelectItem value="conditional_sum">Conditional Sum</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              
+                              {/* Time Difference Configuration */}
+                              {formData.calculationType === "time_difference" && (
+                                <div className="grid grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-1 block">From Date</label>
+                                    <Select
+                                      value={formData.dateFromColumn || ""}
+                                      onValueChange={(value) => setFormData({ ...formData, dateFromColumn: value })}
+                                      disabled={!formData.table}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select start date" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {availableColumns.filter(column => 
+                                          column.toLowerCase().includes('date') || 
+                                          column.toLowerCase().includes('time') ||
+                                          column.toLowerCase().includes('created') ||
+                                          column.toLowerCase().includes('updated')
+                                        ).map((column) => (
+                                          <SelectItem key={column} value={column}>
+                                            {column}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-1 block">To Date</label>
+                                    <Select
+                                      value={formData.dateToColumn || ""}
+                                      onValueChange={(value) => setFormData({ ...formData, dateToColumn: value })}
+                                      disabled={!formData.table}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select end date" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {availableColumns.filter(column => 
+                                          column.toLowerCase().includes('date') || 
+                                          column.toLowerCase().includes('time') ||
+                                          column.toLowerCase().includes('resolved') ||
+                                          column.toLowerCase().includes('closed')
+                                        ).map((column) => (
+                                          <SelectItem key={column} value={column}>
+                                            {column}
+                                          </SelectItem>
+                                        ))}
+                                        <SelectItem value="CURRENT_DATE">Current Date</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-1 block">Time Unit</label>
+                                    <Select
+                                      value={formData.timeUnit}
+                                      onValueChange={(value) => setFormData({ ...formData, timeUnit: value })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="days">Days</SelectItem>
+                                        <SelectItem value="hours">Hours</SelectItem>
+                                        <SelectItem value="weeks">Weeks</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Conditional Aggregation Configuration */}
+                              {(formData.calculationType === "conditional_count" || formData.calculationType === "conditional_sum") && (
+                                <div className="grid grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-1 block">Field</label>
+                                    <Select
+                                      value={formData.conditionalField || ""}
+                                      onValueChange={(value) => setFormData({ ...formData, conditionalField: value })}
+                                      disabled={!formData.table}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select field" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {availableColumns.map((column) => (
+                                          <SelectItem key={column} value={column}>
+                                            {column}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-1 block">Condition</label>
+                                    <Select
+                                      value={formData.conditionalOperator}
+                                      onValueChange={(value) => setFormData({ ...formData, conditionalOperator: value })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="=">Equals (=)</SelectItem>
+                                        <SelectItem value="!=">Not Equals (!=)</SelectItem>
+                                        <SelectItem value=">">Greater Than (&gt;)</SelectItem>
+                                        <SelectItem value="<">Less Than (&lt;)</SelectItem>
+                                        <SelectItem value=">=">Greater or Equal (&gt;=)</SelectItem>
+                                        <SelectItem value="<=">Less or Equal (&lt;=)</SelectItem>
+                                        <SelectItem value="LIKE">Contains (LIKE)</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <label className="text-sm font-medium text-gray-700 mb-1 block">Value</label>
+                                    <Input
+                                      value={formData.conditionalValue}
+                                      onChange={(e) => setFormData({ ...formData, conditionalValue: e.target.value })}
+                                      placeholder="Enter value"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Data Handling Options */}
+                              <div className="flex items-center space-x-6">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox 
+                                    id="convertToNumber"
+                                    checked={formData.convertToNumber}
+                                    onCheckedChange={(checked) => setFormData({ ...formData, convertToNumber: !!checked })}
+                                  />
+                                  <Label htmlFor="convertToNumber" className="text-sm cursor-pointer">
+                                    Convert to Number
+                                  </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox 
+                                    id="handleNulls"
+                                    checked={formData.handleNulls}
+                                    onCheckedChange={(checked) => setFormData({ ...formData, handleNulls: !!checked })}
+                                  />
+                                  <Label htmlFor="handleNulls" className="text-sm cursor-pointer">
+                                    Replace NULL with 0
+                                  </Label>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Date Column *</label>
+                            <Select
+                              key={`dateColumn-${selectKey}`}
+                              value={formData.dateColumn || ""}
+                              onValueChange={(value) => setFormData({ ...formData, dateColumn: value })}
+                              disabled={!formData.table}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={formData.table ? "Select date column" : "Select table first"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableColumns.filter(column => 
+                                  column.toLowerCase().includes('date') || 
+                                  column.toLowerCase().includes('time') ||
+                                  column.toLowerCase().includes('created') ||
+                                  column.toLowerCase().includes('updated') ||
+                                  column.toLowerCase().includes('resolved') ||
+                                  column.toLowerCase().includes('closed')
+                                ).map((column) => (
+                                  <SelectItem key={column} value={column}>
+                                    {column}
+                                  </SelectItem>
+                                ))}
+                                {availableColumns.filter(column => 
+                                  !(column.toLowerCase().includes('date') || 
+                                    column.toLowerCase().includes('time') ||
+                                    column.toLowerCase().includes('created') ||
+                                    column.toLowerCase().includes('updated') ||
+                                    column.toLowerCase().includes('resolved') ||
+                                    column.toLowerCase().includes('closed'))
+                                ).map((column) => (
+                                  <SelectItem key={column} value={column}>
+                                    {column} (non-date)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Used for joining to date spine and time period filtering
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Aggregation Type</label>
+                            <Select
+                              value={formData.aggregationType || "SUM"}
+                              onValueChange={(value) => setFormData({ ...formData, aggregationType: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select aggregation" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {AGGREGATION_TYPES.map((type) => (
+                                  <SelectItem key={type.value} value={type.value}>
+                                    {type.label}
                                   </SelectItem>
                                 ))}
                               </SelectContent>

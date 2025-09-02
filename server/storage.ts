@@ -37,7 +37,20 @@ import {
 // Import postgres and drizzle for DatabaseStorage
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { sql, eq, and, desc } from 'drizzle-orm';
+import { sql, eq, and, desc, isNotNull, isNull } from 'drizzle-orm';
+
+// Import tenant-scoped query builder for multi-tenant safety
+import { 
+  createTenantScopedSQL, 
+  getTenantTable, 
+  getTenantMetricRegistry,
+  getTenantGoals,
+  getTenantTables,
+  getTenantTableColumns,
+  validateTenantSchema,
+  ensureTenantSchema,
+  type TenantQueryBuilder
+} from './services/tenant-query-builder';
 
 export interface IStorage {
   // Companies
@@ -45,12 +58,18 @@ export interface IStorage {
   getCompany(id: number): Promise<Company | undefined>;
   createCompany(company: InsertCompany): Promise<Company>;
   deleteCompany(companyId: number): Promise<{ success: boolean; error?: string }>;
+  // Soft delete methods
+  softDeleteCompany(companyId: number, deletedBy: number, reason: string): Promise<{ success: boolean; error?: string }>;
+  restoreCompany(companyId: number, restoredBy: number): Promise<{ success: boolean; error?: string }>;
+  getDeletedCompanies(): Promise<Company[]>;
 
   // Users
   getUsers(): Promise<User[]>;
+  getUsersByCompany(companyId: number): Promise<User[]>;
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined>;
 
   // Data Sources (company-scoped)
   getDataSources(companyId: number): Promise<DataSource[]>;
@@ -159,6 +178,10 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values());
   }
 
+  async getUsersByCompany(companyId: number): Promise<User[]> {
+    return Array.from(this.users.values()).filter(user => user.companyId === companyId);
+  }
+
   async getUser(id: number): Promise<User | undefined> {
     return this.users.get(id);
   }
@@ -183,6 +206,19 @@ export class MemStorage implements IStorage {
     };
     this.users.set(id, user);
     return user;
+  }
+
+  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+    const existingUser = this.users.get(id);
+    if (!existingUser) return undefined;
+    
+    const updatedUser: User = {
+      ...existingUser,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    this.users.set(id, updatedUser);
+    return updatedUser;
   }
 
   // Data Sources
@@ -518,8 +554,13 @@ export class MemStorage implements IStorage {
 // DatabaseStorage is disabled - using Snowflake instead of PostgreSQL
 import { snowflakeConfig } from "./db";
 
+// Import RBAC and MFA services
+import { rbacService } from './services/rbac-service';
+import { mfaService } from './services/mfa-service';
+
 export class DatabaseStorage implements IStorage {
   private db: any;
+  private client: any; // Raw postgres client for direct SQL queries
   
   constructor() {
     // Initialize database connection using the same pattern as postgres-analytics
@@ -527,9 +568,12 @@ export class DatabaseStorage implements IStorage {
     
     if (databaseUrl) {
       try {
-        const client = postgres(databaseUrl);
-        this.db = drizzle(client);
+        this.client = postgres(databaseUrl);
+        this.db = drizzle(this.client);
         console.log('✅ DatabaseStorage: Neon connection initialized successfully');
+        
+        // Initialize RBAC service with database instance
+        this.initializeRBAC();
       } catch (error) {
         console.error('❌ DatabaseStorage: Failed to connect to Neon database:', error);
         throw new Error('Failed to initialize database storage');
@@ -539,15 +583,29 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  private async initializeRBAC(): Promise<void> {
+    try {
+      // Initialize RBAC service with database instance
+      (rbacService as any).db = this.db;
+      await rbacService.initializePermissions();
+      
+      // Initialize MFA service with database instance
+      (mfaService as any).db = this.db;
+      
+      console.log('✅ RBAC and MFA services initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize RBAC services:', error);
+    }
+  }
 
   private throwError(): never {
     throw new Error("DatabaseStorage method not yet implemented for Neon");
   }
 
-  // Companies
+  // Companies (excludes soft deleted by default)
   async getCompanies(): Promise<Company[]> {
     try {
-      const result = await this.db.select().from(companies);
+      const result = await this.db.select().from(companies).where(isNull(companies.deletedAt));
       return result;
     } catch (error) {
       console.error('Failed to get companies:', error);
@@ -622,11 +680,144 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // Soft delete methods
+  async softDeleteCompany(companyId: number, deletedBy: number, reason: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`🗑️ Soft deleting company ${companyId} by user ${deletedBy}`);
+      
+      const result = await this.db.update(companies)
+        .set({
+          deletedAt: new Date(),
+          deletedBy: deletedBy,
+          deleteReason: reason,
+          canRestore: true,
+          isActive: false
+        })
+        .where(eq(companies.id, companyId))
+        .returning();
+      
+      if (result.length === 0) {
+        return { success: false, error: 'Company not found' };
+      }
+      
+      console.log(`✅ Company soft deleted successfully: ${result[0].name} (ID: ${companyId})`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to soft delete company:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async restoreCompany(companyId: number, restoredBy: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`🔄 Restoring company ${companyId} by user ${restoredBy}`);
+      
+      const result = await this.db.update(companies)
+        .set({
+          deletedAt: null,
+          deletedBy: null,
+          deleteReason: null,
+          canRestore: true,
+          isActive: true
+        })
+        .where(eq(companies.id, companyId))
+        .returning();
+      
+      if (result.length === 0) {
+        return { success: false, error: 'Company not found' };
+      }
+      
+      console.log(`✅ Company restored successfully: ${result[0].name} (ID: ${companyId})`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to restore company:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async getDeletedCompanies(): Promise<Company[]> {
+    try {
+      const result = await this.db.select()
+        .from(companies)
+        .where(isNotNull(companies.deletedAt));
+      return result;
+    } catch (error) {
+      console.error('Failed to get deleted companies:', error);
+      return [];
+    }
+  }
+
   // Users
-  async getUsers(): Promise<User[]> { return this.throwError(); }
-  async getUser(id: number): Promise<User | undefined> { return this.throwError(); }
-  async getUserByUsername(username: string): Promise<User | undefined> { return this.throwError(); }
-  async createUser(insertUser: InsertUser): Promise<User> { return this.throwError(); }
+  async getUsers(): Promise<User[]> {
+    try {
+      const result = await this.db.select().from(users);
+      return result;
+    } catch (error) {
+      console.error('Failed to get users:', error);
+      return [];
+    }
+  }
+
+  async getUsersByCompany(companyId: number): Promise<User[]> {
+    try {
+      const result = await this.db.select().from(users).where(eq(users.companyId, companyId));
+      return result;
+    } catch (error) {
+      console.error('Failed to get users by company:', error);
+      return [];
+    }
+  }
+  
+  async getUser(id: number): Promise<User | undefined> {
+    try {
+      const result = await this.db.select().from(users).where(eq(users.id, id));
+      return result[0];
+    } catch (error) {
+      console.error('Failed to get user:', error);
+      return undefined;
+    }
+  }
+  
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    try {
+      const result = await this.db.select().from(users).where(eq(users.username, username));
+      return result[0];
+    } catch (error) {
+      console.error('Failed to get user by username:', error);
+      return undefined;
+    }
+  }
+  
+  async createUser(insertUser: InsertUser): Promise<User> {
+    try {
+      const result = await this.db.insert(users).values(insertUser).returning();
+      return result[0];
+    } catch (error) {
+      console.error('Failed to create user:', error);
+      throw error;
+    }
+  }
+  
+  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+    try {
+      const result = await this.db.update(users)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(users.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error('Failed to update user:', error);
+      return undefined;
+    }
+  }
 
   // Data Sources
   async getDataSources(companyId: number): Promise<DataSource[]> {
@@ -868,17 +1059,8 @@ export class DatabaseStorage implements IStorage {
   // Analytics Schema Management
   async ensureAnalyticsSchema(companyId: number): Promise<{ success: boolean; error?: string }> {
     try {
-      const schemaName = `analytics_company_${companyId}`;
-      
-      console.log(`🏗️ Creating analytics schema: ${schemaName}`);
-      
-      // Create analytics schema if it doesn't exist using direct SQL execution
-      const createSchemaQuery = `CREATE SCHEMA IF NOT EXISTS ${schemaName}`;
-      
-      // Use the database connection directly (same approach as postgres analytics service)
-      const result = await this.db.execute(sql.raw(createSchemaQuery));
-      
-      console.log(`✅ Analytics schema created/verified: ${schemaName}`);
+      // Use tenant-scoped schema management
+      await ensureTenantSchema(this.sql, companyId);
       return { success: true };
       
     } catch (error) {
@@ -892,17 +1074,17 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAnalyticsSchema(companyId: number): Promise<{ success: boolean; error?: string }> {
     try {
-      const schemaName = `analytics_company_${companyId}`;
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       
-      console.log(`🗑️ Deleting analytics schema: ${schemaName}`);
+      console.log(`🗑️ Deleting analytics schema: ${tenantBuilder.schema}`);
       
       // Drop the analytics schema and all its contents (CASCADE removes all tables/views/functions)
-      const dropSchemaQuery = `DROP SCHEMA IF EXISTS ${schemaName} CASCADE`;
+      const dropSchemaQuery = `DROP SCHEMA IF EXISTS ${tenantBuilder.schema} CASCADE`;
       
       // Use the database connection directly
       const result = await this.db.execute(sql.raw(dropSchemaQuery));
       
-      console.log(`✅ Analytics schema deleted: ${schemaName}`);
+      console.log(`✅ Analytics schema deleted: ${tenantBuilder.schema}`);
       return { success: true };
       
     } catch (error) {
@@ -924,24 +1106,21 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`📊 Found ${existingCompanies.length} existing companies:`, Array.from(existingCompanyIds));
       
-      // Get all analytics schemas
-      const schemasQuery = `
+      // Get all analytics schemas using safe pattern matching
+      const schemasResult = await this.sql`
         SELECT schema_name 
         FROM information_schema.schemata 
         WHERE schema_name LIKE 'analytics_company_%' 
         ORDER BY schema_name
       `;
       
-      const schemasResult = await this.db.execute(sql.raw(schemasQuery));
-      const allSchemas = schemasResult as any[];
-      
-      console.log(`🔍 Found ${allSchemas.length} analytics schemas:`, allSchemas.map(s => s.schema_name));
+      console.log(`🔍 Found ${schemasResult.length} analytics schemas:`, schemasResult.map((s: any) => s.schema_name));
       
       const cleaned: string[] = [];
       const errors: string[] = [];
       
       // Check each schema and remove orphaned ones
-      for (const schemaRow of allSchemas) {
+      for (const schemaRow of schemasResult) {
         const schemaName = schemaRow.schema_name;
         
         // Extract company ID from schema name
@@ -958,8 +1137,7 @@ export class DatabaseStorage implements IStorage {
           console.log(`🗑️ Removing orphaned schema: ${schemaName} (company ${companyId} not found)`);
           
           try {
-            const dropQuery = `DROP SCHEMA IF EXISTS ${schemaName} CASCADE`;
-            await this.db.execute(sql.raw(dropQuery));
+            await this.sql`DROP SCHEMA IF EXISTS ${this.sql.unsafe(schemaName)} CASCADE`;
             cleaned.push(schemaName);
             console.log(`✅ Cleaned up orphaned schema: ${schemaName}`);
           } catch (error) {
@@ -993,16 +1171,14 @@ export class DatabaseStorage implements IStorage {
       const companies = await this.getCompanies();
       console.log(`📊 Found ${companies.length} companies to check:`, companies.map(c => `${c.id} (${c.name})`));
       
-      // Get existing schemas
-      const schemasQuery = `
+      // Get existing schemas using safe query
+      const schemasResult = await this.sql`
         SELECT schema_name 
         FROM information_schema.schemata 
         WHERE schema_name LIKE 'analytics_company_%' 
         ORDER BY schema_name
       `;
-      
-      const schemasResult = await this.db.execute(sql.raw(schemasQuery));
-      const existingSchemas = new Set((schemasResult as any[]).map(row => row.schema_name));
+      const existingSchemas = new Set(schemasResult.map((row: any) => row.schema_name));
       
       console.log(`🔍 Found ${existingSchemas.size} existing schemas:`, Array.from(existingSchemas));
       
@@ -1011,7 +1187,8 @@ export class DatabaseStorage implements IStorage {
       
       // Check each company and create missing schemas
       for (const company of companies) {
-        const expectedSchema = `analytics_company_${company.id}`;
+        const tenantBuilder = createTenantScopedSQL(this.sql, company.id);
+        const expectedSchema = tenantBuilder.schema;
         
         if (!existingSchemas.has(expectedSchema)) {
           console.log(`🏗️ Creating missing schema for company ${company.id} (${company.name}): ${expectedSchema}`);
@@ -1188,18 +1365,11 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Company-specific Metric Registry (using raw SQL for company schemas)
+  // Company-specific Metric Registry (using tenant-scoped queries)
   async getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
-      const query = `
-        SELECT metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
-        FROM ${companySchema}.metric_registry 
-        WHERE is_active = true 
-        ORDER BY updated_at DESC
-      `;
-      const result = await this.db.execute(sql.raw(query));
-      return result as MetricRegistry[];
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      return await getTenantMetricRegistry(tenantBuilder);
     } catch (error) {
       console.error(`Error fetching metric registry for company ${companyId}:`, error);
       throw error;
@@ -1208,15 +1378,28 @@ export class DatabaseStorage implements IStorage {
 
   async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
-      const query = `
-        SELECT metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
-        FROM ${companySchema}.metric_registry 
-        WHERE metric_key = $1 
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const tableName = getTenantTable(tenantBuilder, 'metric_registry');
+      
+      const result = await tenantBuilder.sql`
+        SELECT 
+          metric_key,
+          label,
+          source_table,
+          expr_sql,
+          date_column,
+          unit,
+          filters,
+          tags,
+          description,
+          is_active,
+          created_at,
+          updated_at
+        FROM ${tenantBuilder.sql.unsafe(tableName)}
+        WHERE metric_key = ${metricKey}
         LIMIT 1
       `;
-      const result = await this.db.execute(sql.raw(query, [metricKey]));
-      return (result as MetricRegistry[])[0];
+      return result[0];
     } catch (error) {
       console.error(`Error fetching metric registry entry for company ${companyId}:`, error);
       throw error;
@@ -1225,18 +1408,27 @@ export class DatabaseStorage implements IStorage {
 
   async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
-      const query = `
-        INSERT INTO ${companySchema}.metric_registry 
-        (metric_key, label, source_fact, expr_sql, filters, unit, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const tableName = getTenantTable(tenantBuilder, 'metric_registry');
+      
+      const result = await tenantBuilder.sql`
+        INSERT INTO ${tenantBuilder.sql.unsafe(tableName)}
+        (metric_key, label, source_table, expr_sql, date_column, unit, filters, tags, description, is_active)
+        VALUES (
+          ${entry.metricKey}, 
+          ${entry.label}, 
+          ${entry.sourceTable || null}, 
+          ${entry.exprSql}, 
+          ${entry.dateColumn || null},
+          ${entry.unit}, 
+          ${entry.filters || null},
+          ${entry.tags || null},
+          ${entry.description || null},
+          ${entry.isActive ?? true}
+        )
+        RETURNING metric_key, label, source_table, expr_sql, date_column, unit, filters, tags, description, is_active, created_at, updated_at
       `;
-      const result = await this.db.execute(sql.raw(query, [
-        entry.metricKey, entry.label, entry.sourceFact, entry.exprSql, 
-        entry.filters, entry.unit, entry.isActive ?? true
-      ]));
-      return (result as MetricRegistry[])[0];
+      return result[0];
     } catch (error) {
       console.error(`Error creating metric registry entry for company ${companyId}:`, error);
       throw error;
@@ -1245,48 +1437,57 @@ export class DatabaseStorage implements IStorage {
 
   async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
-      const setParts: string[] = [];
-      const values: any[] = [];
-      let paramIndex = 1;
-
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const tableName = getTenantTable(tenantBuilder, 'metric_registry');
+      
+      // Build dynamic update query
+      const updateParts: string[] = [];
+      const values: any[] = [metricKey]; // metric_key for WHERE clause
+      
       if (updates.label !== undefined) {
-        setParts.push(`label = $${paramIndex++}`);
+        updateParts.push(`label = ${tenantBuilder.sql.placeholder}`);
         values.push(updates.label);
       }
-      if (updates.sourceFact !== undefined) {
-        setParts.push(`source_fact = $${paramIndex++}`);
-        values.push(updates.sourceFact);
+      if (updates.sourceTable !== undefined) {
+        updateParts.push(`source_table = ${tenantBuilder.sql.placeholder}`);
+        values.push(updates.sourceTable);
       }
       if (updates.exprSql !== undefined) {
-        setParts.push(`expr_sql = $${paramIndex++}`);
+        updateParts.push(`expr_sql = ${tenantBuilder.sql.placeholder}`);
         values.push(updates.exprSql);
       }
+      if (updates.dateColumn !== undefined) {
+        updateParts.push(`date_column = ${tenantBuilder.sql.placeholder}`);
+        values.push(updates.dateColumn);
+      }
       if (updates.filters !== undefined) {
-        setParts.push(`filters = $${paramIndex++}`);
+        updateParts.push(`filters = ${tenantBuilder.sql.placeholder}`);
         values.push(updates.filters);
       }
       if (updates.unit !== undefined) {
-        setParts.push(`unit = $${paramIndex++}`);
+        updateParts.push(`unit = ${tenantBuilder.sql.placeholder}`);
         values.push(updates.unit);
       }
       if (updates.isActive !== undefined) {
-        setParts.push(`is_active = $${paramIndex++}`);
+        updateParts.push(`is_active = ${tenantBuilder.sql.placeholder}`);
         values.push(updates.isActive);
       }
       
-      setParts.push(`updated_at = NOW()`);
-      values.push(metricKey);
-
-      const query = `
-        UPDATE ${companySchema}.metric_registry 
-        SET ${setParts.join(', ')}
-        WHERE metric_key = $${paramIndex}
-        RETURNING metric_key, label, source_fact, expr_sql, filters, unit, is_active, created_at, updated_at
-      `;
+      if (updateParts.length === 0) {
+        // No updates to make
+        return await this.getCompanyMetricRegistryEntry(companyId, metricKey);
+      }
       
-      const result = await this.db.execute(sql.raw(query, values));
-      return (result as MetricRegistry[])[0];
+      updateParts.push('updated_at = NOW()');
+      
+      const result = await tenantBuilder.sql.unsafe(`
+        UPDATE ${tableName}
+        SET ${updateParts.join(', ')}
+        WHERE metric_key = $1
+        RETURNING metric_key, label, source_table, expr_sql, date_column, unit, filters, tags, description, is_active, created_at, updated_at
+      `, values);
+      
+      return result[0];
     } catch (error) {
       console.error(`Error updating metric registry entry for company ${companyId}:`, error);
       throw error;
@@ -1295,14 +1496,15 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<boolean> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
-      const query = `
-        DELETE FROM ${companySchema}.metric_registry 
-        WHERE metric_key = $1
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const tableName = getTenantTable(tenantBuilder, 'metric_registry');
+      
+      const result = await tenantBuilder.sql`
+        DELETE FROM ${tenantBuilder.sql.unsafe(tableName)}
+        WHERE metric_key = ${metricKey}
         RETURNING metric_key
       `;
-      const result = await this.db.execute(sql.raw(query, [metricKey]));
-      return (result as any[]).length > 0;
+      return result.length > 0;
     } catch (error) {
       console.error(`Error deleting metric registry entry for company ${companyId}:`, error);
       throw error;
@@ -1317,16 +1519,16 @@ export class DatabaseStorage implements IStorage {
       // Read the company metric registry template
       const templateSql = await fs.readFile('./migrations/create_company_metric_registry.sql', 'utf8');
       
-      // Replace placeholders with actual company values
-      const companySchema = `analytics_company_${companyId}`;
+      // Replace placeholders with actual company values  
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       const companySql = templateSql
-        .replace(/{COMPANY_SCHEMA}/g, companySchema)
+        .replace(/{COMPANY_SCHEMA}/g, tenantBuilder.schema)
         .replace(/{COMPANY_ID}/g, companyId.toString());
       
       // Execute the SQL to create company-specific metric registry tables
       await this.db.execute(sql.raw(companySql));
       
-      console.log(`✅ Metric registry setup completed for company ${companyId} in schema ${companySchema}`);
+      console.log(`✅ Metric registry setup completed for company ${companyId} in schema ${tenantBuilder.schema}`);
       
       return { success: true };
     } catch (error) {
@@ -1341,36 +1543,31 @@ export class DatabaseStorage implements IStorage {
   // Dynamic Schema Introspection
   async getCompanyDataSources(companyId: number): Promise<{ sourceType: string; tables: string[]; displayName: string }[]> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
+      console.log(`🔍 getCompanyDataSources called for company ${companyId}`);
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       
-      // Get all tables in the company's analytics schema
-      const tablesQuery = `
-        SELECT table_name
-        FROM information_schema.tables 
-        WHERE table_schema = $1 
-        AND table_type = 'BASE TABLE'
-        ORDER BY table_name
-      `;
-      
-      const tablesResult = await this.db.execute(sql.raw(tablesQuery, [companySchema]));
-      const tables = tablesResult as { table_name: string }[];
+      // Get all tables in the company's analytics schema using tenant-scoped query
+      const tables = await getTenantTables(tenantBuilder);
+      console.log(`📋 Found ${tables.length} raw tables:`, tables);
       
       // Group tables by their data source based on naming patterns
-      // Only include core business tables (exclude RAW, STG, INT layers and internal tables)
+      // Only include CORE business tables (exclude RAW, STG, INT layers and internal tables)
       const sourceGroups: { [key: string]: { tables: string[]; displayName: string } } = {};
       
-      for (const table of tables) {
-        const tableName = table.table_name;
+      for (const rawTableName of tables) {
         
-        // Skip internal/technical tables
-        if (tableName.startsWith('raw_') || 
-            tableName.startsWith('stg_') || 
-            tableName.startsWith('int_') ||
-            tableName === 'goals' ||
-            tableName === 'metric_registry' ||
-            tableName === 'goals_daily') {
-          continue; // Skip these technical/internal tables
+        // Only include CORE tables - skip all other layers and internal tables
+        if (rawTableName.startsWith('raw_') || 
+            rawTableName.startsWith('stg_') || 
+            rawTableName.startsWith('int_') ||
+            rawTableName === 'goals' ||
+            rawTableName === 'metric_registry' ||
+            rawTableName === 'goals_daily') {
+          continue; // Skip RAW, STG, INT layers and internal tables
         }
+        
+        // Only CORE tables should reach here
+        let tableName = rawTableName;
         
         let sourceType = 'unknown';
         let displayName = 'Other';
@@ -1411,16 +1608,19 @@ export class DatabaseStorage implements IStorage {
           if (!sourceGroups[sourceType]) {
             sourceGroups[sourceType] = { tables: [], displayName };
           }
-          sourceGroups[sourceType].tables.push(tableName);
+          sourceGroups[sourceType].tables.push(rawTableName);
         }
       }
       
       // Convert to array format
-      return Object.entries(sourceGroups).map(([sourceType, data]) => ({
+      const result = Object.entries(sourceGroups).map(([sourceType, data]) => ({
         sourceType,
         tables: data.tables,
         displayName: data.displayName
       }));
+      
+      console.log(`✅ getCompanyDataSources returning for company ${companyId}:`, result);
+      return result;
       
     } catch (error) {
       console.error(`Error getting data sources for company ${companyId}:`, error);
@@ -1430,31 +1630,13 @@ export class DatabaseStorage implements IStorage {
 
   async getCompanyTableColumns(companyId: number, tableName: string): Promise<{ columnName: string; dataType: string; description?: string }[]> {
     try {
-      const companySchema = `analytics_company_${companyId}`;
-      
-      const columnsQuery = `
-        SELECT 
-          column_name,
-          data_type,
-          is_nullable,
-          column_default,
-          col_description(pgc.oid, ordinal_position) as description
-        FROM information_schema.columns isc
-        LEFT JOIN pg_class pgc ON pgc.relname = table_name
-        LEFT JOIN pg_namespace pgn ON pgn.oid = pgc.relnamespace
-        WHERE isc.table_schema = $1 
-        AND isc.table_name = $2
-        AND pgn.nspname = $1
-        ORDER BY ordinal_position
-      `;
-      
-      const result = await this.db.execute(sql.raw(columnsQuery, [companySchema, tableName]));
-      const columns = result as { column_name: string; data_type: string; description?: string }[];
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const columns = await getTenantTableColumns(tenantBuilder, tableName);
       
       return columns.map(col => ({
-        columnName: col.column_name,
-        dataType: col.data_type,
-        description: col.description || undefined
+        columnName: col.columnName,
+        dataType: col.dataType,
+        description: undefined  // getTenantTableColumns doesn't return description yet
       }));
       
     } catch (error) {
@@ -1489,6 +1671,56 @@ export class DatabaseStorage implements IStorage {
       return {};
     }
   }
+
+  // Metric Registry Methods
+  async saveMetricToRegistry(companyId: number, metricData: {
+    metric_key: string;
+    label: string;
+    source_table: string;
+    expr_sql: string;
+    filters?: any;
+    unit?: string;
+    date_column?: string;
+    description?: string;
+    tags?: string[];
+  }): Promise<void> {
+    try {
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const tableName = getTenantTable(tenantBuilder, 'metric_registry');
+      
+      await tenantBuilder.sql`
+        INSERT INTO ${tenantBuilder.sql.unsafe(tableName)}
+        (metric_key, label, source_table, expr_sql, filters, unit, date_column, description, tags)
+        VALUES (
+          ${metricData.metric_key},
+          ${metricData.label},
+          ${metricData.source_table},
+          ${metricData.expr_sql},
+          ${metricData.filters ? JSON.stringify(metricData.filters) : null},
+          ${metricData.unit || 'count'},
+          ${metricData.date_column || 'created_at'},
+          ${metricData.description || ''},
+          ${metricData.tags || []}
+        )
+        ON CONFLICT (metric_key) DO UPDATE SET
+          label = EXCLUDED.label,
+          source_table = EXCLUDED.source_table,
+          expr_sql = EXCLUDED.expr_sql,
+          filters = EXCLUDED.filters,
+          unit = EXCLUDED.unit,
+          date_column = EXCLUDED.date_column,
+          description = EXCLUDED.description,
+          tags = EXCLUDED.tags,
+          updated_at = NOW()
+      `;
+      
+      console.log(`✅ Metric saved to registry: ${metricData.metric_key} for company ${companyId}`);
+    } catch (error) {
+      console.error(`❌ Failed to save metric to registry:`, error);
+      throw error;
+    }
+  }
+
 }
 
 import fs from 'fs';
