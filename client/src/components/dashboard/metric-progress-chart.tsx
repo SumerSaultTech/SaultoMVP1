@@ -1,4 +1,7 @@
+import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import type { KpiMetric } from '@shared/schema';
 
 interface MetricProgressChartProps {
@@ -8,179 +11,194 @@ interface MetricProgressChartProps {
 
 interface ChartDataPoint {
   period: string;
-  goal: number;
+  goal: number | null;
   actual: number | null;
   isCurrent: boolean;
 }
 
-// Adaptive calculations to match the main component
-function getAdaptiveActual(yearlyValue: string, timePeriod: string, metricId: number) {
-  const yearly = parseFloat(yearlyValue.replace(/[$,]/g, ''));
+// Map metric names to our analytics series names
+function getSeriesName(metricName: string): string | null {
+  if (!metricName) return null;
   
-  const performanceMultipliers: Record<string, Record<number, number>> = {
-    weekly: {
-      1: 1.3, 2: 0.8, 3: 1.1, 4: 0.9, 5: 1.4, 6: 1.2, 7: 1.1, 8: 1.5, 9: 0.7, 10: 0.8, 11: 0.9, 12: 1.3
-    },
-    monthly: {
-      1: 1.1, 2: 0.95, 3: 1.05, 4: 1.0, 5: 1.2, 6: 1.1, 7: 0.9, 8: 1.2, 9: 0.85, 10: 0.9, 11: 1.05, 12: 1.1
-    },
-    quarterly: {
-      1: 1.05, 2: 0.98, 3: 1.08, 4: 0.95, 5: 1.1, 6: 1.08, 7: 0.95, 8: 1.15, 9: 0.9, 10: 0.85, 11: 1.02, 12: 1.05
-    }
+  const mapping: Record<string, string> = {
+    'jira story points completed': 'Jira Story Points Completed',
+    'jira issues resolved': 'Jira Issues Resolved', 
+    'average jira cycle time': 'Average Jira Cycle Time',
   };
   
-  const multiplier = performanceMultipliers[timePeriod]?.[metricId] || 1.0;
+  const key = metricName.toLowerCase().trim();
+  return mapping[key] || null;
+}
+
+// Get date range based on time period
+function getDateRange(timePeriod: string) {
+  // For testing with July-August 2025 data, simulate "today" as mid-August
+  const today = new Date(); // Use actual current date
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth(); // 0-based
+  const currentDate = today.getDate();
   
-  switch (timePeriod) {
-    case "weekly":
-      return (yearly / 52) * multiplier;
-    case "monthly":
-      return (yearly / 12) * multiplier;
-    case "quarterly":
-      return (yearly / 4) * multiplier;
-    case "ytd":
+  switch (timePeriod.toLowerCase()) {
+    case 'weekly view':
+    case 'weekly':
+      // Last 7 days (including today)
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - 6);
+      return {
+        start: format(weekStart, 'yyyy-MM-dd'),
+        end: format(today, 'yyyy-MM-dd'),
+        granularity: 'day'
+      };
+      
+    case 'monthly view':
+    case 'monthly':
+      // Current month - full month but actuals only through today
+      const monthStart = new Date(currentYear, currentMonth, 1);
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0); // Last day of month
+      return {
+        start: format(monthStart, 'yyyy-MM-dd'),
+        end: format(monthEnd, 'yyyy-MM-dd'),
+        granularity: 'day'
+      };
+      
+    case 'quarterly view':
+    case 'quarterly':
+      // Current quarter - full quarter but actuals only through today
+      const quarterStartMonth = Math.floor(currentMonth / 3) * 3;
+      const quarterStart = new Date(currentYear, quarterStartMonth, 1);
+      const quarterEnd = new Date(currentYear, quarterStartMonth + 3, 0); // Last day of quarter
+      return {
+        start: format(quarterStart, 'yyyy-MM-dd'),
+        end: format(quarterEnd, 'yyyy-MM-dd'),
+        granularity: 'week'
+      };
+      
+    case 'yearly view':
+    case 'yearly':
     default:
-      return yearly;
+      // Current year - full year but actuals only through today
+      const yearStart = new Date(currentYear, 0, 1);
+      const yearEnd = new Date(currentYear, 11, 31); // Dec 31
+      return {
+        start: format(yearStart, 'yyyy-MM-dd'),
+        end: format(yearEnd, 'yyyy-MM-dd'),
+        granularity: 'month'
+      };
   }
 }
 
-// Generate progress data based on metric and time period
-function generateProgressData(metric: Partial<KpiMetric>, timePeriod: string = "ytd") {
-  const currentValueStr = metric.value || "0";
-  const yearlyGoalStr = metric.yearlyGoal || "0";
-  const metricId = (metric as any).id || 1;
+export default function MetricProgressChart({ metric, timePeriod = "Monthly View" }: MetricProgressChartProps) {
+  const seriesName = getSeriesName(metric.name || '');
+  const { start, end, granularity } = getDateRange(timePeriod);
   
-  const yearlyGoal = parseFloat(yearlyGoalStr.replace(/[$,%\s]/g, '')) || 100;
-  const currentValue = getAdaptiveActual(currentValueStr, timePeriod, metricId);
   
-  if (isNaN(currentValue) || isNaN(yearlyGoal) || yearlyGoal <= 0) {
-    return [];
-  }
+  const { data: seriesData, isLoading } = useQuery({
+    queryKey: ['metric-series', seriesName, start, end, granularity],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        start,
+        end,
+        granularity,
+        include_goals: 'true',
+        cumulative: 'true', // Request cumulative data from backend
+        relative: 'true', // Request period-relative values starting from 0
+      });
 
-  switch (timePeriod) {
-    case "weekly":
-      return generateWeeklyData(currentValue, yearlyGoal);
-    case "monthly":
-      return generateMonthlyData(currentValue, yearlyGoal);
-    case "quarterly":
-      return generateQuarterlyData(currentValue, yearlyGoal);
-    case "ytd":
-    default:
-      return generateYTDData(currentValue, yearlyGoal);
-  }
-}
-
-function generateWeeklyData(currentValue: number, yearlyGoal: number) {
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weeklyGoal = yearlyGoal / 52;
-  const dailyGoal = weeklyGoal / 7;
-  const currentDay = new Date().getDay();
-  const currentDayIndex = currentDay === 0 ? 6 : currentDay - 1;
-  
-  return weekdays.map((day, index) => {
-    const cumulativeGoal = dailyGoal * (index + 1);
-    const cumulativeActual = index <= currentDayIndex ? (currentValue / 7) * (index + 1) : null;
-    
-    return {
-      period: day,
-      goal: Math.round(cumulativeGoal),
-      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
-      isCurrent: index === currentDayIndex
-    };
+      const response = await fetch(`/api/series?${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch metrics series data');
+      }
+      return response.json();
+    },
+    enabled: !!seriesName, // Only fetch if we have a valid series name
   });
-}
 
-function generateMonthlyData(currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentDay = today.getDate();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  
-  const allDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const monthlyGoal = yearlyGoal / 12;
-  const dailyGoal = monthlyGoal / daysInMonth;
-  
-  return allDays.map((day, index) => {
-    const cumulativeGoal = dailyGoal * day;
-    const cumulativeActual = day <= currentDay ? (currentValue / daysInMonth) * day : null;
+  // Process the data for the chart (backend provides cumulative data)
+  const chartData: ChartDataPoint[] = React.useMemo(() => {
+    if (!seriesData?.data || !seriesName) return [];
     
-    return {
-      period: day.toString(),
-      goal: Math.round(cumulativeGoal),
-      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
-      isCurrent: day === currentDay
-    };
-  });
-}
+    const today = new Date();
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    
+    // Filter actual data for this specific metric and date range
+    const actualDataPoints = seriesData.data
+      .filter((item: any) => {
+        const itemDate = new Date(item.ts);
+        return item.series === seriesName && 
+               itemDate >= startDate && 
+               itemDate <= endDate;
+      })
+      .map((item: any) => ({
+        ts: item.ts,
+        value: parseFloat(item.value) || 0
+      }))
+      .sort((a, b) => a.ts.localeCompare(b.ts));
+    
+    // Filter goal data for this specific metric and date range
+    const goalSeriesName = `Goal: ${seriesName}`;
+    const goalDataPoints = seriesData.data
+      .filter((item: any) => {
+        const itemDate = new Date(item.ts);
+        return item.series === goalSeriesName && 
+               itemDate >= startDate && 
+               itemDate <= endDate;
+      })
+      .map((item: any) => ({
+        ts: item.ts,
+        value: parseFloat(item.value) || 0
+      }))
+      .sort((a, b) => a.ts.localeCompare(b.ts));
+    
+    // Create a map of goal data by date for easy lookup
+    const goalDataMap = goalDataPoints.reduce((acc, item) => {
+      acc[item.ts] = item.value;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // Build chart data using actual dates from backend within the selected range
+    return actualDataPoints.map((item, index) => {
+      const date = new Date(item.ts);
+      const isInFuture = date > today;
+      
+      // Format period label based on granularity
+      let periodLabel = '';
+      if (granularity === 'day') {
+        periodLabel = format(date, 'MMM dd');
+      } else if (granularity === 'week') {
+        periodLabel = format(date, 'MMM dd');
+      } else if (granularity === 'month') {
+        periodLabel = format(date, 'MMM yyyy');
+      }
+      
+      return {
+        period: periodLabel,
+        actual: isInFuture ? null : item.value,
+        goal: goalDataMap[item.ts] || null,
+        isCurrent: !isInFuture && index === actualDataPoints.length - 1
+      };
+    });
+  }, [seriesData, seriesName, granularity, start, end]);
 
-function generateQuarterlyData(currentValue: number, yearlyGoal: number) {
-  const today = new Date();
-  const currentQuarter = Math.floor(today.getMonth() / 3) + 1;
-  const quarterStartMonth = (currentQuarter - 1) * 3;
-  const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1);
-  const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0);
-  
-  // Generate all weeks in the quarter
-  const weeks: Date[] = [];
-  const currentWeekStart = new Date(quarterStart);
-  
-  // Find the Monday of the first week of the quarter
-  const dayOfWeek = currentWeekStart.getDay();
-  currentWeekStart.setDate(currentWeekStart.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  
-  while (currentWeekStart <= quarterEnd) {
-    weeks.push(new Date(currentWeekStart));
-    currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  }
-  
-  const weeklyGoal = yearlyGoal / 52;
-  
-  return weeks.map((weekStart, index) => {
-    const cumulativeGoal = weeklyGoal * (index + 1);
-    const actualValue = weekStart <= today ? (currentValue / weeks.length) * (index + 1) : null;
-    
-    const weekLabel = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-    
-    return {
-      period: weekLabel,
-      goal: Math.round(cumulativeGoal),
-      actual: actualValue !== null ? Math.round(actualValue) : null,
-      isCurrent: index === weeks.length - 1
-    };
-  });
-}
-
-function generateYTDData(currentValue: number, yearlyGoal: number) {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthlyGoal = yearlyGoal / 12;
-  const currentMonth = new Date().getMonth();
-  
-  return months.map((month, index) => {
-    const cumulativeGoal = monthlyGoal * (index + 1);
-    const cumulativeActual = index <= currentMonth ? (currentValue / (currentMonth + 1)) * (index + 1) : null;
-    
-    return {
-      period: month,
-      goal: Math.round(cumulativeGoal),
-      actual: cumulativeActual ? Math.round(cumulativeActual) : null,
-      isCurrent: index === currentMonth
-    };
-  });
-}
-
-export default function MetricProgressChart({ metric, timePeriod = "ytd" }: MetricProgressChartProps) {
-  const data = generateProgressData(metric, timePeriod);
-  
-  if (!data || data.length === 0) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-32 text-gray-500 dark:text-gray-400">
-        <span className="text-sm">No data available</span>
+        <span className="text-sm">Loading...</span>
+      </div>
+    );
+  }
+
+  if (!seriesName || !chartData || chartData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-32 text-gray-500 dark:text-gray-400">
+        <span className="text-sm">No analytics data available</span>
       </div>
     );
   }
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+      <LineChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis 
           dataKey="period" 
@@ -199,23 +217,26 @@ export default function MetricProgressChart({ metric, timePeriod = "ytd" }: Metr
             fontSize: '12px'
           }}
         />
-        <Line 
-          type="monotone" 
-          dataKey="goal" 
-          stroke="#9ca3af" 
-          strokeDasharray="5 5" 
-          strokeWidth={2}
-          dot={false}
-          name="Goal"
-        />
+        {/* Goal line - will be added when goals are implemented */}
+        {chartData.some(d => d.goal !== null) && (
+          <Line 
+            type="monotone" 
+            dataKey="goal" 
+            stroke="#9ca3af" 
+            strokeDasharray="5 5" 
+            strokeWidth={2}
+            dot={false}
+            name="Goal"
+          />
+        )}
         <Line 
           type="monotone" 
           dataKey="actual" 
-          stroke="#3b82f6" 
+          stroke="#10b981" 
           strokeWidth={3}
-          dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+          dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
           name="Actual"
-          connectNulls={false}
+          connectNulls={false} // Don't connect lines across null values (future dates)
         />
       </LineChart>
     </ResponsiveContainer>

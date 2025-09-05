@@ -216,13 +216,14 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
             // Store raw values for calculations
             rawCurrentValue: dashboardMetric.currentValue,
             rawYearlyGoal: dashboardMetric.yearlyGoal,
+            rawPeriodGoal: dashboardMetric.goalValue, // Real period-specific goal from API
             // Keep formatted values for compatibility
-            value: dashboardMetric.format === 'currency' 
+            value: dashboardMetric.format === 'currency' && !isNaN(dashboardMetric.currentValue)
               ? `$${(dashboardMetric.currentValue / 1000000).toFixed(1)}M`
-              : `${dashboardMetric.currentValue.toLocaleString()}`,
-            yearlyGoal: dashboardMetric.format === 'currency' 
+              : `${dashboardMetric.currentValue?.toLocaleString() || '0'}`,
+            yearlyGoal: dashboardMetric.format === 'currency' && !isNaN(dashboardMetric.yearlyGoal)
               ? `$${(dashboardMetric.yearlyGoal / 1000000).toFixed(1)}M`
-              : `${dashboardMetric.yearlyGoal.toLocaleString()}`,
+              : `${dashboardMetric.yearlyGoal?.toLocaleString() || '0'}`,
             // Calculate progress based on real values
             goalProgress: dashboardMetric.yearlyGoal > 0 
               ? Math.round((dashboardMetric.currentValue / dashboardMetric.yearlyGoal) * 100).toString()
@@ -314,10 +315,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   // Time period options matching Snowflake service
   const timePeriodOptions = [
-    { value: "Daily View", label: "Daily View" },
-    { value: "Weekly View", label: "Weekly View" },
-    { value: "Monthly View", label: "Monthly View" }, 
-    { value: "Yearly View", label: "Yearly View" }
+    { value: "Weekly View", label: "Weekly" },
+    { value: "Monthly View", label: "Monthly" },
+    { value: "Quarterly View", label: "Quarterly" }, 
+    { value: "Yearly View", label: "Yearly" }
   ];
 
   // Helper function to get time period label
@@ -735,10 +736,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   {/* Current Value */}
                   <div>
                     <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                      {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
+                      {formatActualValue(metric.rawCurrentValue ?? getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric)} {getTimePeriodLabelShort(timePeriod)} goal
+                      vs. {formatActualValue(metric.rawPeriodGoal ?? getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric))} {getTimePeriodLabelShort(timePeriod)} goal
                     </div>
                   </div>
                   
@@ -840,10 +841,10 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                     {/* Current Value */}
                     <div>
                       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {formatActualValue(getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
+                        {formatActualValue(metric.rawCurrentValue ?? getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
                       </div>
                       <div className="text-sm text-gray-600 dark:text-gray-400">
-                        vs. {getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric)} {getTimePeriodLabelShort(timePeriod)} goal
+                        vs. {formatActualValue(metric.rawPeriodGoal ?? getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric))} {getTimePeriodLabelShort(timePeriod)} goal
                       </div>
                     </div>
                     

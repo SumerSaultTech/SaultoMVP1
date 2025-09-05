@@ -269,10 +269,10 @@ export default function NorthStarMetrics() {
 
   // Time period options matching Snowflake service
   const northStarTimePeriodOptions = [
-    { value: "Daily View", label: "Daily View" },
-    { value: "Weekly View", label: "Weekly View" },
-    { value: "Monthly View", label: "Monthly View" }, 
-    { value: "Yearly View", label: "Yearly View" }
+    { value: "Weekly View", label: "Weekly" },
+    { value: "Monthly View", label: "Monthly" },
+    { value: "Quarterly View", label: "Quarterly" }, 
+    { value: "Yearly View", label: "Yearly" }
   ];
 
   // Create North Star metrics from real Snowflake data

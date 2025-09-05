@@ -15,50 +15,24 @@ interface MetricsSeriesChartProps {
 
 const TIME_PERIOD_CONFIGS = {
   weekly: {
-    label: 'Weekly (Last 7 Days)',
-    granularity: 'day',
-    getDateRange: () => {
-      const end = new Date();
-      const start = subDays(end, 6);
-      return { start, end };
-    },
-    formatDate: (date: string) => format(new Date(date), 'MMM dd'),
+    label: 'Last 7 Days',
+    formatDate: (date: string) => format(new Date(date), 'EEE'), // Mon, Tue, Wed
+    formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
   },
   monthly: {
-    label: 'Monthly (Current Month)',
-    granularity: 'day',
-    getDateRange: () => {
-      const now = new Date();
-      return { 
-        start: startOfMonth(now), 
-        end: endOfMonth(now) 
-      };
-    },
-    formatDate: (date: string) => format(new Date(date), 'MMM dd'),
+    label: 'This Month',
+    formatDate: (date: string) => format(new Date(date), 'd'), // 1, 2, 3, ..., 31
+    formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
   },
   quarterly: {
-    label: 'Quarterly (Current Quarter)',
-    granularity: 'week',
-    getDateRange: () => {
-      const now = new Date();
-      return { 
-        start: startOfQuarter(now), 
-        end: endOfQuarter(now) 
-      };
-    },
-    formatDate: (date: string) => format(new Date(date), 'MMM dd'),
+    label: 'This Quarter',
+    formatDate: (date: string) => format(new Date(date), 'd'), // 1, 2, 3, ..., 92
+    formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
   },
   yearly: {
-    label: 'Yearly (Current Year)',
-    granularity: 'month',
-    getDateRange: () => {
-      const now = new Date();
-      return { 
-        start: startOfYear(now), 
-        end: endOfYear(now) 
-      };
-    },
-    formatDate: (date: string) => format(new Date(date), 'MMM yyyy'),
+    label: 'This Year',
+    formatDate: (date: string) => format(new Date(date), 'MMM'), // Jan, Feb, Mar
+    formatTooltip: (date: string) => format(new Date(date), 'MMM yyyy'),
   },
 } as const;
 
@@ -68,15 +42,12 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('monthly');
 
   const config = TIME_PERIOD_CONFIGS[selectedPeriod];
-  const { start, end } = config.getDateRange();
 
   const { data: metricsData, isLoading, error, refetch } = useQuery({
-    queryKey: ['metrics-series', selectedPeriod, start.toISOString(), end.toISOString()],
+    queryKey: ['metrics-series', selectedPeriod],
     queryFn: async () => {
       const params = new URLSearchParams({
-        start_date: format(start, 'yyyy-MM-dd'),
-        end_date: format(end, 'yyyy-MM-dd'),
-        granularity: config.granularity,
+        period_type: selectedPeriod,
       });
 
       const response = await fetch(`/api/company/metrics-series?${params}`);
@@ -88,19 +59,22 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-  const formatChartData = (data: any[]) => {
+  const formatChartData = (apiResponse: any) => {
+    const data = apiResponse?.data || [];
     if (!data || data.length === 0) return [];
 
-    // Group data by timestamp
+    // Group data by timestamp and use running_sum for chart values
     const grouped = data.reduce((acc: any, item: any) => {
-      const timestamp = item.ts || item.timestamp;
+      const timestamp = item.ts;
       if (!acc[timestamp]) {
         acc[timestamp] = { 
           timestamp, 
-          date: config.formatDate(timestamp) 
+          date: config.formatDate(timestamp),
+          fullDate: config.formatTooltip ? config.formatTooltip(timestamp) : config.formatDate(timestamp)
         };
       }
-      acc[timestamp][item.metric_key] = parseFloat(item.value) || 0;
+      // Use running_sum instead of value for cumulative chart
+      acc[timestamp][item.series] = parseFloat(item.running_sum) || 0;
       return acc;
     }, {});
 
@@ -109,21 +83,23 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
     );
   };
 
-  const chartData = formatChartData(metricsData || []);
+  const chartData = formatChartData(metricsData);
+  const progressMetrics = metricsData?.progress;
   
-  // Get unique metric keys for the legend
+  // Get unique series names for the legend
   const metricKeys = Array.from(
-    new Set(metricsData?.map((item: any) => item.metric_key) || [])
+    new Set(metricsData?.data?.map((item: any) => item.series) || [])
   );
 
   return (
     <Card className={className}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-primary" />
-          Metrics Trends
-        </CardTitle>
-        <div className="flex items-center gap-2">
+      <CardHeader className="space-y-4">
+        <div className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Metrics Trends
+          </CardTitle>
+          <div className="flex items-center gap-2">
           <Select
             value={selectedPeriod}
             onValueChange={(value: TimePeriod) => setSelectedPeriod(value)}
@@ -149,7 +125,43 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
             <TrendingUp className="mr-2 h-4 w-4" />
             Refresh
           </Button>
+          </div>
         </div>
+        
+        {/* Progress Indicators */}
+        {progressMetrics && !isLoading && !error && (
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="flex flex-col space-y-1">
+              <span className="text-muted-foreground">% On Pace</span>
+              <div className="flex items-center gap-2">
+                <div className={`text-lg font-semibold ${
+                  progressMetrics.onPace >= 100 ? 'text-green-600' : 
+                  progressMetrics.onPace >= 80 ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {progressMetrics.onPace}%
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  vs today's target
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex flex-col space-y-1">
+              <span className="text-muted-foreground">Progress</span>
+              <div className="flex items-center gap-2">
+                <div className={`text-lg font-semibold ${
+                  progressMetrics.progress >= 100 ? 'text-green-600' : 
+                  progressMetrics.progress >= 75 ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {progressMetrics.progress}%
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  toward period goal
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {isLoading && (
@@ -196,9 +208,13 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                 <Tooltip
                   content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
+                      // Find the full date from chartData
+                      const dataPoint = chartData.find(d => d.date === label);
+                      const fullDate = dataPoint?.fullDate || label;
+                      
                       return (
                         <div className="bg-background border rounded-lg shadow-lg p-3">
-                          <p className="font-semibold mb-2">{label}</p>
+                          <p className="font-semibold mb-2">{fullDate}</p>
                           {payload.map((entry, index) => (
                             <p key={index} style={{ color: entry.color }} className="text-sm">
                               {entry.name}: {typeof entry.value === 'number' 
@@ -213,16 +229,16 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                   }}
                 />
                 <Legend />
-                {metricKeys.map((metricKey: string, index: number) => (
+                {metricKeys.map((seriesName: string, index: number) => (
                   <Line
-                    key={metricKey}
+                    key={seriesName}
                     type="monotone"
-                    dataKey={metricKey}
+                    dataKey={seriesName}
                     stroke={CHART_COLORS[index % CHART_COLORS.length]}
                     strokeWidth={2}
                     dot={{ r: 4 }}
                     activeDot={{ r: 6 }}
-                    name={metricKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    name={seriesName}
                   />
                 ))}
               </LineChart>

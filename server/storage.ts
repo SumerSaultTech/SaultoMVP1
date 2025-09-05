@@ -129,6 +129,14 @@ export interface IStorage {
   updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined>;
   deleteCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<boolean>;
   
+  // Company-Specific Goals (analytics schema)
+  getCompanyGoals(companyId: number): Promise<any[]>;
+  getCompanyGoalsByMetric(companyId: number, metricKey: string): Promise<any[]>;
+  createCompanyGoal(companyId: number, goal: { metricKey: string; granularity: 'month' | 'quarter' | 'year'; periodStart: string; target: number }): Promise<any>;
+  updateCompanyGoal(companyId: number, goalId: number, updates: { target?: number }): Promise<any>;
+  deleteCompanyGoal(companyId: number, goalId: number): Promise<boolean>;
+  refreshCompanyGoalsDaily(companyId: number): Promise<void>;
+  
   // Schema Layer Operations
   executeQuery(query: string): Promise<{ success: boolean; data?: any[]; error?: string }>;
   checkTableExists(schema: string, tableName: string): Promise<boolean>;
@@ -561,6 +569,7 @@ import { mfaService } from './services/mfa-service';
 export class DatabaseStorage implements IStorage {
   private db: any;
   private client: any; // Raw postgres client for direct SQL queries
+  private sql: any; // Raw SQL query interface
   
   constructor() {
     // Initialize database connection using the same pattern as postgres-analytics
@@ -569,6 +578,7 @@ export class DatabaseStorage implements IStorage {
     if (databaseUrl) {
       try {
         this.client = postgres(databaseUrl);
+        this.sql = this.client; // Add sql property for raw SQL queries
         this.db = drizzle(this.client);
         console.log('✅ DatabaseStorage: Neon connection initialized successfully');
         
@@ -1718,6 +1728,119 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error(`❌ Failed to save metric to registry:`, error);
       throw error;
+    }
+  }
+
+  // Company-Specific Goals Methods (analytics schema)
+  async getCompanyGoals(companyId: number): Promise<any[]> {
+    try {
+      const schema = `analytics_company_${companyId}`;
+      const result = await this.sql`
+        SELECT id, metric_key, granularity, period_start, target, created_at
+        FROM ${this.sql(schema)}.goals 
+        ORDER BY period_start DESC, metric_key
+      `;
+      return result;
+    } catch (error) {
+      console.error('Failed to get company goals:', error);
+      return [];
+    }
+  }
+
+  async getCompanyGoalsByMetric(companyId: number, metricKey: string): Promise<any[]> {
+    try {
+      const schema = `analytics_company_${companyId}`;
+      const result = await this.sql`
+        SELECT id, metric_key, granularity, period_start, target, created_at
+        FROM ${this.sql(schema)}.goals 
+        WHERE metric_key = ${metricKey}
+        ORDER BY period_start DESC
+      `;
+      return result;
+    } catch (error) {
+      console.error('Failed to get company goals by metric:', error);
+      return [];
+    }
+  }
+
+  async createCompanyGoal(companyId: number, goal: { 
+    metricKey: string; 
+    granularity: 'month' | 'quarter' | 'year'; 
+    periodStart: string; 
+    target: number 
+  }): Promise<any> {
+    try {
+      const schema = `analytics_company_${companyId}`;
+      const result = await this.sql`
+        INSERT INTO ${this.sql(schema)}.goals (metric_key, granularity, period_start, target)
+        VALUES (${goal.metricKey}, ${goal.granularity}, ${goal.periodStart}, ${goal.target})
+        ON CONFLICT (metric_key, granularity, period_start) 
+        DO UPDATE SET target = EXCLUDED.target
+        RETURNING id, metric_key, granularity, period_start, target, created_at
+      `;
+      
+      // Refresh the materialized view to include new goal
+      await this.refreshCompanyGoalsDaily(companyId);
+      
+      return result[0];
+    } catch (error) {
+      console.error('Failed to create company goal:', error);
+      throw error;
+    }
+  }
+
+  async updateCompanyGoal(companyId: number, goalId: number, updates: { target?: number }): Promise<any> {
+    try {
+      const schema = `analytics_company_${companyId}`;
+      const result = await this.sql`
+        UPDATE ${this.sql(schema)}.goals 
+        SET target = ${updates.target}
+        WHERE id = ${goalId}
+        RETURNING id, metric_key, granularity, period_start, target, created_at
+      `;
+      
+      if (result.length > 0) {
+        // Refresh the materialized view
+        await this.refreshCompanyGoalsDaily(companyId);
+      }
+      
+      return result[0];
+    } catch (error) {
+      console.error('Failed to update company goal:', error);
+      throw error;
+    }
+  }
+
+  async deleteCompanyGoal(companyId: number, goalId: number): Promise<boolean> {
+    try {
+      const schema = `analytics_company_${companyId}`;
+      const result = await this.sql`
+        DELETE FROM ${this.sql(schema)}.goals 
+        WHERE id = ${goalId}
+        RETURNING id
+      `;
+      
+      if (result.length > 0) {
+        // Refresh the materialized view
+        await this.refreshCompanyGoalsDaily(companyId);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Failed to delete company goal:', error);
+      return false;
+    }
+  }
+
+  async refreshCompanyGoalsDaily(companyId: number): Promise<void> {
+    try {
+      const schema = `analytics_company_${companyId}`;
+      await this.sql`REFRESH MATERIALIZED VIEW ${this.sql(schema)}.goals_daily`;
+      console.log(`✅ Refreshed goals_daily materialized view for company ${companyId}`);
+    } catch (error) {
+      console.error(`Failed to refresh goals_daily for company ${companyId}:`, error);
+      // Don't throw - this is not critical for the operation
     }
   }
 

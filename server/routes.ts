@@ -28,6 +28,7 @@ import { createTenantScopedSQL } from "./services/tenant-query-builder";
 import { requireAdmin, auditAdminAction } from "./middleware/admin-middleware";
 import { rbacService, PERMISSIONS } from "./services/rbac-service";
 import { mfaService } from "./services/mfa-service";
+import { MetricsSeriesService } from "./services/metrics-series.js";
 
 
 // File upload configuration
@@ -117,6 +118,9 @@ const companiesArray: any[] = [
 ];
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  
+  // Initialize services
+  const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
   
   // Configure session middleware
   app.use(session({
@@ -1078,7 +1082,7 @@ The Saulto Analytics Team
   app.get("/api/dashboard/metrics-data", async (req, res) => {
     try {
       console.log("=== Dashboard metrics data request ===");
-      const timePeriod = req.query.timePeriod as string || 'ytd';
+      const timePeriod = req.query.timePeriod as string || 'Monthly View';
       console.log(`Time period filter: ${timePeriod}`);
       
       const companyId = req.session?.selectedCompany?.id;
@@ -1089,38 +1093,57 @@ The Saulto Analytics Team
       console.log(`Found ${metrics.length} metrics for dashboard`);
       
       const dashboardData = [];
+      const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
+
+      // Map time period from frontend to backend format
+      let periodType: 'weekly' | 'monthly' | 'quarterly' | 'yearly' = 'monthly';
+      if (timePeriod.toLowerCase().includes('weekly')) periodType = 'weekly';
+      else if (timePeriod.toLowerCase().includes('monthly')) periodType = 'monthly';
+      else if (timePeriod.toLowerCase().includes('quarterly')) periodType = 'quarterly';
+      else if (timePeriod.toLowerCase().includes('yearly')) periodType = 'yearly';
 
       for (const metric of metrics) {
         console.log(`Processing metric: ${metric.name} (ID: ${metric.id}) for period: ${timePeriod}`);
-        if (metric.sqlQuery) {
-          try {
-            // Use calculateMetric with the time period parameter and metric ID
-            const companyId = req.session?.selectedCompany?.id;
-      if (!companyId) {
-        return res.status(400).json({ message: "No company selected. Please select a company first." });
-      }
-            const dashboardResult = await postgresAnalyticsService.calculateMetric(metric.name, companyId, timePeriod, metric.id, metric.sqlQuery);
+        try {
+          console.log(`🔧 Calling MetricsSeriesService for ${metric.name}...`);
+          // Get metrics series data and progress metrics
+          const result = await metricsSeriesService.getMetricsSeries({
+            companyId,
+            periodType,
+            metricKeys: [metric.name] // Use the original metric name without transformation
+          });
+          
+          console.log(`🔍 Result for ${metric.name}:`, result ? 'has result' : 'null/undefined');
+          console.log(`🔍 Progress data:`, JSON.stringify(result?.progress, null, 2));
+          
+          if (result && result.progress) {
+            console.log(`✅ Dashboard data for metric ${metric.name}: Actual=${result.progress.todayActual}, Goal=${result.progress.todayGoal}, Progress=${result.progress.progress}%`);
             
-            if (dashboardResult) {
-              console.log(`Dashboard data for metric ${metric.name}: ${dashboardResult.currentValue} from real PostgreSQL analytics (${timePeriod})`);
-              // Add the calculated result with proper structure
-              dashboardData.push({
-                ...dashboardResult,
-                metricId: metric.id,
-                yearlyGoal: parseFloat(metric.yearlyGoal || String(dashboardResult.yearlyGoal)),
-                format: metric.format || dashboardResult.format
-              });
-            } else {
-              console.log(`❌ No data available for metric ${metric.name} - analytics tables may not exist or query failed`);
-              // Skip this metric entirely - don't add fake data
-            }
-          } catch (error) {
-            console.error(`❌ Error calculating metric ${metric.name}:`, error);
-            // Skip this metric - don't add fake data
+            // Database now provides period-relative values, so use them directly
+            console.log(`🔄 Using database period-relative values for ${metric.name}`);
+            
+            // Add the calculated result with proper structure (database provides period-relative values)
+            dashboardData.push({
+              metricId: metric.id,
+              metricName: metric.name,
+              currentValue: result.progress.todayActual, // Database provides period-relative progress
+              goalValue: result.progress.todayGoal, // Database provides period goal
+              yearlyGoal: result.progress.periodEndGoal,
+              progress: result.progress.progress, // % of period end goal achieved
+              onPace: result.progress.onPace, // % to today's goal
+              format: metric.format || 'number',
+              category: metric.category || 'general',
+              timePeriod: periodType
+            });
+          } else {
+            console.log(`❌ No progress data available for metric ${metric.name}`);
           }
+        } catch (error) {
+          console.error(`❌ Error processing metric ${metric.name}:`, error);
         }
       }
 
+      console.log(`📊 Returning ${dashboardData.length} dashboard metrics`);
       res.json(dashboardData);
     } catch (error) {
       console.error("Error fetching dashboard metrics data:", error);
@@ -1216,128 +1239,193 @@ The Saulto Analytics Team
     }
   });
 
-  // New Metrics Series Endpoint (uses date dimension + metric registry)
+  // Metrics Series Endpoint (uses pre-calculated time series data)
   app.get("/api/company/metrics-series", async (req, res) => {
     try {
       // Use validated company ID from middleware
       const companyId = getValidatedCompanyId(req);
 
-      const { start_date, end_date, granularity = 'month' } = req.query as { 
-        start_date?: string; 
-        end_date?: string; 
-        granularity?: string; 
+      const { period_type = 'monthly', metric_keys } = req.query as { 
+        period_type?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+        metric_keys?: string;
       };
 
-      if (!start_date || !end_date) {
-        return res.status(400).json({ message: "start_date and end_date are required" });
-      }
-
-      console.log(`📊 Building metrics series for company ${companyId}: ${start_date} to ${end_date} by ${granularity}`);
+      console.log(`📊 Getting metrics series for company ${companyId}, period: ${period_type}`);
       
-      // Get active metrics from registry
-      const metrics = await storage.getCompanyMetricRegistry(companyId);
-      console.log(`📋 Found ${metrics.length} active metrics in registry`);
-
-      if (metrics.length === 0) {
-        return res.json([]);
-      }
-
-      // Build the spine CTE
-      const spineCTE = `
-        spine AS (
-          SELECT CASE '${granularity}'
-            WHEN 'day'    THEN d.dt
-            WHEN 'week'   THEN d.week_start
-            WHEN 'month'  THEN d.month_start
-            WHEN 'quarter' THEN d.quarter_start
-            WHEN 'year'   THEN d.year_start
-          END AS ts
-          FROM shared_utils.dim_date d
-          WHERE d.dt >= '${start_date}'::date AND d.dt < '${end_date}'::date
-          GROUP BY 1
-        )`;
-
-      // Build CTEs for each data source using tenant-scoped schema
-      const tenantBuilder = createTenantScopedSQL(postgresAnalyticsService.sql, companyId);
-      const sourceCTEs: string[] = [];
-      const metricSelects: string[] = [];
-
-      // Group metrics by source table to avoid duplicate CTEs
-      const metricsBySource = new Map<string, any[]>();
-      metrics.forEach(metric => {
-        const sourceTable = metric.source_table;
-        if (!metricsBySource.has(sourceTable)) {
-          metricsBySource.set(sourceTable, []);
-        }
-        metricsBySource.get(sourceTable)!.push(metric);
+      // Parse metric keys if provided
+      const metricKeys = metric_keys ? metric_keys.split(',') : undefined;
+      
+      // Create metrics series service
+      const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
+      
+      // Validate query
+      const validation = metricsSeriesService.validateQuery({
+        companyId,
+        periodType: period_type,
+        metricKeys
       });
-
-      // Build source CTEs
-      metricsBySource.forEach((sourceMetrics, sourceTable) => {
-        const sourceName = sourceTable.replace('core_', '').replace('_', '');
-        const dateColumn = sourceMetrics[0].date_column || 'created_at';
-        
-        // Build aggregations for this source
-        const aggregations = sourceMetrics.map(metric => {
-          const whereClause = metric.filters ? 
-            `WHERE ${metric.filters}` : '';
-          
-          return `${metric.expr_sql} AS ${metric.metric_key}`;
-        }).join(',\n    ');
-
-        sourceCTEs.push(`
-          ${sourceName} AS (
-            SELECT
-              CASE '${granularity}'
-                WHEN 'day'    THEN d.dt
-                WHEN 'week'   THEN d.week_start
-                WHEN 'month'  THEN d.month_start
-                WHEN 'quarter' THEN d.quarter_start
-                WHEN 'year'   THEN d.year_start
-              END AS ts,
-              ${aggregations}
-            FROM ${tenantBuilder.schema}.${sourceTable} f
-            JOIN shared_utils.dim_date d ON d.dt = f.${dateColumn}::date
-            WHERE f.${dateColumn} >= '${start_date}'::date AND f.${dateColumn} < '${end_date}'::date
-            GROUP BY 1
-          )`);
-
-        // Add UNION selects for each metric from this source
-        sourceMetrics.forEach(metric => {
-          metricSelects.push(`SELECT ts, '${metric.label}' AS series, ${metric.metric_key} AS value FROM ${sourceName}`);
+      
+      if (!validation.valid) {
+        return res.status(400).json({ 
+          success: false, 
+          error: validation.error 
         });
+      }
+      
+      // Get metrics series data
+      const result = await metricsSeriesService.getMetricsSeries({
+        companyId,
+        periodType: period_type,
+        metricKeys
       });
 
-      // Build complete query
-      const fullQuery = `
-        WITH params AS (
-          SELECT '${start_date}'::date AS start_date, '${end_date}'::date AS end_date, '${granularity}'::text AS g
-        ),
-        ${spineCTE},
-        ${sourceCTEs.join(',\n        ')},
-        metrics AS (
-          ${metricSelects.join('\n          UNION ALL ')}
-        )
-        SELECT s.ts, m.series, COALESCE(m.value, 0) AS value
-        FROM spine s
-        LEFT JOIN metrics m USING (ts)
-        WHERE m.series IS NOT NULL
-        ORDER BY s.ts, m.series
-      `;
+      console.log(`✅ Retrieved ${result.series.length} data points with progress metrics`);
 
-      console.log(`🔍 Generated metrics series query:\n${fullQuery}`);
-      
-      // Execute the query
-      const result = await postgresAnalyticsService.executeQuery(fullQuery, companyId);
-      
-      console.log(`✅ Metrics series query returned ${result.data?.length || 0} rows`);
-      res.json(result.data || []);
-
+      res.json({
+        success: true,
+        data: result.series,
+        progress: result.progress,
+        period_type: period_type
+      });
     } catch (error) {
-      console.error("❌ Error generating metrics series:", error);
-      res.status(500).json({ 
-        message: "Failed to generate metrics series",
-        error: error instanceof Error ? error.message : 'Unknown error'
+      console.error("Error in metrics series endpoint:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch metrics series data"
+      });
+    }
+  });
+
+  // ETL Management Endpoints
+  app.post("/api/company/metrics-series/etl", async (req, res) => {
+    try {
+      const companyId = getValidatedCompanyId(req);
+      const { period_type, force_refresh = false } = req.body;
+      
+      if (!period_type) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "period_type is required" 
+        });
+      }
+      
+      const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
+      const result = await metricsSeriesService.runETLJob(companyId, period_type, force_refresh);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error running ETL job:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to run ETL job"
+      });
+    }
+  });
+
+  app.get("/api/company/metrics-series/etl/status", async (req, res) => {
+    try {
+      const companyId = getValidatedCompanyId(req);
+      const { period_type } = req.query as { period_type?: string };
+      
+      if (!period_type) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "period_type is required" 
+        });
+      }
+      
+      const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
+      const status = await metricsSeriesService.getETLStatus(companyId, period_type);
+      
+      res.json({ success: true, status });
+    } catch (error) {
+      console.error("Error getting ETL status:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get ETL status"
+      });
+    }
+  });
+
+  // Legacy /api/series endpoint for existing charts
+  app.get("/api/series", async (req, res) => {
+    try {
+      const companyId = getValidatedCompanyId(req);
+      const { start, end, granularity, include_goals, relative } = req.query as { 
+        start?: string; 
+        end?: string; 
+        granularity?: string; 
+        include_goals?: string;
+        relative?: string;
+      };
+
+      // Map old parameters to new system based on date range and granularity
+      let periodType: 'weekly' | 'monthly' | 'quarterly' | 'yearly' = 'monthly';
+      
+      // Parse date range to determine period
+      if (start && end) {
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff <= 7) {
+          periodType = 'weekly';
+        } else if (daysDiff <= 35) { // Up to ~1 month
+          periodType = 'monthly';
+        } else if (daysDiff <= 95) { // Up to ~3 months  
+          periodType = 'quarterly';
+        } else {
+          periodType = 'yearly';
+        }
+      } else {
+        // Fallback based on granularity only
+        if (granularity === 'day') {
+          periodType = 'monthly'; // Daily granularity typically for monthly view
+        } else if (granularity === 'week') {
+          periodType = 'quarterly'; 
+        } else if (granularity === 'month') {
+          periodType = 'yearly';
+        }
+      }
+
+      if (!['weekly', 'monthly', 'quarterly', 'yearly'].includes(periodType)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Period type must be one of: weekly, monthly, quarterly, yearly" 
+        });
+      }
+
+      console.log(`📊 Legacy API: Getting metrics series for company ${companyId}, period: ${periodType}`);
+      
+      const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
+      
+      // Get metrics series data
+      const result = await metricsSeriesService.getMetricsSeries({
+        companyId,
+        periodType
+      });
+
+      // Transform to legacy format
+      let legacyData = result.series.map((item: any) => ({
+        ts: item.ts,
+        series: item.series,
+        value: item.running_sum // Use running sum for legacy compatibility
+      }));
+
+      // Database now provides period-relative values directly, no need for complex calculations
+      if (relative === 'true') {
+        console.log(`✅ Legacy API: Using database period-relative values (no application calculation needed)`);
+        // The MetricsSeriesService already returns period-relative values from database
+        // No additional processing needed
+      }
+
+      console.log(`✅ Legacy API: Retrieved ${legacyData.length} data points${relative === 'true' ? ' (period-relative)' : ''}`);
+      res.json({ data: legacyData });
+    } catch (error) {
+      console.error("Error in legacy series endpoint:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch metrics series data"
       });
     }
   });
@@ -1713,6 +1801,122 @@ Convert the user request into the appropriate filter structure:
     } catch (error) {
       console.error("Error getting stale metrics:", error);
       res.status(500).json({ message: "Failed to get stale metrics" });
+    }
+  });
+
+  // Company-Specific Goals (analytics schema)
+  app.get("/api/company-goals", async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected" });
+      }
+      
+      const goals = await storage.getCompanyGoals(selectedCompany.id);
+      res.json(goals);
+    } catch (error) {
+      console.error('Failed to get company goals:', error);
+      res.status(500).json({ message: "Failed to get company goals" });
+    }
+  });
+
+  app.get("/api/company-goals/:metricKey", async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected" });
+      }
+      
+      const { metricKey } = req.params;
+      const goals = await storage.getCompanyGoalsByMetric(selectedCompany.id, metricKey);
+      res.json(goals);
+    } catch (error) {
+      console.error('Failed to get company goals by metric:', error);
+      res.status(500).json({ message: "Failed to get company goals by metric" });
+    }
+  });
+
+  app.post("/api/company-goals", async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected" });
+      }
+      
+      const { metricKey, granularity, periodStart, target } = req.body;
+      
+      // Validate required fields
+      if (!metricKey || !granularity || !periodStart || target === undefined) {
+        return res.status(400).json({ 
+          message: "Missing required fields: metricKey, granularity, periodStart, target" 
+        });
+      }
+      
+      // Validate granularity
+      if (!['month', 'quarter', 'year'].includes(granularity)) {
+        return res.status(400).json({ 
+          message: "granularity must be one of: month, quarter, year" 
+        });
+      }
+      
+      const goal = await storage.createCompanyGoal(selectedCompany.id, {
+        metricKey, granularity, periodStart, target: parseFloat(target)
+      });
+      
+      res.json({ success: true, goal });
+    } catch (error) {
+      console.error('Failed to create company goal:', error);
+      res.status(500).json({ message: "Failed to create company goal" });
+    }
+  });
+
+  app.put("/api/company-goals/:goalId", async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected" });
+      }
+      
+      const { goalId } = req.params;
+      const { target } = req.body;
+      
+      if (target === undefined) {
+        return res.status(400).json({ message: "target is required" });
+      }
+      
+      const goal = await storage.updateCompanyGoal(selectedCompany.id, parseInt(goalId), {
+        target: parseFloat(target)
+      });
+      
+      if (!goal) {
+        return res.status(404).json({ message: "Goal not found" });
+      }
+      
+      res.json({ success: true, goal });
+    } catch (error) {
+      console.error('Failed to update company goal:', error);
+      res.status(500).json({ message: "Failed to update company goal" });
+    }
+  });
+
+  app.delete("/api/company-goals/:goalId", async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected" });
+      }
+      
+      const { goalId } = req.params;
+      const success = await storage.deleteCompanyGoal(selectedCompany.id, parseInt(goalId));
+      
+      if (!success) {
+        return res.status(404).json({ message: "Goal not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Failed to delete company goal:', error);
+      res.status(500).json({ message: "Failed to delete company goal" });
     }
   });
 
@@ -3819,6 +4023,31 @@ CRITICAL REQUIREMENTS:
       });
     }
   });
+
+  // ===== NEW ANALYTICS API ENDPOINTS =====
+
+  // Metrics catalog endpoint - lists all available metrics for a company
+  app.get("/api/metrics", async (req, res) => {
+    try {
+      const selectedCompany = (req.session as any)?.selectedCompany;
+      if (!selectedCompany) {
+        return res.status(400).json({ message: "No company selected" });
+      }
+      
+      const metrics = await metricsSeriesService.getAvailableMetrics(selectedCompany.id);
+      
+      res.json({
+        companyId: selectedCompany.id,
+        companyName: selectedCompany.name,
+        metrics: metrics,
+        totalCount: metrics.length
+      });
+    } catch (error) {
+      console.error('Failed to get metrics catalog:', error);
+      res.status(500).json({ message: "Failed to get metrics catalog" });
+    }
+  });
+
 
   const httpServer = createServer(app);
   return httpServer;
