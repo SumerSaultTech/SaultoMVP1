@@ -18,21 +18,29 @@ const TIME_PERIOD_CONFIGS = {
     label: 'Last 7 Days',
     formatDate: (date: string) => format(new Date(date), 'EEE'), // Mon, Tue, Wed
     formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
+    dotRadius: 4, // Show all daily dots
+    strokeDashArray: undefined, // Solid line
   },
   monthly: {
     label: 'This Month',
     formatDate: (date: string) => format(new Date(date), 'd'), // 1, 2, 3, ..., 31
     formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
+    dotRadius: 3, // Smaller dots for daily data
+    strokeDashArray: undefined, // Solid line
   },
   quarterly: {
     label: 'This Quarter',
     formatDate: (date: string) => format(new Date(date), 'd'), // 1, 2, 3, ..., 92
     formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
+    dotRadius: 0, // Hide dots, too many data points
+    strokeDashArray: undefined, // Solid line
   },
   yearly: {
     label: 'This Year',
     formatDate: (date: string) => format(new Date(date), 'MMM'), // Jan, Feb, Mar
     formatTooltip: (date: string) => format(new Date(date), 'MMM yyyy'),
+    dotRadius: 6, // Larger dots for monthly data points
+    strokeDashArray: undefined, // Solid line
   },
 } as const;
 
@@ -236,8 +244,8 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                     dataKey={seriesName}
                     stroke={CHART_COLORS[index % CHART_COLORS.length]}
                     strokeWidth={2}
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
+                    dot={config.dotRadius === 0 ? false : { r: config.dotRadius }}
+                    activeDot={{ r: Math.max(6, config.dotRadius + 2) }}
                     name={seriesName}
                   />
                 ))}

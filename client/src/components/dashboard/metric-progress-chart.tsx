@@ -30,6 +30,20 @@ function getSeriesName(metricName: string): string | null {
   return mapping[key] || null;
 }
 
+// Get dot configuration based on granularity for chart cleanup
+function getDotConfig(granularity: string) {
+  switch (granularity) {
+    case 'day':
+      return { fill: '#10b981', strokeWidth: 2, r: 3 }; // Weekly/Monthly - smaller dots for daily data
+    case 'week':
+      return false; // Quarterly - no dots (clean lines)  
+    case 'month':
+      return { fill: '#10b981', strokeWidth: 2, r: 6 }; // Yearly - larger dots for monthly data
+    default:
+      return { fill: '#10b981', strokeWidth: 2, r: 4 }; // Default
+  }
+}
+
 // Get date range based on time period
 function getDateRange(timePeriod: string) {
   // For testing with July-August 2025 data, simulate "today" as mid-August
@@ -234,7 +248,7 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
           dataKey="actual" 
           stroke="#10b981" 
           strokeWidth={3}
-          dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+          dot={getDotConfig(granularity)}
           name="Actual"
           connectNulls={false} // Don't connect lines across null values (future dates)
         />
