@@ -6,6 +6,8 @@ import logging
 from typing import Dict, List, Any, Optional, Type
 from datetime import datetime
 import json
+import os
+import psycopg2
 from .simple_base_connector import SimpleBaseConnector, SyncResult
 from .simple_salesforce_connector import SimpleSalesforceConnector
 from .simple_jira_connector import SimpleJiraConnector
@@ -81,9 +83,59 @@ class SimpleConnectorManager:
             return False, error_msg
     
     def get_connector(self, company_id: int, connector_type: str) -> Optional[SimpleBaseConnector]:
-        """Get an existing connector instance"""
+        """Get a connector instance - loads from database if needed"""
         connector_key = f"{company_id}_{connector_type}"
-        return self.active_connectors.get(connector_key)
+        
+        # If already in memory, return it
+        if connector_key in self.active_connectors:
+            return self.active_connectors[connector_key]
+        
+        # Try to load from database
+        try:
+            db_credentials = self._load_credentials_from_database(company_id, connector_type)
+            if db_credentials:
+                logger.info(f"📥 Loading {connector_type} connector for company {company_id} from database")
+                # Create connector with database credentials
+                success = self.create_connector(connector_type, company_id, db_credentials, {})
+                if success:
+                    return self.active_connectors.get(connector_key)
+        except Exception as e:
+            logger.error(f"Failed to load connector from database: {e}")
+        
+        return None
+    
+    def _load_credentials_from_database(self, company_id: int, connector_type: str) -> Optional[Dict[str, Any]]:
+        """Load connector credentials from PostgreSQL database"""
+        try:
+            database_url = os.getenv('DATABASE_URL')
+            if not database_url:
+                logger.error("DATABASE_URL not found in environment")
+                return None
+            
+            conn = psycopg2.connect(database_url)
+            cur = conn.cursor()
+            
+            # Query data_sources table for this company and connector type
+            cur.execute("""
+                SELECT credentials 
+                FROM data_sources 
+                WHERE company_id = %s AND type = %s 
+                AND credentials IS NOT NULL
+            """, (company_id, connector_type))
+            
+            result = cur.fetchone()
+            conn.close()
+            
+            if result and result[0]:
+                logger.info(f"✅ Found {connector_type} credentials in database for company {company_id}")
+                return json.loads(result[0]) if isinstance(result[0], str) else result[0]
+            else:
+                logger.info(f"❌ No {connector_type} credentials found in database for company {company_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Database error loading credentials: {e}")
+            return None
     
     def test_connector(self, company_id: int, connector_type: str) -> tuple[bool, str]:
         """Test a connector connection"""

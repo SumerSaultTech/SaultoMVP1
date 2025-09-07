@@ -78,6 +78,7 @@ export interface IStorage {
   updateDataSource(id: number, updates: Partial<InsertDataSource>): Promise<DataSource | undefined>;
   getDataSourcesByCompany(companyId: number): Promise<DataSource[]>;
   getDataSourceByInstanceId(instanceId: string): Promise<DataSource | undefined>;
+  updateDataSourceSyncTime(companyId: number, connectorType: string, syncTime: Date): Promise<void>;
 
   // SQL Models (company-scoped)
   getSqlModels(companyId: number): Promise<SqlModel[]>;
@@ -273,6 +274,20 @@ export class MemStorage implements IStorage {
       }
       return false;
     });
+  }
+
+  async updateDataSourceSyncTime(companyId: number, connectorType: string, syncTime: Date): Promise<void> {
+    // Find the data source by company and type
+    for (const [id, dataSource] of this.dataSources.entries()) {
+      if (dataSource.companyId === companyId && dataSource.type === connectorType) {
+        // Update the lastSyncAt time
+        this.dataSources.set(id, { ...dataSource, lastSyncAt: syncTime });
+        console.log(`✅ Updated ${connectorType} sync time for company ${companyId} (Mock)`);
+        return;
+      }
+    }
+    
+    console.warn(`⚠️ No ${connectorType} data source found for company ${companyId} (Mock)`);
   }
 
   // SQL Models
@@ -881,6 +896,22 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('Failed to get data source by instance ID:', error);
       return undefined;
+    }
+  }
+
+  async updateDataSourceSyncTime(companyId: number, connectorType: string, syncTime: Date): Promise<void> {
+    try {
+      await this.db.update(dataSources)
+        .set({ lastSyncAt: syncTime })
+        .where(and(
+          eq(dataSources.companyId, companyId),
+          eq(dataSources.type, connectorType)
+        ));
+      
+      console.log(`✅ Updated ${connectorType} sync time for company ${companyId}`);
+    } catch (error) {
+      console.error(`❌ Failed to update ${connectorType} sync time:`, error);
+      throw error;
     }
   }
 

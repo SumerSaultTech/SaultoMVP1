@@ -27,6 +27,8 @@ import { validateTenantAccess, validateCompanyParam, getValidatedCompanyId, getS
 import { createTenantScopedSQL } from "./services/tenant-query-builder";
 import { requireAdmin, auditAdminAction } from "./middleware/admin-middleware";
 import { rbacService, PERMISSIONS } from "./services/rbac-service";
+import { syncScheduler } from "./services/sync-scheduler";
+// Force server reload to initialize sync scheduler
 import { mfaService } from "./services/mfa-service";
 import { MetricsSeriesService } from "./services/metrics-series.js";
 
@@ -121,6 +123,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Initialize services
   const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
+  
+  // Ensure sync scheduler is started
+  console.log('🔧 Initializing sync scheduler...');
+  // Force the module to execute by referencing the syncScheduler
+  if (syncScheduler) {
+    console.log('✅ Sync scheduler loaded and available');
+  }
   
   // Configure session middleware
   app.use(session({
@@ -3911,6 +3920,41 @@ CRITICAL REQUIREMENTS:
       res.status(500).json({
         success: false,
         error: "Failed to create schema layers",
+        details: error.message
+      });
+    }
+  });
+
+  // Trigger immediate sync via scheduler (bypasses schedule)
+  app.post("/api/sync-now/:companyId/:connectorType", async (req, res) => {
+    try {
+      const { companyId, connectorType } = req.params;
+      
+      console.log(`🚀 Manual sync requested for ${connectorType} (company ${companyId})`);
+      
+      const result = await syncScheduler.triggerImmediateSync(
+        parseInt(companyId), 
+        connectorType
+      );
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: `${connectorType} sync completed successfully`,
+          recordsSynced: result.records_synced,
+          tablesSynced: result.tables_synced
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error_message || 'Sync failed'
+        });
+      }
+    } catch (error: any) {
+      console.error('Error during manual sync:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to trigger sync',
         details: error.message
       });
     }
