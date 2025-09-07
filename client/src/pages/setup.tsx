@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CredentialDialog } from "@/components/ui/credential-dialog";
-import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle } from "lucide-react";
+import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
@@ -324,9 +324,24 @@ export default function Setup() {
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
+    const hubspotConnected = urlParams.get('hubspot');
 
+    // Check if we're returning from HubSpot OAuth (backend redirect)
+    if (hubspotConnected === 'connected') {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // OAuth completed successfully - now show setup type selection
+      setCurrentToolForSetup('hubspot');
+      setSetupTypeDialogOpen(true);
+      
+      toast({
+        title: "HubSpot Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
+      });
+    }
     // Check if we're returning from Jira OAuth (backend already processed tokens)
-    if (code && state && !error) {
+    else if (code && state && !error) {
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
       
@@ -518,6 +533,50 @@ export default function Setup() {
     }
   };
 
+  // Discover HubSpot tables dynamically using API
+  const discoverHubSpotTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering HubSpot tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/hubspot/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to discover tables');
+      }
+      
+      const data = await response.json();
+      // Flatten the categorized tables into a single array
+      const allTables = [
+        ...(data.tables.core || []),
+        ...(data.tables.engagement || []),
+        ...(data.tables.other || [])
+      ];
+      setDiscoveredTables(allTables);
+      
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${allTables.length} available HubSpot tables for syncing.`,
+      });
+      
+    } catch (error) {
+      console.error('Error discovering HubSpot tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover HubSpot tables. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
   // Start Jira OAuth flow immediately when Connect is clicked
 
   // Handle setup type selection and proceed to credentials
@@ -531,7 +590,7 @@ export default function Setup() {
     
     setSetupTypeDialogOpen(false);
     
-    // For Jira, OAuth is already complete - proceed with chosen setup type
+    // For Jira and HubSpot, OAuth is already complete - proceed with chosen setup type
     if (currentToolForSetup === 'jira') {
       if (setupType === 'standard') {
         // Standard setup - auto-sync with predefined tables
@@ -551,6 +610,27 @@ export default function Setup() {
         toast({
           title: "Table Discovery in Progress",
           description: "Finding available Jira tables for selection...",
+        });
+      }
+    } else if (currentToolForSetup === 'hubspot') {
+      if (setupType === 'standard') {
+        // Standard setup - auto-sync with predefined tables
+        setCompletedLogins(prev => [...prev, 'hubspot']);
+        triggerHubSpotSync('standard');
+        
+        toast({
+          title: "HubSpot Standard Setup Complete",
+          description: "Syncing data with standard tables...",
+        });
+      } else {
+        // Custom setup - show table selection
+        setCurrentToolForCustom('hubspot');
+        discoverHubSpotTables();
+        setCustomTableDialogOpen(true);
+        
+        toast({
+          title: "Table Discovery in Progress",
+          description: "Finding available HubSpot tables for selection...",
         });
       }
     } else {
@@ -602,6 +682,46 @@ export default function Setup() {
     }
   };
 
+  // Initiate HubSpot OAuth flow
+  const initiateHubSpotOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`🔄 Starting HubSpot OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/hubspot/authorize?companyId=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start HubSpot OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start HubSpot OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Trigger Jira data sync after OAuth completion
   const triggerJiraSync = async (setupType: 'standard' | 'custom') => {
@@ -640,6 +760,51 @@ export default function Setup() {
       }
     } catch (error) {
       console.error('Jira sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger HubSpot data sync after OAuth completion
+  const triggerHubSpotSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering HubSpot sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/hubspot/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('HubSpot sync failed:', error);
       toast({
         title: "Sync Failed",
         description: "Data sync failed but connection is established. You can retry from the integrations page.",
@@ -1435,7 +1600,15 @@ export default function Setup() {
                       </Badge>
                     ) : (
                       <Button
-                        onClick={() => toolId === 'jira' ? initiateJiraOAuth() : openSetupTypeDialog(toolId)}
+                        onClick={() => {
+                          if (toolId === 'jira') {
+                            initiateJiraOAuth();
+                          } else if (toolId === 'hubspot') {
+                            initiateHubSpotOAuth();
+                          } else {
+                            openSetupTypeDialog(toolId);
+                          }
+                        }}
                         disabled={isLoggingIn}
                         className="bg-saulto-600 hover:bg-saulto-700 text-white"
                       >
@@ -1951,12 +2124,12 @@ export default function Setup() {
               {loadingTables ? (
                 <div className="flex items-center justify-center p-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-saulto-600"></div>
-                  <span className="ml-3 text-gray-600">Discovering Jira tables...</span>
+                  <span className="ml-3 text-gray-600">Discovering {currentToolForCustom === 'jira' ? 'Jira' : currentToolForCustom === 'hubspot' ? 'HubSpot' : 'available'} tables...</span>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {(currentToolForCustom === 'jira' ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
-                    // Handle both discovered tables (Jira) and static tables (other tools)
+                  {((currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot') ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
+                    // Handle both discovered tables (Jira/HubSpot) and static tables (other tools)
                     const tableName = table.name;
                     const tableLabel = table.label;
                     const tableFields = table.fields || [];
@@ -2029,11 +2202,11 @@ export default function Setup() {
                     );
                   })}
                   
-                  {currentToolForCustom === 'jira' && discoveredTables.length === 0 && !loadingTables && (
+                  {(currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot') && discoveredTables.length === 0 && !loadingTables && (
                     <div className="text-center p-8 text-gray-500">
                       <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p className="font-medium">No tables discovered</p>
-                      <p className="text-sm mt-1">Please ensure Jira is properly connected and try again.</p>
+                      <p className="text-sm mt-1">Please ensure {currentToolForCustom === 'jira' ? 'Jira' : 'HubSpot'} is properly connected and try again.</p>
                     </div>
                   )}
                 </div>

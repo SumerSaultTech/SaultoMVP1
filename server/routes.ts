@@ -8,6 +8,7 @@ import { openaiService } from "./services/openai";
 import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
 import { jiraOAuthService } from "./services/jira-oauth";
+import { hubspotOAuthService } from "./services/hubspot-oauth";
 import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
@@ -179,6 +180,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Jira OAuth service initialized');
     } catch (error) {
       console.warn('Failed to initialize Jira OAuth service:', error);
+    }
+  })();
+
+  // Initialize HubSpot OAuth service
+  (async () => {
+    try {
+      await hubspotOAuthService.initialize();
+      console.log('HubSpot OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize HubSpot OAuth service:', error);
     }
   })();
 
@@ -387,6 +398,213 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false,
         error: "Failed to sync Jira data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // HubSpot OAuth2 Routes
+  app.get("/api/auth/hubspot/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = hubspotOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('HubSpot OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/hubspot/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = hubspotOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+
+      console.log(`🔄 HubSpot OAuth callback for company ${companyId}`);
+
+      // Exchange code for tokens
+      const tokens = await hubspotOAuthService.exchangeCodeForTokens(code as string, state as string);
+
+      // Get portal info
+      const portalInfo = await hubspotOAuthService.getAccessTokenInfo(tokens.access_token);
+
+      console.log(`✅ HubSpot OAuth successful for portal ${portalInfo.portalId}`);
+
+      // Store tokens in database
+      const hubspotConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
+        portalInfo,
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Check if HubSpot data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingHubSpot = dataSources.find(ds => ds.type === 'hubspot');
+
+      if (existingHubSpot) {
+        // Update existing data source
+        await storage.updateDataSource(existingHubSpot.id, {
+          status: 'connected',
+          config: hubspotConfig,
+          lastSyncAt: new Date(),
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `HubSpot Portal ${portalInfo.portalId}`,
+          type: 'hubspot',
+          status: 'connected',
+          config: hubspotConfig,
+        });
+      }
+
+      // Redirect back to frontend with success
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?hubspot=connected`);
+      
+    } catch (error) {
+      console.error('HubSpot OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // HubSpot table discovery endpoint
+  app.get("/api/auth/hubspot/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 HubSpot table discovery for company: ${companyId}`);
+      
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSourcesByCompany(parseInt(companyId));
+      const hubspotSource = dataSources.find(ds => ds.type === 'hubspot');
+      
+      if (!hubspotSource || !hubspotSource.config) {
+        return res.status(404).json({ error: 'HubSpot connection not found' });
+      }
+
+      const config = typeof hubspotSource.config === 'string' 
+        ? JSON.parse(hubspotSource.config) 
+        : hubspotSource.config;
+        
+      if (!config.accessToken) {
+        return res.status(400).json({ error: 'Invalid HubSpot configuration' });
+      }
+
+      // Discover available tables
+      const tables = await hubspotOAuthService.discoverHubSpotTables(config.accessToken);
+      
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => t.isStandard),
+        engagement: tables.filter(t => ['calls', 'emails', 'meetings', 'notes', 'tasks'].includes(t.name)),
+        other: tables.filter(t => !t.isStandard && !['calls', 'emails', 'meetings', 'notes', 'tasks'].includes(t.name))
+      };
+
+      console.log(`✅ Discovered ${tables.length} HubSpot tables`);
+      
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length
+      });
+      
+    } catch (error) {
+      console.error('Error discovering HubSpot tables:', error);
+      res.status(500).json({ error: 'Failed to discover HubSpot tables' });
+    }
+  });
+
+  app.get("/api/auth/hubspot/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Check if company has active HubSpot connection
+      const dataSources = await storage.getDataSources(companyId);
+      const hubspotSource = dataSources.find(ds => ds.type === 'hubspot' && ds.status === 'connected');
+      
+      if (!hubspotSource || !hubspotSource.config) {
+        return res.json({ connected: false });
+      }
+
+      const config = typeof hubspotSource.config === 'string' 
+        ? JSON.parse(hubspotSource.config) 
+        : hubspotSource.config;
+
+      const status = {
+        connected: true,
+        method: 'oauth',
+        portalInfo: config.portalInfo,
+        expiresAt: config.expiresAt,
+        expired: false // HubSpot tokens are long-lived
+      };
+
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await hubspotOAuthService.testApiAccess(config.accessToken);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking HubSpot OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based HubSpot sync endpoint
+  app.post("/api/auth/hubspot/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based HubSpot sync for company ${companyId}`);
+      
+      // Use the HubSpot OAuth service to sync data
+      const result = await hubspotOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth HubSpot sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from HubSpot`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth HubSpot sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync HubSpot data",
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth HubSpot sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync HubSpot data via OAuth",
         method: 'oauth'
       });
     }
