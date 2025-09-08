@@ -385,9 +385,9 @@ export class JiraOAuthService {
   }
 
   /**
-   * Fetch Jira issues using OAuth token
+   * Fetch Jira issues using OAuth token with automatic token refresh
    */
-  async fetchIssues(accessToken: string, cloudId: string, maxResults: number = 100): Promise<any[]> {
+  async fetchIssues(accessToken: string, cloudId: string, maxResults: number = 100, retryCount: number = 0): Promise<any[]> {
     try {
       let allIssues: any[] = [];
       let startAt = 0;
@@ -404,6 +404,11 @@ export class JiraOAuthService {
         });
 
         if (!response.ok) {
+          // Handle 401 Unauthorized - try to refresh token
+          if (response.status === 401 && retryCount === 0) {
+            console.log('🔄 Access token expired, attempting to refresh...');
+            throw new Error(`TOKEN_EXPIRED:${response.status}:${response.statusText}`);
+          }
           throw new Error(`Failed to fetch issues: ${response.status} ${response.statusText}`);
         }
 
@@ -437,6 +442,9 @@ export class JiraOAuthService {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(`TOKEN_EXPIRED:${response.status}:${response.statusText}`);
+        }
         throw new Error(`Failed to fetch projects: ${response.status} ${response.statusText}`);
       }
 
@@ -466,6 +474,9 @@ export class JiraOAuthService {
         });
 
         if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error(`TOKEN_EXPIRED:${response.status}:${response.statusText}`);
+          }
           break; // Some users may not be accessible
         }
 
@@ -671,6 +682,72 @@ export class JiraOAuthService {
   }
 
   /**
+   * Execute API call with automatic token refresh on 401 errors
+   */
+  async executeWithTokenRefresh<T>(
+    companyId: number, 
+    apiCall: (accessToken: string) => Promise<T>
+  ): Promise<T> {
+    console.log('🔧 executeWithTokenRefresh called for company:', companyId);
+    const storage = await import('../storage');
+    
+    // Get current tokens from database
+    const jiraSource = await storage.storage.getDataSourcesByCompany(companyId)
+      .then(sources => sources.find(ds => ds.type === 'jira'));
+    
+    if (!jiraSource?.config) {
+      throw new Error('No Jira OAuth tokens found for this company');
+    }
+
+    const config = jiraSource.config || {};
+    let { accessToken, refreshToken } = config;
+
+    try {
+      console.log('🔧 Calling API with current access token...');
+      // Try the API call with current access token
+      return await apiCall(accessToken);
+    } catch (error: any) {
+      console.log('🔧 API call failed with error:', error.message);
+      // Check if it's a token expiration error
+      if (error.message?.includes('TOKEN_EXPIRED') || error.message?.includes('401')) {
+        console.log('🔄 Access token expired, refreshing automatically...');
+        
+        if (!refreshToken) {
+          throw new Error('No refresh token available for automatic refresh');
+        }
+
+        try {
+          // Refresh the access token
+          const newTokens = await this.refreshToken(refreshToken);
+          
+          // Update tokens in database
+          const updatedConfig = {
+            ...config,
+            accessToken: newTokens.access_token,
+            refreshToken: newTokens.refresh_token,
+            expiresAt: new Date(Date.now() + (newTokens.expires_in * 1000)).toISOString(),
+          };
+
+          await storage.storage.updateDataSource(jiraSource.id, {
+            config: updatedConfig,
+          });
+
+          console.log('✅ Access token refreshed successfully');
+
+          // Retry the API call with the new access token
+          return await apiCall(newTokens.access_token);
+        } catch (refreshError) {
+          console.error('❌ Failed to refresh access token:', refreshError);
+          throw new Error('Failed to refresh OAuth tokens. Please re-authenticate.');
+        }
+      }
+      
+      // If it's not a token error, re-throw the original error
+      throw error;
+    }
+  }
+
+  /**
    * Sync Jira data to company analytics schema using stored OAuth tokens
    */
   async syncDataToSchema(companyId: number): Promise<{ success: boolean; recordsSynced: number; tablesCreated: string[]; error?: string }> {
@@ -700,9 +777,7 @@ export class JiraOAuthService {
         throw new Error('No Jira OAuth tokens found for this company');
       }
 
-      const config = typeof jiraSource.config === 'string' 
-        ? JSON.parse(jiraSource.config) 
-        : jiraSource.config;
+      const config = jiraSource.config || {};
       const { accessToken, resources } = config;
       
       if (!accessToken || !resources || resources.length === 0) {
@@ -755,9 +830,13 @@ export class JiraOAuthService {
         return inserted;
       };
 
-      // Fetch and sync issues (most important table)
+      // Fetch and sync issues (most important table) with automatic token refresh
       console.log('📋 Fetching Jira issues...');
-      const issues = await this.fetchIssues(accessToken, cloudId, 500); // Limit for initial sync
+      console.log('🔧 ABOUT TO CALL executeWithTokenRefresh for company:', companyId);
+      const issues = await this.executeWithTokenRefresh(companyId, 
+        (token) => this.fetchIssues(token, cloudId, 500)
+      );
+      console.log('🔧 executeWithTokenRefresh COMPLETED, got', issues?.length || 0, 'issues');
       if (issues.length > 0) {
         const recordsLoaded = await insertDataToSchema('jira_issues', issues, 'jira_oauth');
         totalRecords += recordsLoaded;
@@ -765,9 +844,11 @@ export class JiraOAuthService {
         console.log(`✅ Synced ${recordsLoaded} issues`);
       }
 
-      // Fetch and sync projects
+      // Fetch and sync projects with automatic token refresh
       console.log('📂 Fetching Jira projects...');
-      const projects = await this.fetchProjects(accessToken, cloudId);
+      const projects = await this.executeWithTokenRefresh(companyId,
+        (token) => this.fetchProjects(token, cloudId)
+      );
       if (projects.length > 0) {
         const recordsLoaded = await insertDataToSchema('jira_projects', projects, 'jira_oauth');
         totalRecords += recordsLoaded;
@@ -775,9 +856,11 @@ export class JiraOAuthService {
         console.log(`✅ Synced ${recordsLoaded} projects`);
       }
 
-      // Fetch and sync users
+      // Fetch and sync users with automatic token refresh
       console.log('👥 Fetching Jira users...');
-      const users = await this.fetchUsers(accessToken, cloudId);
+      const users = await this.executeWithTokenRefresh(companyId,
+        (token) => this.fetchUsers(token, cloudId)
+      );
       if (users.length > 0) {
         const recordsLoaded = await insertDataToSchema('jira_users', users, 'jira_oauth');
         totalRecords += recordsLoaded;

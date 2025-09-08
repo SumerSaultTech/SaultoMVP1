@@ -245,7 +245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyId: stateData.companyId,
         name: `Jira (${userInfo?.name || 'Connected'})`,
         type: 'jira',
-        config: JSON.stringify({
+        config: {
           oauth: true,
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
@@ -253,7 +253,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userInfo,
           resources,
           accountId: userInfo?.account_id || null
-        }),
+        },
         isActive: true
       });
 
@@ -288,14 +288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "No Jira connection found for this company" });
       }
       
-      let config;
-      try {
-        config = JSON.parse(jiraSource.config);
-      } catch (parseError) {
-        console.log(`⚠️ Config parsing failed, trying to use as object:`, parseError.message);
-        // If JSON parsing fails, the config might already be an object (database storage issue)
-        config = typeof jiraSource.config === 'string' ? {} : jiraSource.config;
-      }
+      const config = jiraSource.config || {};
       console.log(`🔍 Config loaded, accessToken exists:`, !!config.accessToken);
       console.log(`🔍 Resources in config:`, config.resources?.length || 0);
       
@@ -335,8 +328,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ connected: false });
       }
 
-      // Parse config to get OAuth info
-      const config = JSON.parse(jiraConnection.config);
+      // Get OAuth info from config
+      const config = jiraConnection.config || {};
       
       if (!config.oauth) {
         return res.json({ connected: false, method: 'basic_auth' });
@@ -3549,7 +3542,7 @@ CRITICAL REQUIREMENTS:
         name: instanceName,
         type: appType,
         status: 'oauth2_pending',
-        config: JSON.stringify(connectionData),
+        config: connectionData,
         isOAuth2: true,
         instanceId
       });
@@ -3596,8 +3589,8 @@ CRITICAL REQUIREMENTS:
       // Update with completed OAuth2 credentials
       await storage.updateDataSource(dataSource.id, {
         status: 'active',
-        config: JSON.stringify({
-          ...JSON.parse(dataSource.config),
+        config: {
+          ...dataSource.config,
           status: 'active',
           credentials: credentials || {
             accessToken: `at_${Math.random().toString(36).substring(7)}${Date.now()}`,
@@ -3606,7 +3599,7 @@ CRITICAL REQUIREMENTS:
             expiresAt: new Date(Date.now() + 3600000).toISOString() // 1 hour
           },
           lastSync: new Date().toISOString()
-        })
+        }
       });
       
       res.json({
@@ -3632,9 +3625,9 @@ CRITICAL REQUIREMENTS:
       
       const dataSources = await storage.getDataSourcesByCompany(companyId);
       const oauth2Instances = dataSources
-        .filter(ds => ds.config && JSON.parse(ds.config).isOAuth2)
+        .filter(ds => ds.config && ds.config.isOAuth2)
         .map(ds => {
-          const config = JSON.parse(ds.config);
+          const config = ds.config;
           return {
             id: ds.id,
             instanceId: config.instanceId || ds.id,
@@ -3724,13 +3717,20 @@ CRITICAL REQUIREMENTS:
       
       // Transform to connector format expected by frontend
       const connectors = dataSources.map(ds => {
-        let config = {};
+        let config = ds.config || {};
+        
+        // Debug: Log config processing
         try {
-          config = ds.config ? JSON.parse(ds.config) : {};
-        } catch (parseError) {
-          console.error(`Failed to parse config for data source ${ds.id}:`, parseError);
-          console.error(`Config value:`, ds.config);
-          config = {};
+          if (typeof config === 'string') {
+            console.log(`⚠️  Config for data source ${ds.id} is string, attempting parse:`, config);
+            config = JSON.parse(config);
+          } else {
+            console.log(`✅ Config for data source ${ds.id} is object:`, typeof config);
+          }
+        } catch (error: any) {
+          console.error(`Failed to parse config for data source ${ds.id}:`, error);
+          console.log(`Config value:`, config);
+          config = {}; // Fallback to empty object
         }
         
         return {

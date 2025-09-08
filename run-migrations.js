@@ -29,7 +29,13 @@ async function runMigrations() {
     const migrations = [
       '001-create-date-dimension.sql',
       '002-create-metric-registry-function.sql', 
-      '003-setup-existing-companies.sql'
+      '003-setup-existing-companies.sql',
+      '004-create-goals-system.sql',
+      '005-create-metrics-series.sql',
+      '006-fix-metrics-series-test.sql',
+      '007-create-metrics-time-series.sql',
+      '008-add-period-relative-columns.sql',
+      '009-fix-duplicate-key-upsert.sql'
     ];
 
     console.log(`📋 Running ${migrations.length} migrations...\n`);

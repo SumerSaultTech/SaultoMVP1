@@ -10,7 +10,7 @@ export const companies = pgTable("companies", {
   isActive: boolean("is_active").default(true),
   // Soft delete fields
   deletedAt: timestamp("deleted_at"), // When company was soft deleted
-  deletedBy: integer("deleted_by").references(() => users.id), // Admin who deleted it
+  deletedBy: integer("deleted_by"), // Admin who deleted it (no FK to avoid circular ref)
   deleteReason: text("delete_reason"), // Reason for deletion
   canRestore: boolean("can_restore").default(true), // Can be restored within 30 days
 });
