@@ -271,11 +271,11 @@ export type InsertSetupStatus = z.infer<typeof insertSetupStatusSchema>;
 export type SetupStatus = typeof setupStatus.$inferSelect;
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
 });
+export type InsertUser = z.infer<typeof insertUserSchema>;
 
 // Metric Registry and Goals Tables
 export const goals = pgTable("goals", {

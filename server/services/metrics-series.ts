@@ -124,9 +124,11 @@ export class MetricsSeriesService {
   private async calculateProgress(companyId: number, periodType: string, series: MetricsSeries[]): Promise<ProgressMetrics> {
     const today = format(new Date(), 'yyyy-MM-dd');
     
-    // Use database-calculated period-relative values instead of calculating here
+    // Use database-calculated period-relative values, fall back to running_sum if period_relative is 0
     const actualSeries = series.filter(s => !s.is_goal && s.ts <= today);
-    const currentActual = Math.max(...actualSeries.map(s => s.period_relative_running_sum || 0), 0);
+    const currentActualPeriodRelative = Math.max(...actualSeries.map(s => s.period_relative_running_sum || 0), 0);
+    const currentActualRunningSum = Math.max(...actualSeries.map(s => s.running_sum || 0), 0);
+    const currentActual = currentActualPeriodRelative > 0 ? currentActualPeriodRelative : currentActualRunningSum;
     
     // Get today's goal using period-relative values
     const goalSeries = series.filter(s => s.is_goal);
@@ -399,24 +401,52 @@ export class MetricsSeriesService {
         };
       }
       
-      // Convert database results to MetricsSeries format - keep absolute values for existing calculations
-      const series: MetricsSeries[] = result.data.map((row: any) => ({
-        ts: format(new Date(row.ts), 'yyyy-MM-dd'),
-        series: row.series,
-        value: parseFloat(row.value) || 0, // Keep absolute daily values
-        running_sum: parseFloat(row.running_sum) || 0, // Keep absolute running sum for existing calculations
-        period_relative_value: parseFloat(row.period_relative_value) || 0, // Add period-relative values
-        period_relative_running_sum: parseFloat(row.period_relative_running_sum) || 0, // Add period-relative running sum
-        baseline_value: parseFloat(row.period_baseline_value) || 0, // Include baseline
-        is_goal: Boolean(row.is_goal)
-      }));
+      // Convert database results to MetricsSeries format - filter only actual data (not goals)
+      let actualSeries: MetricsSeries[] = result.data
+        .filter((row: any) => !row.is_goal) // Only get actual data, ignore stored goals
+        .map((row: any) => ({
+          ts: format(new Date(row.ts), 'yyyy-MM-dd'),
+          series: row.series, // Don't prefix actual data
+          value: parseFloat(row.value) || 0,
+          running_sum: parseFloat(row.running_sum) || 0,
+          period_relative_value: parseFloat(row.period_relative_value) || 0,
+          period_relative_running_sum: parseFloat(row.period_relative_running_sum) || 0,
+          baseline_value: parseFloat(row.period_baseline_value) || 0,
+          is_goal: false
+        }));
       
-      // Calculate progress metrics from real data
-      const progress = await this.calculateProgress(companyId, periodType, series);
+      // For yearly views, aggregate daily data into monthly points for better UX
+      if (periodType === 'yearly') {
+        console.log(`📊 Before aggregation: ${actualSeries.length} daily data points`);
+        actualSeries = this.aggregateToMonthlyPoints(actualSeries);
+        console.log(`📊 After aggregation: ${actualSeries.length} monthly points`);
+      }
       
-      console.log(`✅ Retrieved ${series.length} real data points from database`);
+      // Check feature flags for goal generation method
+      const useDatabaseGoals = process.env.USE_DATABASE_GOALS === 'true';
+      const useETLGoals = process.env.USE_ETL_GOALS === 'true';
+      let goalSeries: MetricsSeries[] = [];
       
-      return { series, progress };
+      if (useDatabaseGoals && useETLGoals) {
+        console.log('🎯 Using pre-stored ETL goals (fastest)');
+        goalSeries = await this.getETLGoalsFromDatabase(companyId, periodType, actualSeries);
+      } else if (useDatabaseGoals) {
+        console.log('🎯 Using PostgreSQL view for goal generation');
+        goalSeries = await this.getGoalsFromDatabase(companyId, periodType, actualSeries);
+      } else {
+        console.log('🎯 Using TypeScript service for goal generation');
+        goalSeries = await this.generateGoalSeries(companyId, actualSeries, periodType);
+      }
+      
+      // Combine actual and generated goal series
+      const allSeries = [...actualSeries, ...goalSeries];
+      
+      // Calculate progress metrics from all series data (both actual and goal)
+      const progress = await this.calculateProgress(companyId, periodType, allSeries);
+      
+      console.log(`✅ Retrieved ${actualSeries.length} actual data points and generated ${goalSeries.length} goal data points`);
+      
+      return { series: allSeries, progress };
       
     } catch (error) {
       console.error('Error querying metrics from database:', error);
@@ -424,6 +454,322 @@ export class MetricsSeriesService {
         series: [],
         progress: { onPace: 0, progress: 0, todayActual: 0, todayGoal: 0, periodEndGoal: 0 }
       };
+    }
+  }
+
+  // Aggregate daily data points into monthly points for yearly views
+  private aggregateToMonthlyPoints(dailySeries: MetricsSeries[]): MetricsSeries[] {
+    // Group data by metric series and month
+    const monthlyGroups = new Map<string, Map<string, MetricsSeries[]>>();
+    
+    for (const point of dailySeries) {
+      const date = new Date(point.ts);
+      const monthKey = format(date, 'yyyy-MM'); // e.g., "2025-08"
+      const seriesKey = point.series;
+      
+      if (!monthlyGroups.has(seriesKey)) {
+        monthlyGroups.set(seriesKey, new Map());
+      }
+      
+      const seriesGroups = monthlyGroups.get(seriesKey)!;
+      if (!seriesGroups.has(monthKey)) {
+        seriesGroups.set(monthKey, []);
+      }
+      
+      seriesGroups.get(monthKey)!.push(point);
+    }
+    
+    const monthlyPoints: MetricsSeries[] = [];
+    
+    // Convert grouped data to monthly aggregated points
+    for (const [seriesKey, monthsMap] of monthlyGroups) {
+      // Sort months chronologically
+      const sortedMonths = Array.from(monthsMap.keys()).sort();
+      
+      for (const monthKey of sortedMonths) {
+        const monthData = monthsMap.get(monthKey)!;
+        
+        // Sort daily points within the month by date
+        monthData.sort((a, b) => a.ts.localeCompare(b.ts));
+        
+        // Get the last day of the month (month-end values)
+        const lastDay = monthData[monthData.length - 1];
+        
+        // Check if this metric is an average type
+        const isAverage = seriesKey.toLowerCase().includes('average') || 
+                         seriesKey.toLowerCase().includes('avg') || 
+                         seriesKey.toLowerCase().includes('cycle');
+        
+        let monthlyValue: number;
+        let monthlyRunningSum: number;
+        
+        if (isAverage) {
+          // For averages: use the final cumulative average for the month
+          monthlyValue = lastDay.running_sum;
+          monthlyRunningSum = lastDay.running_sum; // Final average, not sum
+        } else {
+          // For counts/sums: sum up all daily values in the month, use end-of-month running sum
+          monthlyValue = monthData.reduce((sum, day) => sum + day.value, 0);
+          monthlyRunningSum = lastDay.running_sum; // Cumulative through year
+        }
+        
+        // Use last day of month as the timestamp for better hover experience
+        const lastDayOfMonth = format(new Date(monthKey + '-01'), 'yyyy-MM-') + 
+                              format(new Date(new Date(monthKey + '-01').getFullYear(), 
+                                            new Date(monthKey + '-01').getMonth() + 1, 0), 'dd');
+        
+        monthlyPoints.push({
+          ts: lastDayOfMonth, // e.g., "2025-08-31" for August
+          series: seriesKey,
+          value: monthlyValue, // Monthly total for counts, monthly average for averages
+          running_sum: monthlyRunningSum, // Year-to-date cumulative
+          period_relative_value: monthlyValue, 
+          period_relative_running_sum: monthlyRunningSum,
+          baseline_value: lastDay.baseline_value,
+          is_goal: lastDay.is_goal // Preserve the goal flag from the source data
+        });
+      }
+    }
+    
+    // Sort final results by date and series for consistent ordering
+    return monthlyPoints.sort((a, b) => {
+      const dateCompare = a.ts.localeCompare(b.ts);
+      return dateCompare !== 0 ? dateCompare : a.series.localeCompare(b.series);
+    });
+  }
+
+  // Generate goal series data based on KPI metrics
+  private async generateGoalSeries(companyId: number, actualSeries: MetricsSeries[], periodType: string): Promise<MetricsSeries[]> {
+    try {
+      console.log(`🎯 Generating goal series for ${actualSeries.length} actual data points`);
+      
+      // Get KPI metrics for goal calculations from company-specific schema
+      const schemaName = `analytics_company_${companyId}`;
+      const kpiResult = await this.postgres.executeQuery(`
+        SELECT id, name, yearly_goal, goal_type, quarterly_goals, monthly_goals
+        FROM ${schemaName}.kpi_metrics 
+        WHERE yearly_goal IS NOT NULL
+        AND yearly_goal != ''
+        AND yearly_goal != '0'
+      `);
+
+      if (!kpiResult.success || !kpiResult.data.length) {
+        console.log('🎯 No KPI goals found, returning empty goal series');
+        return [];
+      }
+
+      console.log(`🎯 Found ${kpiResult.data.length} KPI metrics with goals`);
+      
+      const goalSeries: MetricsSeries[] = [];
+      
+      // Group actual series by metric name
+      const actualByMetric = actualSeries.reduce((acc, item) => {
+        if (!acc[item.series]) acc[item.series] = [];
+        acc[item.series].push(item);
+        return acc;
+      }, {} as Record<string, MetricsSeries[]>);
+
+      // Generate goal data for each metric
+      for (const kpiMetric of kpiResult.data) {
+        const metricName = kpiMetric.name;
+        const actualData = actualByMetric[metricName];
+        
+        if (!actualData?.length) {
+          console.log(`🎯 No actual data found for metric: ${metricName}`);
+          continue;
+        }
+
+        // Check if this is an average-type metric (cycle time, etc.)
+        const isAverageMetric = metricName.toLowerCase().includes('average') || 
+                               metricName.toLowerCase().includes('avg') || 
+                               metricName.toLowerCase().includes('cycle');
+        
+        // Calculate goal values based on metric type and data granularity
+        const yearlyGoal = parseFloat(kpiMetric.yearly_goal) || 0;
+        let periodGoal = 0; // Goal per data point (daily or monthly)
+        let targetValue = yearlyGoal; // For averages, this is the flat target
+        
+        // Detect if we're working with monthly aggregated data (for yearly period)
+        const isMonthlyAggregated = periodType === 'yearly' && actualData.length <= 15; // ~12 months + buffer
+        
+        if (isAverageMetric) {
+          // For average metrics: goal is always the target value (e.g., 5 days cycle time)
+          periodGoal = yearlyGoal;
+          targetValue = yearlyGoal;
+        } else {
+          // For count/sum metrics: proportional breakdown
+          if (isMonthlyAggregated) {
+            // Monthly goals for aggregated yearly data
+            periodGoal = yearlyGoal / 12; // Monthly goal
+          } else if (kpiMetric.goal_type === 'yearly') {
+            periodGoal = yearlyGoal / 365; // Daily goal
+          } else if (kpiMetric.goal_type === 'quarterly') {
+            periodGoal = yearlyGoal / 90; // Approximate quarter = 90 days
+          } else if (kpiMetric.goal_type === 'monthly') {
+            periodGoal = yearlyGoal / 30; // Approximate month = 30 days
+          } else {
+            periodGoal = yearlyGoal / 365; // Default to yearly
+          }
+        }
+
+        console.log(`🎯 Calculated goal for ${metricName}: periodGoal=${periodGoal}, target=${targetValue} (type: ${kpiMetric.goal_type}, is_average: ${isAverageMetric}, monthlyAggregated: ${isMonthlyAggregated})`);
+
+        // Generate goal data for each date in actual data
+        let runningGoal = 0;
+        
+        // Sort actual data by date to ensure proper calculation
+        const sortedActualData = actualData.sort((a, b) => a.ts.localeCompare(b.ts));
+        
+        for (const actualPoint of sortedActualData) {
+          if (isAverageMetric) {
+            // For averages: running goal stays flat at target value
+            runningGoal = targetValue;
+          } else {
+            // For counts/sums: cumulative goal
+            runningGoal += periodGoal;
+          }
+          
+          goalSeries.push({
+            ts: actualPoint.ts,
+            series: `Goal: ${metricName}`, // Prefix with "Goal: "
+            value: periodGoal, // Period goal value (daily or monthly)
+            running_sum: runningGoal, // Flat target for averages, cumulative for counts
+            period_relative_value: periodGoal,
+            period_relative_running_sum: runningGoal,
+            baseline_value: 0,
+            is_goal: true
+          });
+        }
+        
+        console.log(`🎯 Generated ${sortedActualData.length} goal data points for ${metricName}, final cumulative: ${runningGoal}`);
+      }
+      
+      console.log(`🎯 Generated total ${goalSeries.length} goal data points`);
+      return goalSeries;
+      
+    } catch (error) {
+      console.error('Error generating goal series:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get goals from PostgreSQL view instead of generating in TypeScript
+   * This method queries the metrics_with_goals view for goal data
+   */
+  private async getGoalsFromDatabase(companyId: number, periodType: string, actualSeries: MetricsSeries[]): Promise<MetricsSeries[]> {
+    try {
+      console.log(`🎯 Querying PostgreSQL goals view for ${actualSeries.length} actual data points`);
+      
+      // Get the date range and metric names from actual series
+      const dateRange = {
+        start: actualSeries.length > 0 ? actualSeries[0].ts : format(new Date(), 'yyyy-MM-dd'),
+        end: actualSeries.length > 0 ? actualSeries[actualSeries.length - 1].ts : format(new Date(), 'yyyy-MM-dd')
+      };
+      
+      const metricNames = [...new Set(actualSeries.map(s => s.series))];
+      const metricNamesStr = metricNames.map(name => `'${name}'`).join(',');
+      
+      // Query goals from database view
+      const result = await this.postgres.executeQuery(`
+        SELECT ts, series_label as series, value, running_sum, is_goal,
+               period_relative_value, period_relative_running_sum, period_baseline_value
+        FROM analytics_company_${companyId}.metrics_with_goals
+        WHERE period_type = '${periodType}'
+          AND is_goal = true
+          AND ts BETWEEN '${dateRange.start}' AND '${dateRange.end}'
+          AND series_label LIKE 'Goal:%'
+        ORDER BY ts ASC, series_label
+      `);
+
+      if (!result.success || !result.data) {
+        console.log('🎯 No goal data found in database view');
+        return [];
+      }
+
+      // Transform database results to MetricsSeries format
+      const goalSeries: MetricsSeries[] = result.data.map((row: any) => ({
+        ts: row.ts,
+        series: row.series,
+        value: parseFloat(row.value) || 0,
+        running_sum: parseFloat(row.running_sum) || 0,
+        period_relative_value: parseFloat(row.period_relative_value) || 0,
+        period_relative_running_sum: parseFloat(row.period_relative_running_sum) || 0,
+        baseline_value: parseFloat(row.period_baseline_value) || 0,
+        is_goal: true
+      }));
+
+      // Apply monthly aggregation if needed (for yearly views)
+      let finalGoalSeries = goalSeries;
+      if (periodType === 'yearly' && actualSeries.length <= 15) {
+        console.log(`📊 Applying monthly aggregation to ${goalSeries.length} goal points`);
+        finalGoalSeries = this.aggregateToMonthlyPoints(goalSeries);
+      }
+
+      console.log(`🎯 Retrieved ${finalGoalSeries.length} goal data points from PostgreSQL view`);
+      return finalGoalSeries;
+      
+    } catch (error) {
+      console.error('Error querying goals from database:', error);
+      // Fallback to TypeScript generation if database query fails
+      console.log('🔄 Falling back to TypeScript goal generation');
+      return await this.generateGoalSeries(companyId, actualSeries, periodType);
+    }
+  }
+
+  private async getETLGoalsFromDatabase(companyId: number, periodType: string, actualSeries: MetricsSeries[]): Promise<MetricsSeries[]> {
+    try {
+      console.log(`⚡ Querying pre-stored ETL goals for ${actualSeries.length} actual data points`);
+      
+      // Get the date range from actual series
+      const dateRange = {
+        start: actualSeries.length > 0 ? actualSeries[0].ts : format(new Date(), 'yyyy-MM-dd'),
+        end: actualSeries.length > 0 ? actualSeries[actualSeries.length - 1].ts : format(new Date(), 'yyyy-MM-dd')
+      };
+      
+      // Query stored goals directly from base table (fast!)
+      const result = await this.postgres.executeQuery(`
+        SELECT ts, series_label as series, value, running_sum, is_goal,
+               period_relative_value, period_relative_running_sum, period_baseline_value
+        FROM analytics_company_${companyId}.metrics_time_series
+        WHERE period_type = '${periodType}'
+          AND is_goal = true
+          AND ts BETWEEN '${dateRange.start}' AND '${dateRange.end}'
+        ORDER BY ts ASC, series_label
+      `);
+
+      if (!result.success || !result.data) {
+        console.log('⚠️ No ETL goal data found, falling back to view');
+        return await this.getGoalsFromDatabase(companyId, periodType, actualSeries);
+      }
+
+      // Transform database results to MetricsSeries format
+      const goalSeries: MetricsSeries[] = result.data.map((row: any) => ({
+        ts: row.ts,
+        series: `Goal: ${row.series}`, // Add "Goal:" prefix to match view format
+        value: parseFloat(row.value) || 0,
+        running_sum: parseFloat(row.running_sum) || 0,
+        period_relative_value: parseFloat(row.period_relative_value) || 0,
+        period_relative_running_sum: parseFloat(row.period_relative_running_sum) || 0,
+        baseline_value: parseFloat(row.period_baseline_value) || 0,
+        is_goal: true
+      }));
+
+      // Apply monthly aggregation if needed (for yearly views)
+      let finalGoalSeries = goalSeries;
+      if (periodType === 'yearly' && actualSeries.length <= 15) {
+        console.log(`📊 Applying monthly aggregation to ${goalSeries.length} ETL goal points`);
+        finalGoalSeries = this.aggregateToMonthlyPoints(goalSeries);
+      }
+
+      console.log(`⚡ Retrieved ${finalGoalSeries.length} pre-stored ETL goal data points (fast!)`);
+      return finalGoalSeries;
+      
+    } catch (error) {
+      console.error('Error querying ETL goals from database:', error);
+      // Fallback to view-based goals if ETL goals query fails
+      console.log('🔄 Falling back to PostgreSQL view goals');
+      return await this.getGoalsFromDatabase(companyId, periodType, actualSeries);
     }
   }
   

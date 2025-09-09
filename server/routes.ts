@@ -1885,14 +1885,14 @@ The Saulto Analytics Team
       let legacyData = result.series.map((item: any) => ({
         ts: item.ts,
         series: item.series,
-        value: item.running_sum // Use running sum for legacy compatibility
+        value: relative === 'true' ? item.period_relative_running_sum : item.running_sum
       }));
 
       // Database now provides period-relative values directly, no need for complex calculations
       if (relative === 'true') {
-        console.log(`✅ Legacy API: Using database period-relative values (no application calculation needed)`);
+        console.log(`✅ Legacy API: Using database period-relative running sum values for charts`);
         // The MetricsSeriesService already returns period-relative values from database
-        // No additional processing needed
+        // Now using period_relative_running_sum for smooth chart progression
       }
 
       console.log(`✅ Legacy API: Retrieved ${legacyData.length} data points${relative === 'true' ? ' (period-relative)' : ''}`);

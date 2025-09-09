@@ -18,28 +18,28 @@ const TIME_PERIOD_CONFIGS = {
     label: 'Last 7 Days',
     formatDate: (date: string) => format(new Date(date), 'EEE'), // Mon, Tue, Wed
     formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
-    dotRadius: 4, // Show all daily dots
+    dotRadius: 2, // Small uniform dots
     strokeDashArray: undefined, // Solid line
   },
   monthly: {
     label: 'This Month',
     formatDate: (date: string) => format(new Date(date), 'd'), // 1, 2, 3, ..., 31
     formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
-    dotRadius: 3, // Smaller dots for daily data
+    dotRadius: 2, // Small uniform dots
     strokeDashArray: undefined, // Solid line
   },
   quarterly: {
     label: 'This Quarter',
     formatDate: (date: string) => format(new Date(date), 'd'), // 1, 2, 3, ..., 92
     formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
-    dotRadius: 0, // Hide dots, too many data points
+    dotRadius: 1, // Very small dots for many data points
     strokeDashArray: undefined, // Solid line
   },
   yearly: {
     label: 'This Year',
     formatDate: (date: string) => format(new Date(date), 'MMM'), // Jan, Feb, Mar
     formatTooltip: (date: string) => format(new Date(date), 'MMM yyyy'),
-    dotRadius: 6, // Larger dots for monthly data points
+    dotRadius: 2, // Small uniform dots
     strokeDashArray: undefined, // Solid line
   },
 } as const;
@@ -217,7 +217,7 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                   content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
                       // Find the full date from chartData
-                      const dataPoint = chartData.find(d => d.date === label);
+                      const dataPoint = chartData.find((d: any) => d.date === label);
                       const fullDate = dataPoint?.fullDate || label;
                       
                       return (
@@ -237,7 +237,7 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                   }}
                 />
                 <Legend />
-                {metricKeys.map((seriesName: string, index: number) => (
+                {(metricKeys as string[]).map((seriesName: string, index: number) => (
                   <Line
                     key={seriesName}
                     type="monotone"
@@ -245,7 +245,7 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                     stroke={CHART_COLORS[index % CHART_COLORS.length]}
                     strokeWidth={2}
                     dot={config.dotRadius === 0 ? false : { r: config.dotRadius }}
-                    activeDot={{ r: Math.max(6, config.dotRadius + 2) }}
+                    activeDot={{ r: 4 }}
                     name={seriesName}
                   />
                 ))}

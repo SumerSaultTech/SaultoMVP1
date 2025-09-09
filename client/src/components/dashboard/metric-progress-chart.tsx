@@ -34,13 +34,13 @@ function getSeriesName(metricName: string): string | null {
 function getDotConfig(granularity: string) {
   switch (granularity) {
     case 'day':
-      return { fill: '#10b981', strokeWidth: 2, r: 3 }; // Weekly/Monthly - smaller dots for daily data
+      return { fill: '#10b981', strokeWidth: 2, r: 2 }; // Small uniform dots for daily data
     case 'week':
-      return false; // Quarterly - no dots (clean lines)  
+      return { fill: '#10b981', strokeWidth: 2, r: 1 }; // Very small dots for weekly data  
     case 'month':
-      return { fill: '#10b981', strokeWidth: 2, r: 6 }; // Yearly - larger dots for monthly data
+      return { fill: '#10b981', strokeWidth: 2, r: 2 }; // Small uniform dots for monthly data
     default:
-      return { fill: '#10b981', strokeWidth: 2, r: 4 }; // Default
+      return { fill: '#10b981', strokeWidth: 2, r: 2 }; // Small uniform default
   }
 }
 
@@ -147,7 +147,7 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
         ts: item.ts,
         value: parseFloat(item.value) || 0
       }))
-      .sort((a, b) => a.ts.localeCompare(b.ts));
+      .sort((a: any, b: any) => a.ts.localeCompare(b.ts));
     
     // Filter goal data for this specific metric and date range
     const goalSeriesName = `Goal: ${seriesName}`;
@@ -162,16 +162,16 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
         ts: item.ts,
         value: parseFloat(item.value) || 0
       }))
-      .sort((a, b) => a.ts.localeCompare(b.ts));
+      .sort((a: any, b: any) => a.ts.localeCompare(b.ts));
     
     // Create a map of goal data by date for easy lookup
-    const goalDataMap = goalDataPoints.reduce((acc, item) => {
+    const goalDataMap = goalDataPoints.reduce((acc: any, item: any) => {
       acc[item.ts] = item.value;
       return acc;
     }, {} as Record<string, number>);
     
     // Build chart data using actual dates from backend within the selected range
-    return actualDataPoints.map((item, index) => {
+    return actualDataPoints.map((item: any, index: number) => {
       const date = new Date(item.ts);
       const isInFuture = date > today;
       
