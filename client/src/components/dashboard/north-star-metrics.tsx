@@ -444,8 +444,8 @@ export default function NorthStarMetrics() {
         ) : (
           northStarMetrics.map((metric) => {
           // Use API values directly instead of chart-derived values
-          const revenueMetric = dashboardMetrics.find(m => m.metricId === 1);
-          const profitMetric = dashboardMetrics.find(m => m.metricId === 2);
+          const revenueMetric = dashboardMetrics.find((m: any) => m.metricId === 1);
+          const profitMetric = dashboardMetrics.find((m: any) => m.metricId === 2);
           
           // Get current value and goal from API data
           const apiCurrentValue = metric.id === "annual-revenue" ? (revenueMetric?.currentValue || 0) : (profitMetric?.currentValue || 0);

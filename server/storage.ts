@@ -154,12 +154,12 @@ export class MemStorage implements IStorage {
   private users: Map<number, User>;
   private dataSources: Map<number, DataSource>;
   private sqlModels: Map<number, SqlModel>;
-  private kpiMetrics: Map<number, KpiMetric>;
+  protected kpiMetrics: Map<number, KpiMetric>;
   private chatMessages: Map<number, ChatMessage>;
   private pipelineActivities: Map<number, PipelineActivity>;
   protected metricReports: Map<number, MetricReport>;
   private setupStatus: SetupStatus | undefined;
-  private currentId: number;
+  protected currentId: number;
 
   constructor() {
     this.users = new Map();
@@ -1994,7 +1994,6 @@ class PersistentMemStorage extends MemStorage {
           value: null,
           changePercent: null,
           currentProgress: null,
-          timePeriod: "monthly",
           lastCalculatedAt: null 
         };
         this.kpiMetrics.set(id, kpiMetric);
