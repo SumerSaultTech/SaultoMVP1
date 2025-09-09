@@ -1,19 +1,14 @@
 /**
- * HubSpot OAuth2 integration service
+ * HubSpot OAuth2 integration service extending base OAuth class
  */
 
-interface HubSpotOAuthConfig {
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-}
-
-interface HubSpotTokenResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  token_type: string;
-}
+import { OAuthServiceBase } from './oauth-base.js';
+import { 
+  TokenResponse, 
+  SyncResult, 
+  TableDiscoveryResult,
+  OAuthError 
+} from './oauth-types.js';
 
 interface HubSpotUserInfo {
   portalId: number;
@@ -22,59 +17,19 @@ interface HubSpotUserInfo {
   user_id: number;
 }
 
-export class HubSpotOAuthService {
-  private config: HubSpotOAuthConfig;
-
+export class HubSpotOAuthService extends OAuthServiceBase {
+  
   constructor() {
+    super();
     console.log('🔍 HUBSPOT_OAUTH_CLIENT_ID:', process.env.HUBSPOT_OAUTH_CLIENT_ID ? 'SET' : 'NOT SET');
     console.log('🔍 HUBSPOT_OAUTH_CLIENT_SECRET:', process.env.HUBSPOT_OAUTH_CLIENT_SECRET ? 'SET' : 'NOT SET');
-    
-    this.config = {
-      clientId: process.env.HUBSPOT_OAUTH_CLIENT_ID || '',
-      clientSecret: process.env.HUBSPOT_OAUTH_CLIENT_SECRET || '',
-      redirectUri: `${process.env.APP_URL || 'http://localhost:5000'}/api/auth/hubspot/callback`
-    };
   }
 
   /**
-   * Generate state with company and user info for multi-tenant support
+   * Get service type identifier
    */
-  generateState(companyId: number, userId?: number): string {
-    const stateData = {
-      companyId,
-      userId,
-      timestamp: Date.now(),
-      nonce: Math.random().toString(36).substring(2, 15)
-    };
-    return Buffer.from(JSON.stringify(stateData)).toString('base64');
-  }
-
-  /**
-   * Parse state to get company and user info
-   */
-  parseState(state: string): { companyId: number; userId?: number; timestamp: number; nonce: string } {
-    try {
-      const decoded = Buffer.from(state, 'base64').toString();
-      return JSON.parse(decoded);
-    } catch (error) {
-      throw new Error('Invalid state parameter');
-    }
-  }
-
-  /**
-   * Initialize the OAuth client
-   */
-  async initialize(): Promise<void> {
-    try {
-      // Simple initialization - just validate config
-      if (!this.config.clientId || !this.config.clientSecret) {
-        throw new Error('Missing HubSpot OAuth credentials');
-      }
-      console.log('HubSpot OAuth client initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize HubSpot OAuth client:', error);
-      throw error;
-    }
+  getServiceType(): string {
+    return 'hubspot';
   }
 
   /**
@@ -193,7 +148,7 @@ export class HubSpotOAuthService {
   /**
    * Refresh access token
    */
-  async refreshToken(refreshToken: string): Promise<HubSpotTokenResponse> {
+  async refreshToken(refreshToken: string): Promise<TokenResponse> {
     try {
       const refreshParams = new URLSearchParams({
         grant_type: 'refresh_token',
@@ -249,9 +204,16 @@ export class HubSpotOAuthService {
   }
 
   /**
+   * Discover available tables - required by base class
+   */
+  async discoverTables(accessToken: string): Promise<TableDiscoveryResult[]> {
+    return this.discoverHubSpotTables(accessToken);
+  }
+
+  /**
    * Discover available HubSpot tables and their properties dynamically
    */
-  async discoverHubSpotTables(accessToken: string): Promise<any[]> {
+  async discoverHubSpotTables(accessToken: string): Promise<TableDiscoveryResult[]> {
     try {
       const tables = [];
 
@@ -684,7 +646,7 @@ export class HubSpotOAuthService {
   /**
    * Sync HubSpot data to company analytics schema using stored OAuth tokens
    */
-  async syncDataToSchema(companyId: number): Promise<{ success: boolean; recordsSynced: number; tablesCreated: string[]; error?: string }> {
+  async syncDataToSchema(companyId: number): Promise<SyncResult> {
     try {
       // Use Node.js database direct access
       const { eq, sql: sqlOp } = await import('drizzle-orm');
@@ -727,69 +689,37 @@ export class HubSpotOAuthService {
       let totalRecords = 0;
       const tablesCreated: string[] = [];
 
-      // Helper function to create table and insert data
-      const insertDataToSchema = async (tableName: string, data: any[], sourceSystem: string) => {
-        const schemaName = `analytics_company_${companyId}`;
-        const fullTableName = `${schemaName}.raw_${tableName}`;
-        
-        if (data.length === 0) return 0;
-        
-        // Create schema
-        await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
-        
-        // Create table 
-        await sql.unsafe(`
-          CREATE TABLE IF NOT EXISTS ${fullTableName} (
-            id SERIAL PRIMARY KEY,
-            data JSONB NOT NULL,
-            source_system TEXT NOT NULL,
-            company_id BIGINT NOT NULL,
-            loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        
-        // Clear existing data for fresh sync
-        await sql.unsafe(`DELETE FROM ${fullTableName} WHERE source_system = $1`, [sourceSystem]);
-        
-        // Insert data in batches
-        let inserted = 0;
-        
-        for (const item of data) {
-          await sql.unsafe(`
-            INSERT INTO ${fullTableName} (data, source_system, company_id)
-            VALUES ($1, $2, $3)
-          `, [JSON.stringify(item), sourceSystem, companyId]);
-          inserted++;
-        }
-        
-        return inserted;
-      };
-
-      // Fetch and sync contacts
+      // Fetch and sync contacts with automatic token refresh
       console.log('👥 Fetching HubSpot contacts...');
-      const contacts = await this.fetchContacts(accessToken, 500); // Limit for initial sync
+      const contacts = await this.executeWithTokenRefresh(companyId,
+        (token) => this.fetchContacts(token, 500)
+      );
       if (contacts.length > 0) {
-        const recordsLoaded = await insertDataToSchema('hubspot_contacts', contacts, 'hubspot_oauth');
+        const recordsLoaded = await this.insertDataToSchema(companyId, 'hubspot_contacts', contacts, 'hubspot_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_hubspot_contacts');
         console.log(`✅ Synced ${recordsLoaded} contacts`);
       }
 
-      // Fetch and sync companies
+      // Fetch and sync companies with automatic token refresh
       console.log('🏢 Fetching HubSpot companies...');
-      const companies = await this.fetchCompanies(accessToken, 500);
+      const companies = await this.executeWithTokenRefresh(companyId,
+        (token) => this.fetchCompanies(token, 500)
+      );
       if (companies.length > 0) {
-        const recordsLoaded = await insertDataToSchema('hubspot_companies', companies, 'hubspot_oauth');
+        const recordsLoaded = await this.insertDataToSchema(companyId, 'hubspot_companies', companies, 'hubspot_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_hubspot_companies');
         console.log(`✅ Synced ${recordsLoaded} companies`);
       }
 
-      // Fetch and sync deals
+      // Fetch and sync deals with automatic token refresh
       console.log('💰 Fetching HubSpot deals...');
-      const deals = await this.fetchDeals(accessToken, 500);
+      const deals = await this.executeWithTokenRefresh(companyId,
+        (token) => this.fetchDeals(token, 500)
+      );
       if (deals.length > 0) {
-        const recordsLoaded = await insertDataToSchema('hubspot_deals', deals, 'hubspot_oauth');
+        const recordsLoaded = await this.insertDataToSchema(companyId, 'hubspot_deals', deals, 'hubspot_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_hubspot_deals');
         console.log(`✅ Synced ${recordsLoaded} deals`);

@@ -1,19 +1,14 @@
 /**
- * Jira OAuth2 integration service
+ * Jira OAuth2 integration service extending base OAuth class
  */
 
-interface JiraOAuthConfig {
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-}
-
-interface JiraTokenResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  scope: string;
-}
+import { OAuthServiceBase } from './oauth-base.js';
+import { 
+  TokenResponse, 
+  SyncResult, 
+  TableDiscoveryResult,
+  OAuthError 
+} from './oauth-types.js';
 
 interface JiraUserInfo {
   account_id: string;
@@ -22,59 +17,19 @@ interface JiraUserInfo {
   picture?: string;
 }
 
-export class JiraOAuthService {
-  private config: JiraOAuthConfig;
-
+export class JiraOAuthService extends OAuthServiceBase {
+  
   constructor() {
+    super();
     console.log('🔍 JIRA_OAUTH_CLIENT_ID:', process.env.JIRA_OAUTH_CLIENT_ID ? 'SET' : 'NOT SET');
     console.log('🔍 JIRA_OAUTH_CLIENT_SECRET:', process.env.JIRA_OAUTH_CLIENT_SECRET ? 'SET' : 'NOT SET');
-    
-    this.config = {
-      clientId: process.env.JIRA_OAUTH_CLIENT_ID || '',
-      clientSecret: process.env.JIRA_OAUTH_CLIENT_SECRET || '',
-      redirectUri: `${process.env.APP_URL || 'http://localhost:5000'}/api/auth/jira/callback`
-    };
   }
 
   /**
-   * Generate state with company and user info for multi-tenant support
+   * Get service type identifier
    */
-  generateState(companyId: number, userId?: number): string {
-    const stateData = {
-      companyId,
-      userId,
-      timestamp: Date.now(),
-      nonce: Math.random().toString(36).substring(2, 15)
-    };
-    return Buffer.from(JSON.stringify(stateData)).toString('base64');
-  }
-
-  /**
-   * Parse state to get company and user info
-   */
-  parseState(state: string): { companyId: number; userId?: number; timestamp: number; nonce: string } {
-    try {
-      const decoded = Buffer.from(state, 'base64').toString();
-      return JSON.parse(decoded);
-    } catch (error) {
-      throw new Error('Invalid state parameter');
-    }
-  }
-
-  /**
-   * Initialize the OAuth client
-   */
-  async initialize(): Promise<void> {
-    try {
-      // Simple initialization - just validate config
-      if (!this.config.clientId || !this.config.clientSecret) {
-        throw new Error('Missing Jira OAuth credentials');
-      }
-      console.log('Jira OAuth client initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize Jira OAuth client:', error);
-      throw error;
-    }
+  getServiceType(): string {
+    return 'jira';
   }
 
   /**
@@ -198,7 +153,7 @@ export class JiraOAuthService {
   /**
    * Refresh access token
    */
-  async refreshToken(refreshToken: string): Promise<JiraTokenResponse> {
+  async refreshToken(refreshToken: string): Promise<TokenResponse> {
     try {
       const refreshParams = new URLSearchParams({
         grant_type: 'refresh_token',
@@ -237,7 +192,22 @@ export class JiraOAuthService {
   /**
    * Test API access with token
    */
-  async testApiAccess(accessToken: string, cloudId: string): Promise<boolean> {
+  async testApiAccess(accessToken: string, cloudId?: string): Promise<boolean> {
+    // If cloudId not provided, try to get it from stored config
+    if (!cloudId) {
+      // For testing purposes, just check if we can access the user endpoint
+      try {
+        const response = await fetch('https://api.atlassian.com/me', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+          },
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    }
     try {
       const response = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/myself`, {
         headers: {
@@ -254,9 +224,25 @@ export class JiraOAuthService {
   }
 
   /**
+   * Discover available tables - required by base class
+   */
+  async discoverTables(accessToken: string, cloudId?: string): Promise<TableDiscoveryResult[]> {
+    if (!cloudId) {
+      // Try to get from accessible resources
+      const resources = await this.getAccessibleResources(accessToken);
+      if (resources && resources.length > 0) {
+        cloudId = resources[0].id;
+      } else {
+        return [];
+      }
+    }
+    return this.discoverJiraTables(accessToken, cloudId);
+  }
+
+  /**
    * Discover available Jira tables and their fields dynamically
    */
-  async discoverJiraTables(accessToken: string, cloudId: string): Promise<any[]> {
+  async discoverJiraTables(accessToken: string, cloudId: string): Promise<TableDiscoveryResult[]> {
     try {
       const tables = [];
 
@@ -681,76 +667,11 @@ export class JiraOAuthService {
     }
   }
 
-  /**
-   * Execute API call with automatic token refresh on 401 errors
-   */
-  async executeWithTokenRefresh<T>(
-    companyId: number, 
-    apiCall: (accessToken: string) => Promise<T>
-  ): Promise<T> {
-    console.log('🔧 executeWithTokenRefresh called for company:', companyId);
-    const storage = await import('../storage');
-    
-    // Get current tokens from database
-    const jiraSource = await storage.storage.getDataSourcesByCompany(companyId)
-      .then(sources => sources.find(ds => ds.type === 'jira'));
-    
-    if (!jiraSource?.config) {
-      throw new Error('No Jira OAuth tokens found for this company');
-    }
-
-    const config = jiraSource.config || {};
-    let { accessToken, refreshToken } = config;
-
-    try {
-      console.log('🔧 Calling API with current access token...');
-      // Try the API call with current access token
-      return await apiCall(accessToken);
-    } catch (error: any) {
-      console.log('🔧 API call failed with error:', error.message);
-      // Check if it's a token expiration error
-      if (error.message?.includes('TOKEN_EXPIRED') || error.message?.includes('401')) {
-        console.log('🔄 Access token expired, refreshing automatically...');
-        
-        if (!refreshToken) {
-          throw new Error('No refresh token available for automatic refresh');
-        }
-
-        try {
-          // Refresh the access token
-          const newTokens = await this.refreshToken(refreshToken);
-          
-          // Update tokens in database
-          const updatedConfig = {
-            ...config,
-            accessToken: newTokens.access_token,
-            refreshToken: newTokens.refresh_token,
-            expiresAt: new Date(Date.now() + (newTokens.expires_in * 1000)).toISOString(),
-          };
-
-          await storage.storage.updateDataSource(jiraSource.id, {
-            config: updatedConfig,
-          });
-
-          console.log('✅ Access token refreshed successfully');
-
-          // Retry the API call with the new access token
-          return await apiCall(newTokens.access_token);
-        } catch (refreshError) {
-          console.error('❌ Failed to refresh access token:', refreshError);
-          throw new Error('Failed to refresh OAuth tokens. Please re-authenticate.');
-        }
-      }
-      
-      // If it's not a token error, re-throw the original error
-      throw error;
-    }
-  }
 
   /**
    * Sync Jira data to company analytics schema using stored OAuth tokens
    */
-  async syncDataToSchema(companyId: number): Promise<{ success: boolean; recordsSynced: number; tablesCreated: string[]; error?: string }> {
+  async syncDataToSchema(companyId: number): Promise<SyncResult> {
     try {
       // Instead of importing Python PostgresLoader, we'll use Node.js database direct access
       const { eq, sql: sqlOp } = await import('drizzle-orm');
@@ -792,43 +713,6 @@ export class JiraOAuthService {
       let totalRecords = 0;
       const tablesCreated: string[] = [];
 
-      // Helper function to create table and insert data
-      const insertDataToSchema = async (tableName: string, data: any[], sourceSystem: string) => {
-        const schemaName = `analytics_company_${companyId}`;
-        const fullTableName = `${schemaName}.raw_${tableName}`;
-        
-        if (data.length === 0) return 0;
-        
-        // Create schema
-        await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
-        
-        // Create table 
-        await sql.unsafe(`
-          CREATE TABLE IF NOT EXISTS ${fullTableName} (
-            id SERIAL PRIMARY KEY,
-            data JSONB NOT NULL,
-            source_system TEXT NOT NULL,
-            company_id BIGINT NOT NULL,
-            loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        
-        // Clear existing data for fresh sync
-        await sql.unsafe(`DELETE FROM ${fullTableName} WHERE source_system = $1`, [sourceSystem]);
-        
-        // Insert data in batches
-        let inserted = 0;
-        
-        for (const item of data) {
-          await sql.unsafe(`
-            INSERT INTO ${fullTableName} (data, source_system, company_id)
-            VALUES ($1, $2, $3)
-          `, [JSON.stringify(item), sourceSystem, companyId]);
-          inserted++;
-        }
-        
-        return inserted;
-      };
 
       // Fetch and sync issues (most important table) with automatic token refresh
       console.log('📋 Fetching Jira issues...');
@@ -838,7 +722,7 @@ export class JiraOAuthService {
       );
       console.log('🔧 executeWithTokenRefresh COMPLETED, got', issues?.length || 0, 'issues');
       if (issues.length > 0) {
-        const recordsLoaded = await insertDataToSchema('jira_issues', issues, 'jira_oauth');
+        const recordsLoaded = await this.insertDataToSchema(companyId, 'jira_issues', issues, 'jira_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_jira_issues');
         console.log(`✅ Synced ${recordsLoaded} issues`);
@@ -850,7 +734,7 @@ export class JiraOAuthService {
         (token) => this.fetchProjects(token, cloudId)
       );
       if (projects.length > 0) {
-        const recordsLoaded = await insertDataToSchema('jira_projects', projects, 'jira_oauth');
+        const recordsLoaded = await this.insertDataToSchema(companyId, 'jira_projects', projects, 'jira_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_jira_projects');
         console.log(`✅ Synced ${recordsLoaded} projects`);
@@ -862,7 +746,7 @@ export class JiraOAuthService {
         (token) => this.fetchUsers(token, cloudId)
       );
       if (users.length > 0) {
-        const recordsLoaded = await insertDataToSchema('jira_users', users, 'jira_oauth');
+        const recordsLoaded = await this.insertDataToSchema(companyId, 'jira_users', users, 'jira_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_jira_users');
         console.log(`✅ Synced ${recordsLoaded} users`);

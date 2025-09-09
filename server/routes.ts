@@ -9,6 +9,7 @@ import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
 import { jiraOAuthService } from "./services/jira-oauth";
 import { hubspotOAuthService } from "./services/hubspot-oauth";
+import { odooOAuthService } from "./services/odoo-oauth";
 import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
@@ -607,6 +608,261 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to sync HubSpot data via OAuth",
         method: 'oauth'
       });
+    }
+  });
+
+  // Odoo OAuth2 Routes
+  app.get("/api/auth/odoo/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      // Note: Odoo instance URL and credentials are now stored in database
+      const authUrl = await odooOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Odoo OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/odoo/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = odooOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+
+      console.log(`🔄 Odoo OAuth callback for company ${companyId}`);
+
+      // Exchange code for tokens using stored credentials
+      const tokens = await odooOAuthService.exchangeCodeForTokens(code as string, state as string, companyId);
+
+      // Get Odoo instance URL from stored config for user info call
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const odooSource = dataSources.find(ds => ds.type === 'odoo');
+      
+      if (!odooSource?.config) {
+        throw new Error('Odoo configuration not found');
+      }
+
+      const config = typeof odooSource.config === 'string' 
+        ? JSON.parse(odooSource.config) 
+        : odooSource.config;
+
+      // Get user info
+      const userInfo = await odooOAuthService.getUserInfo(tokens.access_token, config.odooInstanceUrl);
+
+      console.log(`✅ Odoo OAuth successful for database ${userInfo.database}`);
+
+      // Store tokens in database while preserving original credentials
+      const odooConfig = {
+        ...config,  // Preserve original setup config (consumerKey, consumerSecret, odooInstanceUrl)
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
+        userInfo,
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Update the existing data source
+      await storage.updateDataSource(odooSource.id, {
+        status: 'connected',
+        config: odooConfig,
+        lastSyncAt: new Date(),
+      });
+
+      // Redirect back to frontend with success
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?odoo=connected`);
+      
+    } catch (error) {
+      console.error('Odoo OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Odoo table discovery endpoint
+  app.get("/api/auth/odoo/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Odoo table discovery for company: ${companyId}`);
+      
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSourcesByCompany(parseInt(companyId));
+      const odooSource = dataSources.find(ds => ds.type === 'odoo');
+      
+      if (!odooSource || !odooSource.config) {
+        return res.status(404).json({ error: 'Odoo connection not found' });
+      }
+
+      const config = typeof odooSource.config === 'string' 
+        ? JSON.parse(odooSource.config) 
+        : odooSource.config;
+        
+      if (!config.accessToken || !config.odooInstanceUrl) {
+        return res.status(400).json({ error: 'Invalid Odoo configuration' });
+      }
+
+      // Discover available tables
+      const tables = await odooOAuthService.discoverTables(config.accessToken, config.odooInstanceUrl);
+      
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => t.isStandard),
+        financial: tables.filter(t => ['sale_order', 'account_move', 'purchase_order'].includes(t.name)),
+        operational: tables.filter(t => ['stock_move', 'product_product', 'res_partner'].includes(t.name)),
+        other: tables.filter(t => !t.isStandard && !['sale_order', 'account_move', 'purchase_order', 'stock_move', 'product_product', 'res_partner'].includes(t.name))
+      };
+
+      console.log(`✅ Discovered ${tables.length} Odoo tables`);
+      
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length
+      });
+      
+    } catch (error) {
+      console.error('Error discovering Odoo tables:', error);
+      res.status(500).json({ error: 'Failed to discover Odoo tables' });
+    }
+  });
+
+  app.get("/api/auth/odoo/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Check if company has active Odoo connection
+      const dataSources = await storage.getDataSources(companyId);
+      const odooSource = dataSources.find(ds => ds.type === 'odoo' && ds.status === 'connected');
+      
+      if (!odooSource || !odooSource.config) {
+        return res.json({ connected: false });
+      }
+
+      const config = typeof odooSource.config === 'string' 
+        ? JSON.parse(odooSource.config) 
+        : odooSource.config;
+
+      const status = {
+        connected: true,
+        method: 'oauth',
+        userInfo: config.userInfo,
+        odooInstanceUrl: config.odooInstanceUrl,
+        connectedAt: config.connectedAt,
+      };
+
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Odoo status:', error);
+      res.status(500).json({ error: 'Failed to check Odoo status' });
+    }
+  });
+
+  // OAuth-based Odoo sync endpoint
+  app.post("/api/auth/odoo/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based Odoo sync for company ${companyId}`);
+      
+      // Use the Odoo OAuth service to sync data
+      const result = await odooOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth Odoo sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Odoo`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Odoo sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Odoo data",
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth Odoo sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync Odoo data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Odoo setup endpoint for initial configuration with customer-provided OAuth credentials
+  app.post("/api/auth/odoo/setup", async (req, res) => {
+    try {
+      const { companyId, odooInstanceUrl, consumerKey, consumerSecret } = req.body;
+
+      if (!companyId || !odooInstanceUrl || !consumerKey || !consumerSecret) {
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
+
+      // Validate URL format
+      try {
+        new URL(odooInstanceUrl);
+      } catch {
+        return res.status(400).json({ error: "Invalid Odoo instance URL format" });
+      }
+
+      // Create or update Odoo data source with setup configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingOdoo = dataSources.find(ds => ds.type === 'odoo');
+
+      const setupConfig = {
+        odooInstanceUrl: odooInstanceUrl.replace(/\/$/, ''), // Remove trailing slash
+        consumerKey,
+        consumerSecret,
+        setupAt: new Date().toISOString(),
+      };
+
+      if (existingOdoo) {
+        // Update existing data source
+        await storage.updateDataSource(existingOdoo.id, {
+          status: 'setup',
+          config: setupConfig,
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Odoo ERP (${new URL(odooInstanceUrl).hostname})`,
+          type: 'odoo',
+          status: 'setup',
+          config: setupConfig,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Odoo setup configuration saved successfully",
+        nextStep: "oauth_authorization"
+      });
+
+    } catch (error) {
+      console.error('Odoo setup error:', error);
+      res.status(500).json({ error: "Failed to save Odoo setup configuration" });
     }
   });
   

@@ -73,6 +73,17 @@ const availableTools = [
     customCost: 25
   },
   {
+    id: "odoo",
+    name: "Odoo ERP",
+    icon: Building2,
+    logo: "https://logo.clearbit.com/odoo.com",
+    description: "Available data: Sales, Invoices, Customers, Inventory",
+    category: "ERP",
+    color: "#714B67",
+    standardTables: ["sale_order", "account_move", "res_partner", "product_product"],
+    customCost: 35
+  },
+  {
     id: "mailchimp",
     name: "Mailchimp",
     icon: Mail,
@@ -325,6 +336,7 @@ export default function Setup() {
     const state = urlParams.get('state');
     const error = urlParams.get('error');
     const hubspotConnected = urlParams.get('hubspot');
+    const odooConnected = urlParams.get('odoo');
 
     // Check if we're returning from HubSpot OAuth (backend redirect)
     if (hubspotConnected === 'connected') {
@@ -337,6 +349,20 @@ export default function Setup() {
       
       toast({
         title: "HubSpot Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
+      });
+    }
+    // Check if we're returning from Odoo OAuth (backend redirect)
+    else if (odooConnected === 'connected') {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // OAuth completed successfully - now show setup type selection
+      setCurrentToolForSetup('odoo');
+      setSetupTypeDialogOpen(true);
+      
+      toast({
+        title: "Odoo Connected Successfully!",
         description: "Connection established. Please choose how you'd like to set up your tables.",
       });
     }
@@ -401,6 +427,12 @@ export default function Setup() {
   
   // Contact dialog state
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  
+  // Odoo setup dialog state
+  const [odooSetupDialogOpen, setOdooSetupDialogOpen] = useState(false);
+  const [odooInstanceUrl, setOdooInstanceUrl] = useState("");
+  const [odooConsumerKey, setOdooConsumerKey] = useState("");
+  const [odooConsumerSecret, setOdooConsumerSecret] = useState("");
 
   const { toast } = useToast();
 
@@ -633,6 +665,27 @@ export default function Setup() {
           description: "Finding available HubSpot tables for selection...",
         });
       }
+    } else if (currentToolForSetup === 'odoo') {
+      if (setupType === 'standard') {
+        // Standard setup - auto-sync with predefined tables
+        setCompletedLogins(prev => [...prev, 'odoo']);
+        triggerOdooSync('standard');
+        
+        toast({
+          title: "Odoo Standard Setup Complete",
+          description: "Syncing data with standard tables...",
+        });
+      } else {
+        // Custom setup - show table selection
+        setCurrentToolForCustom('odoo');
+        discoverOdooTables();
+        setCustomTableDialogOpen(true);
+        
+        toast({
+          title: "Table Discovery in Progress",
+          description: "Finding available Odoo tables for selection...",
+        });
+      }
     } else {
       setCurrentToolForCredentials(currentToolForSetup);
       setCredentialDialogOpen(true);
@@ -805,6 +858,204 @@ export default function Setup() {
       }
     } catch (error) {
       console.error('HubSpot sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Discover Odoo tables dynamically using API
+  const discoverOdooTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering Odoo tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/odoo/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.tables) {
+        // Flatten categorized tables into a single array
+        const allTables = [
+          ...data.tables.core || [],
+          ...data.tables.financial || [],
+          ...data.tables.operational || [],
+          ...data.tables.other || []
+        ];
+        
+        setDiscoveredTables(allTables);
+      } else {
+        throw new Error('Invalid response format');
+      }
+
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${data.tables?.totalTables || 0} available Odoo tables for syncing.`,
+      });
+      
+    } catch (error) {
+      console.error('Error discovering Odoo tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover Odoo tables. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  // Initiate Odoo OAuth flow - requires setup first
+  const initiateOdooOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Setup Required",
+          description: "Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Invalid Company",
+          description: "Invalid company selection. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`🔄 Starting Odoo setup for company ${selectedCompany.id}`);
+      
+      // For Odoo, we need to collect OAuth credentials from the customer
+      setCurrentToolForSetup('odoo');
+      setOdooSetupDialogOpen(true);
+    } catch (error) {
+      console.error('Failed to start Odoo setup:', error);
+      toast({
+        title: "Setup Error",
+        description: "Failed to start Odoo setup. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle Odoo setup form submission
+  const handleOdooSetupSubmit = async () => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        throw new Error('No company selected');
+      }
+
+      // Validate inputs
+      if (!odooInstanceUrl || !odooConsumerKey || !odooConsumerSecret) {
+        toast({
+          title: "Missing Information",
+          description: "Please fill in all required fields.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Save Odoo credentials to backend
+      const response = await fetch('/api/auth/odoo/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyId: selectedCompany.id,
+          odooInstanceUrl,
+          consumerKey: odooConsumerKey,
+          consumerSecret: odooConsumerSecret,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Setup failed');
+      }
+
+      const result = await response.json();
+      
+      // Close setup dialog
+      setOdooSetupDialogOpen(false);
+      
+      // Clear form
+      setOdooInstanceUrl("");
+      setOdooConsumerKey("");
+      setOdooConsumerSecret("");
+
+      // Now initiate OAuth flow
+      window.location.href = `/api/auth/odoo/authorize?companyId=${selectedCompany.id}`;
+      
+    } catch (error) {
+      console.error('Odoo setup failed:', error);
+      toast({
+        title: "Setup Failed",
+        description: error.message || "Failed to save Odoo configuration. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger Odoo data sync after OAuth completion
+  const triggerOdooSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering Odoo sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/odoo/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Successful!",
+          description: `Successfully synced ${result.recordsSynced} records from Odoo.`,
+        });
+        
+        // Mark as completed
+        setCompletedLogins(prev => [...prev, 'odoo']);
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Odoo sync failed:', error);
       toast({
         title: "Sync Failed",
         description: "Data sync failed but connection is established. You can retry from the integrations page.",
@@ -1605,6 +1856,8 @@ export default function Setup() {
                             initiateJiraOAuth();
                           } else if (toolId === 'hubspot') {
                             initiateHubSpotOAuth();
+                          } else if (toolId === 'odoo') {
+                            initiateOdooOAuth();
                           } else {
                             openSetupTypeDialog(toolId);
                           }
@@ -2124,12 +2377,12 @@ export default function Setup() {
               {loadingTables ? (
                 <div className="flex items-center justify-center p-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-saulto-600"></div>
-                  <span className="ml-3 text-gray-600">Discovering {currentToolForCustom === 'jira' ? 'Jira' : currentToolForCustom === 'hubspot' ? 'HubSpot' : 'available'} tables...</span>
+                  <span className="ml-3 text-gray-600">Discovering {currentToolForCustom === 'jira' ? 'Jira' : currentToolForCustom === 'hubspot' ? 'HubSpot' : currentToolForCustom === 'odoo' ? 'Odoo' : 'available'} tables...</span>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {((currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot') ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
-                    // Handle both discovered tables (Jira/HubSpot) and static tables (other tools)
+                  {((currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot' || currentToolForCustom === 'odoo') ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
+                    // Handle both discovered tables (Jira/HubSpot/Odoo) and static tables (other tools)
                     const tableName = table.name;
                     const tableLabel = table.label;
                     const tableFields = table.fields || [];
@@ -2202,11 +2455,11 @@ export default function Setup() {
                     );
                   })}
                   
-                  {(currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot') && discoveredTables.length === 0 && !loadingTables && (
+                  {(currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot' || currentToolForCustom === 'odoo') && discoveredTables.length === 0 && !loadingTables && (
                     <div className="text-center p-8 text-gray-500">
                       <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p className="font-medium">No tables discovered</p>
-                      <p className="text-sm mt-1">Please ensure {currentToolForCustom === 'jira' ? 'Jira' : 'HubSpot'} is properly connected and try again.</p>
+                      <p className="text-sm mt-1">Please ensure {currentToolForCustom === 'jira' ? 'Jira' : currentToolForCustom === 'hubspot' ? 'HubSpot' : 'Odoo'} is properly connected and try again.</p>
                     </div>
                   )}
                 </div>
@@ -2222,8 +2475,14 @@ export default function Setup() {
                     if (currentToolForCustom) {
                       setCompletedLogins(prev => [...prev, currentToolForCustom]);
                       
-                      // Trigger sync with selected custom tables
-                      triggerJiraSync('custom');
+                      // Trigger sync with selected custom tables based on tool type
+                      if (currentToolForCustom === 'jira') {
+                        triggerJiraSync('custom');
+                      } else if (currentToolForCustom === 'hubspot') {
+                        triggerHubSpotSync('custom');
+                      } else if (currentToolForCustom === 'odoo') {
+                        triggerOdooSync('custom');
+                      }
                       
                       toast({
                         title: "Custom Setup Complete",
@@ -2368,6 +2627,147 @@ export default function Setup() {
                 Send Email
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Odoo Setup Dialog */}
+      <Dialog open={odooSetupDialogOpen} onOpenChange={setOdooSetupDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-purple-600 rounded flex items-center justify-center">
+                <span className="text-white text-xs font-bold">O</span>
+              </div>
+              Set Up Odoo Integration
+            </DialogTitle>
+            <DialogDescription>
+              Configure your Odoo ERP integration to sync sales, inventory, and customer data.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Step 1: Instance URL */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">1</div>
+                <h3 className="font-medium">Enter Your Odoo Instance URL</h3>
+              </div>
+              <div className="ml-8 space-y-2">
+                <Label htmlFor="odooInstanceUrl">Odoo Instance URL</Label>
+                <Input
+                  id="odooInstanceUrl"
+                  placeholder="https://yourcompany.odoo.com"
+                  value={odooInstanceUrl}
+                  onChange={(e) => setOdooInstanceUrl(e.target.value)}
+                />
+                <p className="text-sm text-gray-600">
+                  This is your Odoo instance URL (e.g., https://yourcompany.odoo.com)
+                </p>
+              </div>
+            </div>
+
+            {/* Step 2: Enable OAuth */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">2</div>
+                <h3 className="font-medium">Enable OAuth in Your Odoo Instance</h3>
+              </div>
+              <div className="ml-8 space-y-3">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900 font-medium mb-2">In your Odoo instance:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
+                    <li>Go to <strong>Settings</strong> → <strong>General Settings</strong></li>
+                    <li>Find the <strong>OAuth Provider</strong> section</li>
+                    <li>Enable <strong>OAuth Provider</strong></li>
+                    <li>Click <strong>Save</strong></li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Create OAuth Application */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">3</div>
+                <h3 className="font-medium">Create OAuth Application</h3>
+              </div>
+              <div className="ml-8 space-y-3">
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <p className="text-sm text-yellow-900 font-medium mb-2">In your Odoo instance:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-yellow-800">
+                    <li>Go to <strong>Settings</strong> → <strong>OAuth Provider</strong> → <strong>OAuth Applications</strong></li>
+                    <li>Click <strong>Create</strong></li>
+                    <li>Fill in the application details:
+                      <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                        <li><strong>Application Name:</strong> Saulto Analytics</li>
+                        <li><strong>Client Type:</strong> Confidential</li>
+                        <li><strong>Grant Type:</strong> Authorization Code</li>
+                        <li><strong>Redirect URIs:</strong> http://localhost:5000/api/auth/callback</li>
+                      </ul>
+                    </li>
+                    <li>Click <strong>Save</strong></li>
+                    <li>Copy the <strong>Consumer Key</strong> and <strong>Consumer Secret</strong> from the created application</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4: Enter Credentials */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">4</div>
+                <h3 className="font-medium">Enter OAuth Credentials</h3>
+              </div>
+              <div className="ml-8 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="odooConsumerKey">Consumer Key</Label>
+                  <Input
+                    id="odooConsumerKey"
+                    placeholder="Your Odoo OAuth Consumer Key"
+                    value={odooConsumerKey}
+                    onChange={(e) => setOdooConsumerKey(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="odooConsumerSecret">Consumer Secret</Label>
+                  <Input
+                    id="odooConsumerSecret"
+                    type="password"
+                    placeholder="Your Odoo OAuth Consumer Secret"
+                    value={odooConsumerSecret}
+                    onChange={(e) => setOdooConsumerSecret(e.target.value)}
+                  />
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm text-gray-700">
+                    <strong>Security Note:</strong> Your OAuth credentials are securely stored and encrypted. 
+                    They are only used to authenticate with your Odoo instance.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOdooSetupDialogOpen(false);
+                setOdooInstanceUrl("");
+                setOdooConsumerKey("");
+                setOdooConsumerSecret("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleOdooSetupSubmit}
+              disabled={!odooInstanceUrl.trim() || !odooConsumerKey.trim() || !odooConsumerSecret.trim()}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              Connect to Odoo
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

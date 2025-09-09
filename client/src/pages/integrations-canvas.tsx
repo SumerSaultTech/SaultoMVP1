@@ -99,6 +99,14 @@ const APP_TEMPLATES = [
     color: "#0052cc"
   },
   {
+    id: "odoo",
+    name: "Odoo ERP",
+    icon: Database,
+    logo: "https://logo.clearbit.com/odoo.com",
+    category: "ERP",
+    color: "#714B67"
+  },
+  {
     id: "mailchimp",
     name: "Mailchimp",
     icon: Mail,
