@@ -74,8 +74,8 @@ export class OdooOAuthService extends OAuthServiceBase {
       state
     });
 
-    // Use the customer's Odoo instance URL for authorization
-    return `${odooInstanceUrl}/oauth2/authorize?${params.toString()}`;
+    // Use the customer's Odoo instance REST API URL for authorization (Fivetran approach)
+    return `${odooInstanceUrl}/restapi/1.0/common/oauth2/authorize?${params.toString()}`;
   }
 
   /**
@@ -107,7 +107,7 @@ export class OdooOAuthService extends OAuthServiceBase {
         code: code
       });
 
-      const response = await fetch(`${odooInstanceUrl}/oauth2/token`, {
+      const response = await fetch(`${odooInstanceUrl}/restapi/1.0/common/oauth2/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -141,7 +141,7 @@ export class OdooOAuthService extends OAuthServiceBase {
    */
   async getUserInfo(accessToken: string, odooInstanceUrl: string): Promise<OdooUserInfo> {
     try {
-      const response = await fetch(`${odooInstanceUrl}/oauth2/userinfo`, {
+      const response = await fetch(`${odooInstanceUrl}/restapi/1.0/common/userinfo`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
@@ -195,7 +195,7 @@ export class OdooOAuthService extends OAuthServiceBase {
         refresh_token: refreshToken
       });
 
-      const response = await fetch(`${odooInstanceUrl}/oauth2/token`, {
+      const response = await fetch(`${odooInstanceUrl}/restapi/1.0/common/oauth2/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',

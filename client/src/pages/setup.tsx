@@ -159,6 +159,7 @@ const standardTables = {
   mailchimp: ["campaign", "list", "subscriber", "report"],
   monday: ["board", "item", "update", "user"],
   netsuite: ["transaction", "customer", "item", "vendor"],
+  odoo: ["sales_orders", "invoices", "customers", "products"],
   quickbooks: ["invoice", "customer", "item", "payment"],
   salesforce: ["opportunity", "account", "contact", "lead"]
 };
@@ -431,8 +432,9 @@ export default function Setup() {
   // Odoo setup dialog state
   const [odooSetupDialogOpen, setOdooSetupDialogOpen] = useState(false);
   const [odooInstanceUrl, setOdooInstanceUrl] = useState("");
-  const [odooConsumerKey, setOdooConsumerKey] = useState("");
-  const [odooConsumerSecret, setOdooConsumerSecret] = useState("");
+  const [odooDatabase, setOdooDatabase] = useState("");
+  const [odooUsername, setOdooUsername] = useState("");
+  const [odooApiKey, setOdooApiKey] = useState("");
 
   const { toast } = useToast();
 
@@ -967,7 +969,7 @@ export default function Setup() {
       }
 
       // Validate inputs
-      if (!odooInstanceUrl || !odooConsumerKey || !odooConsumerSecret) {
+      if (!odooInstanceUrl || !odooDatabase || !odooUsername || !odooApiKey) {
         toast({
           title: "Missing Information",
           description: "Please fill in all required fields.",
@@ -975,6 +977,15 @@ export default function Setup() {
         });
         return;
       }
+
+      // Debug logging before sending
+      console.log('🔍 Sending Odoo setup data:', {
+        companyId: selectedCompany.id,
+        odooInstanceUrl: odooInstanceUrl?.length ? `SET (${odooInstanceUrl.length} chars)` : 'EMPTY',
+        odooDatabase: odooDatabase?.length ? `SET (${odooDatabase.length} chars)` : 'EMPTY',
+        odooUsername: odooUsername?.length ? `SET (${odooUsername.length} chars)` : 'EMPTY',
+        odooApiKey: odooApiKey?.length ? `SET (${odooApiKey.length} chars)` : 'EMPTY'
+      });
 
       // Save Odoo credentials to backend
       const response = await fetch('/api/auth/odoo/setup', {
@@ -985,8 +996,9 @@ export default function Setup() {
         body: JSON.stringify({
           companyId: selectedCompany.id,
           odooInstanceUrl,
-          consumerKey: odooConsumerKey,
-          consumerSecret: odooConsumerSecret,
+          odooDatabase,
+          odooUsername,
+          odooApiKey,
         }),
       });
 
@@ -1002,11 +1014,19 @@ export default function Setup() {
       
       // Clear form
       setOdooInstanceUrl("");
-      setOdooConsumerKey("");
-      setOdooConsumerSecret("");
+      setOdooDatabase("");
+      setOdooUsername("");
+      setOdooApiKey("");
 
-      // Now initiate OAuth flow
-      window.location.href = `/api/auth/odoo/authorize?companyId=${selectedCompany.id}`;
+      // Add odoo to completed logins (same pattern as OAuth flows)
+      setCompletedLogins([...completedLogins, "odoo"]);
+      
+      // Show success message
+      toast({
+        title: "Odoo Connected!",
+        description: "Your Odoo ERP has been successfully connected to Saulto Analytics.",
+        variant: "default",
+      });
       
     } catch (error) {
       console.error('Odoo setup failed:', error);
@@ -1202,9 +1222,18 @@ export default function Setup() {
         const finalProgress = (completedSyncs + 1) / selectedTools.length * 100;
         setSyncProgress(finalProgress);
 
-        // Call the actual Python connector sync API (but don't show duplicate toasts)
+        // Call the actual sync API (different endpoints for different tools)
         try {
-          const syncResponse = await fetch(`/api/connectors/${companyId}/${tool}/sync`, {
+          let syncEndpoint;
+          if (tool === 'odoo') {
+            // Use OAuth-based Odoo sync endpoint
+            syncEndpoint = `/api/auth/odoo/sync/${companyId}`;
+          } else {
+            // Use generic connector sync endpoint for other tools
+            syncEndpoint = `/api/connectors/${companyId}/${tool}/sync`;
+          }
+          
+          const syncResponse = await fetch(syncEndpoint, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -2667,76 +2696,79 @@ export default function Setup() {
               </div>
             </div>
 
-            {/* Step 2: Enable OAuth */}
+            {/* Step 2: Generate API Key */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">2</div>
-                <h3 className="font-medium">Enable OAuth in Your Odoo Instance</h3>
+                <h3 className="font-medium">Generate API Key in Odoo</h3>
               </div>
               <div className="ml-8 space-y-3">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <p className="text-sm text-blue-900 font-medium mb-2">In your Odoo instance:</p>
                   <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
-                    <li>Go to <strong>Settings</strong> → <strong>General Settings</strong></li>
-                    <li>Find the <strong>OAuth Provider</strong> section</li>
-                    <li>Enable <strong>OAuth Provider</strong></li>
-                    <li>Click <strong>Save</strong></li>
+                    <li>Click on your <strong>profile picture</strong> in the top right corner</li>
+                    <li>Select <strong>"My Profile"</strong></li>
+                    <li>Click the <strong>"Preferences"</strong> tab</li>
+                    <li>Scroll down to the <strong>"API Keys"</strong> section</li>
+                    <li>Click <strong>"Generate New API Key"</strong></li>
+                    <li>Fill in the API key details:
+                      <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                        <li><strong>Name:</strong> Saulto Analytics</li>
+                        <li><strong>Validity:</strong> Select <strong>"Persistent Key"</strong> ⚠️</li>
+                      </ul>
+                    </li>
+                    <li>Click <strong>"Generate key"</strong></li>
+                    <li><strong>Copy the API key immediately</strong> (you won't see it again!)</li>
                   </ol>
+                  <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded">
+                    <p className="text-xs text-red-900 font-medium">⚠️ IMPORTANT:</p>
+                    <ul className="text-xs text-red-800 mt-1 list-disc list-inside">
+                      <li>Must select <strong>"Persistent Key"</strong> for continuous access</li>
+                      <li>API key is only shown once - copy it immediately!</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Step 3: Create OAuth Application */}
+            {/* Step 3: Enter Connection Details */}
+
+            {/* Step 3: Enter Connection Details */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">3</div>
-                <h3 className="font-medium">Create OAuth Application</h3>
-              </div>
-              <div className="ml-8 space-y-3">
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <p className="text-sm text-yellow-900 font-medium mb-2">In your Odoo instance:</p>
-                  <ol className="list-decimal list-inside space-y-1 text-sm text-yellow-800">
-                    <li>Go to <strong>Settings</strong> → <strong>OAuth Provider</strong> → <strong>OAuth Applications</strong></li>
-                    <li>Click <strong>Create</strong></li>
-                    <li>Fill in the application details:
-                      <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                        <li><strong>Application Name:</strong> Saulto Analytics</li>
-                        <li><strong>Client Type:</strong> Confidential</li>
-                        <li><strong>Grant Type:</strong> Authorization Code</li>
-                        <li><strong>Redirect URIs:</strong> http://localhost:5000/api/auth/callback</li>
-                      </ul>
-                    </li>
-                    <li>Click <strong>Save</strong></li>
-                    <li>Copy the <strong>Consumer Key</strong> and <strong>Consumer Secret</strong> from the created application</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 4: Enter Credentials */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">4</div>
-                <h3 className="font-medium">Enter OAuth Credentials</h3>
+                <h3 className="font-medium">Enter Connection Details</h3>
               </div>
               <div className="ml-8 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="odooConsumerKey">Consumer Key</Label>
+                  <Label htmlFor="odooDatabase">Database Name</Label>
                   <Input
-                    id="odooConsumerKey"
-                    placeholder="Your Odoo OAuth Consumer Key"
-                    value={odooConsumerKey}
-                    onChange={(e) => setOdooConsumerKey(e.target.value)}
+                    id="odooDatabase"
+                    placeholder="Your Odoo database name"
+                    value={odooDatabase}
+                    onChange={(e) => setOdooDatabase(e.target.value)}
+                  />
+                  <p className="text-sm text-gray-600">
+                    Usually visible in your Odoo URL or ask your Odoo administrator
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="odooUsername">Username</Label>
+                  <Input
+                    id="odooUsername"
+                    placeholder="Your Odoo username (usually email)"
+                    value={odooUsername}
+                    onChange={(e) => setOdooUsername(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="odooConsumerSecret">Consumer Secret</Label>
+                  <Label htmlFor="odooApiKey">API Key</Label>
                   <Input
-                    id="odooConsumerSecret"
+                    id="odooApiKey"
                     type="password"
-                    placeholder="Your Odoo OAuth Consumer Secret"
-                    value={odooConsumerSecret}
-                    onChange={(e) => setOdooConsumerSecret(e.target.value)}
+                    placeholder="Your Odoo API Key"
+                    value={odooApiKey}
+                    onChange={(e) => setOdooApiKey(e.target.value)}
                   />
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
@@ -2755,15 +2787,16 @@ export default function Setup() {
               onClick={() => {
                 setOdooSetupDialogOpen(false);
                 setOdooInstanceUrl("");
-                setOdooConsumerKey("");
-                setOdooConsumerSecret("");
+                setOdooDatabase("");
+                setOdooUsername("");
+                setOdooApiKey("");
               }}
             >
               Cancel
             </Button>
             <Button
               onClick={handleOdooSetupSubmit}
-              disabled={!odooInstanceUrl.trim() || !odooConsumerKey.trim() || !odooConsumerSecret.trim()}
+              disabled={!odooInstanceUrl.trim() || !odooDatabase.trim() || !odooUsername.trim() || !odooApiKey.trim()}
               className="bg-purple-600 hover:bg-purple-700"
             >
               Connect to Odoo

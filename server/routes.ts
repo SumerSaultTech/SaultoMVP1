@@ -10,6 +10,7 @@ import { azureOpenAIService } from "./services/azure-openai";
 import { jiraOAuthService } from "./services/jira-oauth";
 import { hubspotOAuthService } from "./services/hubspot-oauth";
 import { odooOAuthService } from "./services/odoo-oauth";
+import { odooApiService } from "./services/odoo-api";
 import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
@@ -772,18 +773,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OAuth-based Odoo sync endpoint
+  // API Key-based Odoo sync endpoint
   app.post("/api/auth/odoo/sync/:companyId", async (req, res) => {
     try {
       const companyId = parseInt(req.params.companyId);
       
-      console.log(`🔄 Starting OAuth-based Odoo sync for company ${companyId}`);
+      console.log(`🔄 Starting API key-based Odoo sync for company ${companyId}`);
       
-      // Use the Odoo OAuth service to sync data
-      const result = await odooOAuthService.syncDataToSchema(companyId);
+      // Use the Odoo API service to sync data (XML-RPC with API keys)
+      const result = await odooApiService.syncDataToSchema(companyId);
       
       if (result.success) {
-        console.log(`✅ OAuth Odoo sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        console.log(`✅ API key Odoo sync completed for company ${companyId}: ${result.recordsSynced} records`);
         res.json({
           success: true,
           message: `Successfully synced ${result.recordsSynced} records from Odoo`,
@@ -813,10 +814,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Odoo setup endpoint for initial configuration with customer-provided OAuth credentials
   app.post("/api/auth/odoo/setup", async (req, res) => {
     try {
-      const { companyId, odooInstanceUrl, consumerKey, consumerSecret } = req.body;
+      const { companyId, odooInstanceUrl, odooDatabase, odooUsername, odooApiKey } = req.body;
 
-      if (!companyId || !odooInstanceUrl || !consumerKey || !consumerSecret) {
-        return res.status(400).json({ error: "Missing required parameters" });
+      // Debug logging
+      console.log('🔍 Received Odoo setup parameters:', {
+        companyId: companyId || 'MISSING',
+        odooInstanceUrl: odooInstanceUrl?.length ? `SET (${odooInstanceUrl.length} chars)` : 'EMPTY',
+        odooDatabase: odooDatabase?.length ? `SET (${odooDatabase.length} chars)` : 'EMPTY', 
+        odooUsername: odooUsername?.length ? `SET (${odooUsername.length} chars)` : 'EMPTY',
+        odooApiKey: odooApiKey?.length ? `SET (${odooApiKey.length} chars)` : 'EMPTY'
+      });
+
+      // Check for missing parameters and report specifically which ones
+      const missing = [];
+      if (!companyId) missing.push('companyId');
+      if (!odooInstanceUrl?.trim()) missing.push('odooInstanceUrl');
+      if (!odooDatabase?.trim()) missing.push('odooDatabase');
+      if (!odooUsername?.trim()) missing.push('odooUsername');
+      if (!odooApiKey?.trim()) missing.push('odooApiKey');
+
+      if (missing.length > 0) {
+        console.log('❌ Missing required parameters:', missing);
+        return res.status(400).json({ 
+          error: `Missing required parameters: ${missing.join(', ')}` 
+        });
       }
 
       // Validate URL format
@@ -830,26 +851,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataSources = await storage.getDataSourcesByCompany(companyId);
       const existingOdoo = dataSources.find(ds => ds.type === 'odoo');
 
+      // Test API key connection before saving
+      console.log(`🔐 Testing Odoo API key connection for ${odooUsername}@${odooDatabase}`);
+      const { odooApiService } = await import('./services/odoo-api.js');
+      const authResult = await odooApiService.authenticate(
+        odooInstanceUrl.replace(/\/$/, ''),
+        odooDatabase,
+        odooUsername,
+        odooApiKey
+      );
+
+      if (!authResult.success) {
+        return res.status(400).json({ 
+          error: `Odoo authentication failed: ${authResult.error}` 
+        });
+      }
+
+      console.log(`✅ Odoo API key authentication successful for user: ${authResult.userInfo?.name}`);
+
       const setupConfig = {
         odooInstanceUrl: odooInstanceUrl.replace(/\/$/, ''), // Remove trailing slash
-        consumerKey,
-        consumerSecret,
+        odooDatabase,
+        odooUsername,
+        odooApiKey,
+        userInfo: authResult.userInfo,
         setupAt: new Date().toISOString(),
       };
 
       if (existingOdoo) {
         // Update existing data source
         await storage.updateDataSource(existingOdoo.id, {
-          status: 'setup',
+          status: 'connected',
           config: setupConfig,
         });
       } else {
         // Create new data source
         await storage.createDataSource({
           companyId,
-          name: `Odoo ERP (${new URL(odooInstanceUrl).hostname})`,
+          name: `Odoo ERP (${authResult.userInfo?.company_name || new URL(odooInstanceUrl).hostname})`,
           type: 'odoo',
-          status: 'setup',
+          status: 'connected',
           config: setupConfig,
         });
       }

@@ -1,9 +1,9 @@
 """
-Odoo ERP connector with OAuth 2.0 authentication.
+Odoo ERP connector with XML-RPC API key authentication.
 Supports extracting ERP data for business metrics and analytics.
 """
 
-import requests
+import xmlrpc.client
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
@@ -15,26 +15,40 @@ logger = logging.getLogger(__name__)
 
 class SimpleOdooConnector(SimpleBaseConnector):
     """
-    Connector for Odoo ERP system using OAuth 2.0.
+    Connector for Odoo ERP system using XML-RPC API key authentication.
     
-    This connector uses Odoo's native OAuth 2.0 implementation
-    to securely access ERP data for analytics purposes.
+    This connector uses Odoo's official XML-RPC API to securely 
+    access ERP data for analytics purposes.
     """
+    
+    def _normalize_url(self, url: str) -> str:
+        """Normalize URL to ensure proper protocol and format"""
+        normalized = url.strip()
+        
+        # Add protocol if missing
+        if not normalized.startswith(('http://', 'https://')):
+            # Default to https, but we'll have fallback logic
+            normalized = 'https://' + normalized
+            logger.warning(f"No protocol specified, using HTTPS: {normalized}")
+        
+        # Remove trailing slash
+        normalized = normalized.rstrip('/')
+        
+        return normalized
     
     def __init__(self, company_id: int, credentials: Dict[str, Any], config: Dict[str, Any] = None):
         super().__init__(company_id, credentials, config)
         
-        # Odoo instance URL (e.g., https://mycompany.odoo.com)
-        self.base_url = credentials.get('odoo_instance_url', '').rstrip('/')
-        
-        # OAuth access token
-        self.access_token = credentials.get('access_token', '')
+        # Odoo instance URL (normalized with proper protocol)
+        raw_url = credentials.get('odoo_instance_url', '')
+        self.base_url = self._normalize_url(raw_url) if raw_url else ''
         
         # Database name
         self.database = credentials.get('database', '')
         
-        # Store session for API calls
-        self.session = requests.Session()
+        # API key credentials
+        self.username = credentials.get('username', '')
+        self.api_key = credentials.get('api_key', '')
         
         # Setup authentication headers
         if self.access_token:
@@ -44,22 +58,37 @@ class SimpleOdooConnector(SimpleBaseConnector):
                 'Accept': 'application/json'
             })
     
+    
     @property
     def connector_name(self) -> str:
         return 'odoo'
     
+    def _setup_clients(self):
+        """Setup XML-RPC clients for common and object endpoints"""
+        if self.base_url:
+            try:
+                # Normalize URL to ensure proper protocol
+                normalized_url = self._normalize_url(self.base_url)
+                logger.info(f"Setting up XML-RPC clients for: {normalized_url}")
+                
+                self.common_client = xmlrpc.client.ServerProxy(f'{normalized_url}/xmlrpc/2/common')
+                self.object_client = xmlrpc.client.ServerProxy(f'{normalized_url}/xmlrpc/2/object')
+            except Exception as e:
+                logger.error(f"Failed to setup XML-RPC clients: {e}")
+
     @property
     def required_credentials(self) -> List[str]:
-        """Required credentials for Odoo OAuth connector"""
-        return ['odoo_instance_url', 'access_token', 'database']
+        """Required credentials for Odoo API key connector"""
+        return ['odoo_instance_url', 'database', 'username', 'api_key']
     
     def test_connection(self) -> bool:
         """Test if the Odoo connection is working"""
         try:
-            # Try to get server version info
-            result = self._make_jsonrpc_call('common', 'version', [])
-            if result and 'server_version' in result:
-                logger.info(f"Connected to Odoo version: {result.get('server_version')}")
+            # Try to authenticate with API key
+            uid = self._authenticate()
+            if uid:
+                logger.info(f"Successfully authenticated with Odoo (UID: {uid})")
+                self.uid = uid
                 return True
             return False
             
@@ -82,63 +111,65 @@ class SimpleOdooConnector(SimpleBaseConnector):
             'crm_lead',           # CRM leads/opportunities
         ]
     
-    def _make_jsonrpc_call(self, service: str, method: str, args: List = None) -> Any:
-        """Make a JSON-RPC call to Odoo"""
+    def _authenticate(self) -> int:
+        """Authenticate with Odoo using XML-RPC API key"""
         try:
-            url = f"{self.base_url}/jsonrpc"
-            
-            data = {
-                'jsonrpc': '2.0',
-                'method': 'call',
-                'params': {
-                    'service': service,
-                    'method': method,
-                    'args': args or []
-                },
-                'id': 1
-            }
-            
-            response = self.session.post(url, json=data)
-            response.raise_for_status()
-            
-            result = response.json()
-            if 'error' in result:
-                raise Exception(f"Odoo API error: {result['error']}")
+            if not self.common_client:
+                self._setup_clients()
                 
-            return result.get('result')
+            if not self.common_client:
+                raise Exception("Failed to setup XML-RPC client")
+                
+            # Authenticate using XML-RPC
+            uid = self.common_client.authenticate(
+                self.database,
+                self.username, 
+                self.api_key,
+                {}
+            )
+            
+            if not uid:
+                raise Exception("Authentication failed: Invalid credentials")
+                
+            return uid
             
         except Exception as e:
-            logger.error(f"JSON-RPC call failed: {e}")
+            logger.error(f"XML-RPC authentication failed: {e}")
             raise e
     
     def _make_model_call(self, model: str, method: str, args: List = None, kwargs: Dict = None) -> Any:
-        """Make a model-specific call to Odoo"""
+        """Make a model-specific API call to Odoo using XML-RPC"""
         try:
-            url = f"{self.base_url}/jsonrpc"
-            
-            data = {
-                'jsonrpc': '2.0',
-                'method': 'call',
-                'params': {
-                    'model': model,
-                    'method': method,
-                    'args': args or [],
-                    'kwargs': kwargs or {}
-                },
-                'id': 1
-            }
-            
-            response = self.session.post(url, json=data)
-            response.raise_for_status()
-            
-            result = response.json()
-            if 'error' in result:
-                raise Exception(f"Odoo model call error: {result['error']}")
+            # Ensure we're authenticated and have object client
+            if not self.uid:
+                self.uid = self._authenticate()
                 
-            return result.get('result')
+            if not self.object_client:
+                self._setup_clients()
+                
+            if not self.object_client:
+                raise Exception("Failed to setup XML-RPC object client")
+            
+            # Use execute_kw for model calls
+            call_args = [
+                self.database,
+                self.uid,
+                self.api_key,
+                model,
+                method
+            ]
+            
+            # Add method arguments
+            if args:
+                call_args.extend(args)
+            if kwargs:
+                call_args.append(kwargs)
+                
+            result = self.object_client.execute_kw(*call_args)
+            return result
             
         except Exception as e:
-            logger.error(f"Model call failed: {e}")
+            logger.error(f"XML-RPC model call failed: {e}")
             raise e
     
     def extract_data(self, table_name: str, incremental: bool = True) -> List[Dict[str, Any]]:
