@@ -1,5 +1,6 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { formatNumber } from '@/lib/format-utils';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import type { KpiMetric } from '@shared/schema';
@@ -229,6 +230,12 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
             border: '1px solid #e5e7eb',
             borderRadius: '6px',
             fontSize: '12px'
+          }}
+          formatter={(value: any) => {
+            if (typeof value === 'number') {
+              return formatNumber(value);
+            }
+            return value;
           }}
         />
         {/* Goal line - will be added when goals are implemented */}

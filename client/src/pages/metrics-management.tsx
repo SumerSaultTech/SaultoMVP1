@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -17,28 +17,33 @@ import { apiRequest, apiRequestJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
 import FilterBuilder, { type FilterTree } from "@/components/metrics/filter-builder";
-import type { KpiMetric } from "@/../../shared/schema";
+import type { Metric } from "@/../../shared/schema";
 
 interface MetricFormData {
+  // Core Identity
   name: string;
   description: string;
+  metricKey?: string;
+  
+  // Calculation Logic  
+  sourceTable: string;
+  exprSql?: string;
+  filters?: FilterTree | null;
+  dateColumn: string;
+  
+  // Display & Goals
+  category: string;
+  format: string;
+  unit: string;
   yearlyGoal: string;
   goalType: string;
   quarterlyGoals: { [key: string]: string };
   monthlyGoals: { [key: string]: string };
-  category: string;
-  format: string;
   isIncreasing: boolean;
   isNorthStar: boolean;
-  filterConfig?: FilterTree | null;
-  mainDataSource?: string;
-  table?: string;
-  valueColumn?: string;
-  aggregationType?: string;
-  unit?: string;
-  tags?: string[];
-  dateColumn?: string;
-  useCalculatedField?: boolean;
+  
+  // Calculated Fields Configuration
+  useCalculatedField: boolean;
   calculationType?: string;
   dateFromColumn?: string;
   dateToColumn?: string;
@@ -48,6 +53,13 @@ interface MetricFormData {
   conditionalValue?: string;
   convertToNumber?: boolean;
   handleNulls?: boolean;
+  
+  // Legacy fields for backward compatibility with form logic
+  mainDataSource?: string;
+  table?: string;
+  valueColumn?: string;
+  aggregationType?: string;
+  tags?: string[];
 }
 
 
@@ -76,15 +88,28 @@ export default function MetricsManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingMetric, setEditingMetric] = useState<KpiMetric | null>(null);
+  const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [availableTables, setAvailableTables] = useState<string[]>([]);
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
   const [availableDataSources, setAvailableDataSources] = useState<{ sourceType: string; tables: string[]; displayName: string }[]>([]);
   const [selectKey, setSelectKey] = useState(0); // Force re-render of Select components
   const [formData, setFormData] = useState<MetricFormData>({
+    // Core Identity
     name: "",
     description: "",
+    metricKey: "",
+    
+    // Calculation Logic  
+    sourceTable: "",
+    exprSql: "",
+    filters: null,
+    dateColumn: "created_at",
+    
+    // Display & Goals
+    category: "revenue",
+    format: "currency", 
+    unit: "count",
     yearlyGoal: "",
     goalType: "yearly",
     quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
@@ -92,16 +117,10 @@ export default function MetricsManagement() {
       Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
       Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
     },
-    category: "revenue",
-    format: "currency",
     isIncreasing: true,
     isNorthStar: false,
-    filterConfig: null,
-    dataSource: "",
-    metricType: "revenue",
-    valueColumn: "",
-    aggregationType: "SUM",
-    dateColumn: "",
+    
+    // Calculated Fields Configuration
     useCalculatedField: false,
     calculationType: "time_difference",
     dateFromColumn: "",
@@ -112,10 +131,69 @@ export default function MetricsManagement() {
     conditionalValue: "",
     convertToNumber: false,
     handleNulls: true,
+    
+    // Legacy fields for backward compatibility
+    mainDataSource: "",
+    table: "",
+    valueColumn: "",
+    aggregationType: "SUM",
+    tags: [],
   });
 
-  const { data: metrics = [], isLoading } = useQuery({
+  // Sync company selection on component mount (but don't clear all caches)
+  React.useEffect(() => {
+    console.log('🚀 MetricsManagement component mounted - syncing company...');
+    
+    // Debug company selection state
+    const selectedCompany = localStorage.getItem("selectedCompany");
+    console.log('🔍 Selected company from localStorage:', selectedCompany);
+    
+    // Force sync company selection with backend if available
+    if (selectedCompany) {
+      try {
+        const companyData = JSON.parse(selectedCompany);
+        console.log('🔧 Syncing company selection with backend:', companyData);
+        fetch("/api/companies/select", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ companyId: companyData.id })
+        }).then(response => {
+          console.log('✅ Company sync response:', response.status);
+          if (response.ok) {
+            // Refresh metrics after successful sync
+            queryClient.invalidateQueries({ queryKey: ["/api/kpi-metrics"] });
+          }
+        }).catch(error => {
+          console.error('❌ Failed to sync company selection:', error);
+        });
+      } catch (error) {
+        console.error('❌ Failed to parse selected company:', error);
+      }
+    }
+  }, [queryClient]);
+
+  const { data: metrics = [], isLoading, error } = useQuery({
     queryKey: ["/api/kpi-metrics"],
+    staleTime: 0, // Always refetch to ensure fresh data with new pipeline fields
+    cacheTime: 0, // Don't cache to ensure we get updated schema fields
+    retry: (failureCount, error: any) => {
+      console.log(`🔄 Query retry attempt ${failureCount}, error:`, error?.message);
+      // Don't retry if it's a company selection error
+      if (error?.message?.includes('company selected') || error?.message?.includes('No company selected')) {
+        console.log('❌ Company selection error detected, not retrying');
+        return false;
+      }
+      return failureCount < 3;
+    },
+    onSuccess: (data) => {
+      console.log('✅ Successfully fetched metrics:', data?.length || 0, 'metrics');
+    },
+    onError: (error: any) => {
+      console.log('❌ Metrics query error:', error?.message);
+    },
   });
 
   // Fetch dynamic data sources for the current company
@@ -198,8 +276,21 @@ export default function MetricsManagement() {
 
   const resetForm = () => {
     setFormData({
+      // Core Identity
       name: "",
       description: "",
+      metricKey: "",
+      
+      // Calculation Logic  
+      sourceTable: "",
+      exprSql: "",
+      filters: null,
+      dateColumn: "created_at",
+      
+      // Display & Goals
+      category: "revenue",
+      format: "currency", 
+      unit: "count",
       yearlyGoal: "",
       goalType: "yearly",
       quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
@@ -207,18 +298,10 @@ export default function MetricsManagement() {
         Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
         Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
       },
-      category: "revenue",
-      format: "currency",
       isIncreasing: true,
       isNorthStar: false,
-      filterConfig: null,
-      mainDataSource: "",
-      table: "",
-      valueColumn: "",
-      aggregationType: "SUM",
-      unit: "",
-      tags: [],
-      dateColumn: "",
+      
+      // Calculated Fields Configuration
       useCalculatedField: false,
       calculationType: "time_difference",
       dateFromColumn: "",
@@ -229,46 +312,185 @@ export default function MetricsManagement() {
       conditionalValue: "",
       convertToNumber: false,
       handleNulls: true,
+      
+      // Legacy fields for backward compatibility
+      mainDataSource: "",
+      table: "",
+      valueColumn: "",
+      aggregationType: "SUM",
+      tags: [],
     });
     setEditingMetric(null);
     setCurrentStep(1);
   };
 
-  const handleEdit = (metric: KpiMetric) => {
+  const handleEdit = (metric: Metric) => {
+    console.log('🔧 handleEdit called with metric:', metric);
+    console.log('🔍 mainDataSource:', metric.mainDataSource);
+    console.log('🔍 table:', metric.table);
+    console.log('🔍 valueColumn:', metric.valueColumn);
+    console.log('🔍 aggregationType:', metric.aggregationType);
+    console.log('🔍 dateColumn:', metric.dateColumn);
+    console.log('🔍 conditionalField:', metric.conditionalField);
+    console.log('🔍 conditionalOperator:', metric.conditionalOperator);
+    console.log('🔍 conditionalValue:', metric.conditionalValue);
+    
+    // AGGRESSIVE FORM POPULATION - FORCE ALL FIELDS TO HAVE VALUES
+    
+    // STEP 1: Parse table and data source
+    let parsedTable = 'core_jira_issues';
+    let parsedMainDataSource = 'jira';
+    
+    if (metric.sourceTable) {
+      parsedTable = metric.sourceTable.replace(/^analytics_company_\d+\./, '');
+      if (parsedTable.includes('jira')) parsedMainDataSource = 'jira';
+      else if (parsedTable.includes('salesforce')) parsedMainDataSource = 'salesforce';  
+      else if (parsedTable.includes('hubspot')) parsedMainDataSource = 'hubspot';
+    }
+    
+    // STEP 2: Force parse aggregation and value column from SQL
+    let parsedAggregationType = 'COUNT';
+    let parsedValueColumn = '';
+    
+    if (metric.exprSql) {
+      // Extract from patterns like "SUM(story_points)", "COUNT(*)", "AVG(cycle_time)"
+      const sqlMatch = metric.exprSql.match(/^(COUNT|SUM|AVG|MIN|MAX)\s*\(\s*([^)]+)\s*\)/i);
+      if (sqlMatch) {
+        parsedAggregationType = sqlMatch[1].toUpperCase();
+        const columnPart = sqlMatch[2].trim();
+        
+        if (columnPart !== '*' && !columnPart.includes('CASE') && !columnPart.includes('EXTRACT')) {
+          parsedValueColumn = columnPart;
+        }
+      }
+    }
+    
+    // STEP 3: FORCE DEFAULTS for missing critical fields
+    const metricName = metric.name.toLowerCase();
+    
+    // Force value column based on metric name if still empty
+    if (!parsedValueColumn) {
+      if (metricName.includes('story points') || metricName.includes('story_points')) {
+        parsedValueColumn = 'story_points';
+        parsedAggregationType = 'SUM';
+      } else if (metricName.includes('cycle time') || metricName.includes('average')) {
+        parsedValueColumn = 'cycle_time';
+        parsedAggregationType = 'AVG';
+      } else if (metricName.includes('amount') || metricName.includes('revenue')) {
+        parsedValueColumn = 'amount';
+        parsedAggregationType = 'SUM';
+      } else if (parsedAggregationType === 'COUNT') {
+        // For COUNT operations, value column can be empty
+        parsedValueColumn = '';
+      }
+    }
+    
+    // STEP 4: Extract all other fields directly
+    const dateColumnValue = metric.dateColumn || 'created_at';
+    const conditionalField = metric.conditionalField || '';
+    const conditionalOp = metric.conditionalOperator || '=';
+    const conditionalVal = metric.conditionalValue || '';
+    const hasCalculatedField = metric.useCalculatedField || false;
+    const calcType = metric.calculationType || 'time_difference';
+    const dateFromCol = metric.dateFromColumn || '';
+    const dateToCol = metric.dateToColumn || '';
+    
+    console.log('🔧 PARSING RESULTS:');
+    console.log('  sourceTable:', metric.sourceTable);
+    console.log('  parsedTable:', parsedTable);
+    console.log('  exprSql:', metric.exprSql);
+    console.log('  parsedValueColumn:', parsedValueColumn);
+    console.log('  parsedAggregationType:', parsedAggregationType);
+    console.log('  dateColumn:', metric.dateColumn);
+    
+    // Force refresh the metrics data to ensure we have the latest schema
+    queryClient.invalidateQueries({ queryKey: ["/api/kpi-metrics"] });
+    console.log('🚀 ABOUT TO SET FORM DATA WITH:');
+    console.log('  parsedTable:', parsedTable);
+    console.log('  parsedValueColumn:', parsedValueColumn);
+    console.log('  parsedAggregationType:', parsedAggregationType);
+    
     setEditingMetric(metric);
     setFormData({
+      // Core Identity
       name: metric.name || "",
       description: metric.description || "",
+      metricKey: metric.metricKey || "",
+      
+      // Calculation Logic (from new schema)
+      sourceTable: metric.sourceTable || "",
+      exprSql: metric.exprSql || "",
+      filters: metric.filters || null,
+      dateColumn: dateColumnValue,
+      
+      // Display & Goals
+      category: metric.category || "revenue",
+      format: metric.format || "currency",
+      unit: metric.unit || "count",
       yearlyGoal: metric.yearlyGoal || "",
-      goalType: "yearly", // Default to yearly for existing metrics
-      quarterlyGoals: { Q1: "", Q2: "", Q3: "", Q4: "" },
-      monthlyGoals: { 
+      goalType: metric.goalType || "yearly",
+      quarterlyGoals: metric.quarterlyGoals || { Q1: "", Q2: "", Q3: "", Q4: "" },
+      monthlyGoals: metric.monthlyGoals || { 
         Jan: "", Feb: "", Mar: "", Apr: "", May: "", Jun: "",
         Jul: "", Aug: "", Sep: "", Oct: "", Nov: "", Dec: ""
       },
-      category: metric.category || "revenue",
-      format: metric.format || "currency",
       isIncreasing: metric.isIncreasing ?? true,
-      isNorthStar: false, // Default to false for existing metrics
-      filterConfig: null, // TODO: Parse from existing metric if available
-      mainDataSource: "",
-      table: "",
-      valueColumn: "",
-      aggregationType: "SUM",
-      unit: "",
-      tags: [],
-      dateColumn: "",
-      useCalculatedField: false,
-      calculationType: "time_difference",
-      dateFromColumn: "",
-      dateToColumn: "",
-      timeUnit: "days",
-      conditionalField: "",
-      conditionalOperator: "=",
-      conditionalValue: "",
-      convertToNumber: false,
-      handleNulls: true,
+      isNorthStar: metric.isNorthStar ?? false,
+      
+      // Calculated Fields Configuration - FORCE POPULATE ALL VALUES
+      useCalculatedField: hasCalculatedField,
+      calculationType: calcType,
+      dateFromColumn: dateFromCol,
+      dateToColumn: dateToCol,
+      timeUnit: metric.timeUnit || "days",
+      conditionalField: conditionalField,
+      conditionalOperator: conditionalOp,
+      conditionalValue: conditionalVal,
+      convertToNumber: metric.convertToNumber ?? false,
+      handleNulls: metric.handleNulls ?? true,
+      
+      // Parsed legacy fields for form compatibility - AGGRESSIVELY POPULATED
+      mainDataSource: parsedMainDataSource,
+      table: parsedTable,
+      valueColumn: parsedValueColumn,
+      aggregationType: parsedAggregationType,
+      tags: Array.isArray(metric.tags) ? metric.tags : [],
     });
+    
+    console.log('✅ Form data populated with parsed fields:', {
+      mainDataSource: parsedMainDataSource,
+      table: parsedTable,
+      valueColumn: parsedValueColumn,
+      aggregationType: parsedAggregationType,
+      dateColumn: metric.dateColumn || "created_at",
+      unit: metric.unit || "count",
+      conditionalField: metric.conditionalField || "",
+      conditionalOperator: metric.conditionalOperator || "=",
+      conditionalValue: metric.conditionalValue || "",
+      tags: Array.isArray(metric.tags) ? metric.tags : [],
+    });
+    
+    // Log the actual formData state that will be set
+    setTimeout(() => {
+      console.log('🎯 FORM STATE AFTER SET:', {
+        name: formData.name,
+        mainDataSource: formData.mainDataSource,
+        table: formData.table,
+        valueColumn: formData.valueColumn,
+        aggregationType: formData.aggregationType,
+        dateColumn: formData.dateColumn,
+      });
+    }, 100);
+    
+    // FORCE FETCH COLUMNS for the parsed table to ensure dropdown populates
+    console.log('🚀 Force fetching columns for table:', parsedTable);
+    if (parsedTable) {
+      fetchAvailableColumns(parsedTable).then(columns => {
+        console.log('🔥 FORCE fetched columns for editing:', columns);
+        setAvailableColumns(columns);
+      });
+    }
+    
     setIsDialogOpen(true);
   };
 
@@ -424,31 +646,99 @@ export default function MetricsManagement() {
       return 'date >= CURRENT_DATE - INTERVAL \'30 days\'';
     };
 
-    const submitData = {
-      ...formData,
-      // Add the required JSON structure fields
-      metricConfig: {
-        metric_key: metricKey,
-        label: formData.name,
-        unit: formData.unit || 'count',
-        source_fact: formData.table || 'unknown_table',
-        expr_sql: generateExprSQL(formData.aggregationType || 'SUM', formData.valueColumn || 'amount', formData.format, {
-          calculationType: formData.calculationType,
-          dateFromColumn: formData.dateFromColumn,
-          dateToColumn: formData.dateToColumn,
-          timeUnit: formData.timeUnit,
-          conditionalField: formData.conditionalField,
-          conditionalOperator: formData.conditionalOperator,
-          conditionalValue: formData.conditionalValue,
-          convertToNumber: formData.convertToNumber,
-          handleNulls: formData.handleNulls
-        }),
-        where_sql: generateWhereSQL(formData.filterConfig),
-        date_column: formData.dateColumn || 'created_at',
-        is_active: true,
-        tags: formData.tags || [],
-        description: formData.description
+    // Auto-generate metric key if not provided
+    const finalMetricKey = formData.metricKey || metricKey;
+    
+    // Get company ID from localStorage
+    const getCompanyId = () => {
+      try {
+        const selectedCompanyStr = localStorage.getItem("selectedCompany");
+        if (selectedCompanyStr) {
+          const companyData = JSON.parse(selectedCompanyStr);
+          return companyData.id;
+        }
+      } catch (e) {
+        console.error('Error parsing selectedCompany from localStorage:', e);
       }
+      return '1756502314139'; // Fallback to current company
+    };
+    
+    const companyId = getCompanyId();
+    
+    // Build sourceTable from legacy fields if not set - PRESERVE SCHEMA PREFIX
+    const finalSourceTable = formData.sourceTable || (
+      formData.table ? 
+        // If table doesn't have schema prefix, add it
+        (formData.table.includes('analytics_company_') ? formData.table : `analytics_company_${companyId}.${formData.table}`) :
+      formData.mainDataSource === 'jira' ? `analytics_company_${companyId}.core_jira_issues` :
+      formData.mainDataSource === 'salesforce' ? `analytics_company_${companyId}.core_salesforce_opportunities` :
+      formData.mainDataSource === 'hubspot' ? `analytics_company_${companyId}.core_hubspot_deals` :
+      `analytics_company_${companyId}.core_data`
+    );
+    
+    // Generate expr_sql if not provided
+    const finalExprSql = formData.exprSql || generateExprSQL(
+      formData.aggregationType || 'SUM', 
+      formData.valueColumn || 'amount', 
+      formData.format, 
+      {
+        calculationType: formData.calculationType,
+        dateFromColumn: formData.dateFromColumn,
+        dateToColumn: formData.dateToColumn,
+        timeUnit: formData.timeUnit,
+        conditionalField: formData.conditionalField,
+        conditionalOperator: formData.conditionalOperator,
+        conditionalValue: formData.conditionalValue,
+        convertToNumber: formData.convertToNumber,
+        handleNulls: formData.handleNulls
+      }
+    );
+
+    const submitData = {
+      // Core Identity
+      name: formData.name,
+      description: formData.description,
+      metricKey: finalMetricKey,
+      
+      // Calculation Logic
+      sourceTable: finalSourceTable,
+      exprSql: finalExprSql,
+      filters: formData.filters || formData.filterConfig,
+      dateColumn: formData.dateColumn || 'created_at',
+      
+      // Display & Goals
+      category: formData.category,
+      format: formData.format,
+      unit: formData.unit,
+      yearlyGoal: formData.yearlyGoal,
+      goalType: formData.goalType,
+      quarterlyGoals: formData.quarterlyGoals,
+      monthlyGoals: formData.monthlyGoals,
+      isIncreasing: formData.isIncreasing,
+      isNorthStar: formData.isNorthStar,
+      
+      // Calculated Fields Configuration
+      useCalculatedField: formData.useCalculatedField,
+      calculationType: formData.calculationType,
+      dateFromColumn: formData.dateFromColumn,
+      dateToColumn: formData.dateToColumn,
+      timeUnit: formData.timeUnit,
+      conditionalField: formData.conditionalField,
+      conditionalOperator: formData.conditionalOperator,
+      conditionalValue: formData.conditionalValue,
+      convertToNumber: formData.convertToNumber,
+      handleNulls: formData.handleNulls,
+      
+      // Metadata
+      tags: formData.tags || [],
+      priority: 1,
+      isActive: true,
+      
+      // Legacy fields for backward compatibility (if needed by API)
+      mainDataSource: formData.mainDataSource,
+      table: formData.table,
+      valueColumn: formData.valueColumn,
+      aggregationType: formData.aggregationType,
     };
 
     if (editingMetric) {
@@ -534,29 +824,34 @@ export default function MetricsManagement() {
     if (formData.mainDataSource) {
       const tables = getAvailableTables(formData.mainDataSource);
       setAvailableTables(tables);
-      // Clear table and value column when data source changes
-      setFormData(prev => ({ ...prev, table: "", valueColumn: "", aggregationType: "SUM" }));
+      // Only clear table and value column when data source changes for new metrics, not when editing
+      if (!editingMetric) {
+        setFormData(prev => ({ ...prev, table: "", valueColumn: "", aggregationType: "SUM" }));
+      }
       setAvailableColumns([]);
     } else {
       setAvailableTables([]);
       setAvailableColumns([]);
     }
-  }, [formData.mainDataSource]);
+  }, [formData.mainDataSource, editingMetric]);
 
   // Update available columns when table changes
   React.useEffect(() => {
     console.log('🔍 Table useEffect triggered:', { 
       mainDataSource: formData.mainDataSource, 
-      table: formData.table 
+      table: formData.table,
+      availableColumnsLength: availableColumns.length
     });
     
     if (formData.mainDataSource && formData.table) {
       console.log('✅ Both mainDataSource and table are set, fetching columns...');
-      fetchAvailableColumns(formData.table).then(columns => {
-        console.log('✅ Setting available columns:', columns);
+      // Extract just the table name if it's schema-qualified
+      const tableNameOnly = formData.table.replace(/^analytics_company_\d+\./, '');
+      fetchAvailableColumns(tableNameOnly).then(columns => {
+        console.log('✅ Setting available columns from useEffect:', columns);
         setAvailableColumns(columns);
-        // Clear value column if it's not in the new columns list
-        if (formData.valueColumn && !columns.includes(formData.valueColumn)) {
+        // Clear value column if it's not in the new columns list (but not when editing existing metrics)
+        if (formData.valueColumn && !columns.includes(formData.valueColumn) && !editingMetric) {
           setFormData(prev => ({ ...prev, valueColumn: "", aggregationType: "SUM" }));
         }
       });
@@ -565,27 +860,18 @@ export default function MetricsManagement() {
       setAvailableColumns([]);
     }
   }, [formData.mainDataSource, formData.table]);
-
-  // Auto-update unit when format changes
+  
+  // Fallback effect to re-fetch columns if they're empty but we have a table
   React.useEffect(() => {
-    const autoUnit = getUnitFromFormat(formData.format);
-    setFormData(prev => ({ ...prev, unit: autoUnit }));
-  }, [formData.format]);
-
-  // Update available tables when main data source changes
-  React.useEffect(() => {
-    if (formData.mainDataSource) {
-      const tables = getAvailableTables(formData.mainDataSource);
-      setAvailableTables(tables);
-      // Clear table and value column when data source changes
-      setFormData(prev => ({ ...prev, table: "", valueColumn: "", aggregationType: "SUM" }));
-      setAvailableColumns([]);
-    } else {
-      setAvailableTables([]);
-      setAvailableColumns([]);
+    if (formData.table && availableColumns.length === 0 && isDialogOpen) {
+      console.log('🔄 FALLBACK: Re-fetching columns because they are empty');
+      const tableNameOnly = formData.table.replace(/^analytics_company_\d+\./, '');
+      fetchAvailableColumns(tableNameOnly).then(columns => {
+        console.log('🔄 FALLBACK columns fetched:', columns);
+        setAvailableColumns(columns);
+      });
     }
-  }, [formData.mainDataSource, companyDataSources]);
-
+  }, [formData.table, availableColumns.length, isDialogOpen]);
 
   // Auto-update unit when format changes
   React.useEffect(() => {
@@ -593,27 +879,21 @@ export default function MetricsManagement() {
     setFormData(prev => ({ ...prev, unit: autoUnit }));
   }, [formData.format]);
 
-  // Debug logging for data sources
-  React.useEffect(() => {
-    console.log('🔍 Data sources state:', {
-      companyDataSources,
-      isLoadingDataSources,
-      length: companyDataSources.length
-    });
-  }, [companyDataSources, isLoadingDataSources]);
 
-  // Auto-select first available data source when data sources are loaded
+  // Debug logging for data sources removed to prevent infinite loop
+
+  // Auto-select first available data source when data sources are loaded (only for new metrics, not when editing)
   React.useEffect(() => {
-    if (companyDataSources.length > 0 && !formData.mainDataSource) {
+    if (companyDataSources.length > 0 && !formData.mainDataSource && !editingMetric) {
       const firstSource = companyDataSources[0];
       console.log('🎯 Auto-selecting first data source:', firstSource);
       setFormData(prev => ({ ...prev, mainDataSource: firstSource.sourceType }));
     }
-  }, [companyDataSources, formData.mainDataSource]);
+  }, [companyDataSources, formData.mainDataSource, editingMetric]);
 
-  // Auto-select first available table when data source is selected
+  // Auto-select first available table when data source is selected (only for new metrics, not when editing)
   React.useEffect(() => {
-    if (formData.mainDataSource && !formData.table) {
+    if (formData.mainDataSource && !formData.table && !editingMetric) {
       const availableTables = getAvailableTables(formData.mainDataSource);
       if (availableTables.length > 0) {
         const firstTable = availableTables[0];
@@ -621,17 +901,47 @@ export default function MetricsManagement() {
         setFormData(prev => ({ ...prev, table: firstTable }));
       }
     }
-  }, [formData.mainDataSource, formData.table]);
+  }, [formData.mainDataSource, formData.table, editingMetric]);
 
-  // Auto-generate tags when relevant fields change
+  // Auto-generate tags when relevant fields change (only for new metrics, not when editing)
   React.useEffect(() => {
-    const autoTags = generateTags(formData);
-    setFormData(prev => ({ ...prev, tags: autoTags }));
-  }, [formData.category, formData.mainDataSource, formData.format, formData.isNorthStar]);
+    if (!editingMetric) {
+      const autoTags = generateTags(formData);
+      setFormData(prev => ({ ...prev, tags: autoTags }));
+    }
+  }, [formData.category, formData.mainDataSource, formData.format, formData.isNorthStar, editingMetric]);
 
   const getFormatLabel = (format: string) => {
     return METRIC_FORMATS.find(fmt => fmt.value === format)?.label || "Currency ($)";
   };
+
+  // Handle company selection error
+  if (error && (error.message?.includes('company selected') || error.message?.includes('No company selected'))) {
+    return (
+      <>
+        <Header 
+          title="Metrics Management"
+          subtitle="Configure your business metrics and yearly goals"
+        />
+        <main className="flex-1 overflow-y-auto p-6">
+          <Card>
+            <CardContent className="p-6">
+              <div className="text-center py-12">
+                <BarChart3 className="mx-auto h-12 w-12 text-yellow-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Company Selection Required</h3>
+                <p className="text-gray-500 mb-4">
+                  Please select a company first to view and manage metrics.
+                </p>
+                <Button onClick={() => window.location.href = '/companies'}>
+                  Select Company
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      </>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -683,6 +993,12 @@ export default function MetricsManagement() {
                     Step {currentStep} of 2
                   </div>
                 </div>
+                <DialogDescription>
+                  {editingMetric 
+                    ? "Modify the configuration for this business metric and its yearly goals." 
+                    : "Create a new business metric to track against yearly goals with data source integration."
+                  }
+                </DialogDescription>
               </DialogHeader>
               
               <form onSubmit={(e) => {
@@ -1093,7 +1409,8 @@ export default function MetricsManagement() {
                                 console.log('New tables:', newTables);
                                 
                                 // Fetch columns asynchronously
-                                fetchAvailableColumns(smartConfig.table).then(newColumns => {
+                                const tableNameOnly = smartConfig.table.replace(/^analytics_company_\d+\./, '');
+                                fetchAvailableColumns(tableNameOnly).then(newColumns => {
                                   console.log('New columns:', newColumns);
                                   setAvailableColumns(newColumns);
                                 });
@@ -1605,7 +1922,7 @@ export default function MetricsManagement() {
                     </TableHeader>
                     <TableBody>
                       {metricsArray
-                        .map((metric: KpiMetric) => {
+                        .map((metric: Metric) => {
                           const categoryInfo = getCategoryInfo(metric.category);
                           return (
                             <TableRow key={metric.id}>

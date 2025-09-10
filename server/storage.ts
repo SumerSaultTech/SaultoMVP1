@@ -2,36 +2,33 @@ import {
   companies,
   dataSources,
   sqlModels,
-  kpiMetrics,
+  metrics,
   chatMessages,
   pipelineActivities,
   setupStatus,
   users,
   metricReports,
   goals,
-  metricRegistry,
   type Company,
   type InsertCompany,
   type DataSource,
   type SqlModel,
-  type KpiMetric,
+  type Metric,
   type ChatMessage,
   type PipelineActivity,
   type SetupStatus,
   type User,
   type MetricReport,
   type Goal,
-  type MetricRegistry,
   type InsertDataSource,
   type InsertSqlModel,
-  type InsertKpiMetric,
+  type InsertMetric,
   type InsertChatMessage,
   type InsertPipelineActivity,
   type InsertSetupStatus,
   type InsertUser,
   type InsertMetricReport,
   type InsertGoal,
-  type InsertMetricRegistry,
 } from "@shared/schema";
 
 // Import postgres and drizzle for DatabaseStorage
@@ -51,6 +48,7 @@ import {
   ensureTenantSchema,
   type TenantQueryBuilder
 } from './services/tenant-query-builder';
+
 
 export interface IStorage {
   // Companies
@@ -88,11 +86,18 @@ export interface IStorage {
   createSqlModel(model: InsertSqlModel): Promise<SqlModel>;
   updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined>;
 
-  // KPI Metrics (company-scoped)
-  getKpiMetrics(companyId: number): Promise<KpiMetric[]>;
-  getKpiMetric(id: number): Promise<KpiMetric | undefined>;
-  createKpiMetric(metric: InsertKpiMetric): Promise<KpiMetric>;
-  updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined>;
+  // Metrics (company-scoped)
+  getMetrics(companyId: number): Promise<Metric[]>;
+  getMetric(id: number): Promise<Metric | undefined>;
+  createMetric(metric: InsertMetric): Promise<Metric>;
+  updateMetric(id: number, updates: Partial<InsertMetric>): Promise<Metric | undefined>;
+  deleteMetric(id: number): Promise<boolean>;
+  
+  // Legacy aliases for backward compatibility
+  getKpiMetrics(companyId: number): Promise<Metric[]>;
+  getKpiMetric(id: number): Promise<Metric | undefined>;
+  createKpiMetric(metric: InsertMetric): Promise<Metric>;
+  updateKpiMetric(id: number, updates: Partial<InsertMetric>): Promise<Metric | undefined>;
   deleteKpiMetric(id: number): Promise<boolean>;
 
   // Chat Messages (company-scoped)
@@ -923,31 +928,220 @@ export class DatabaseStorage implements IStorage {
   async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> { return this.throwError(); }
   async updateSqlModel(id: number, updates: Partial<InsertSqlModel>): Promise<SqlModel | undefined> { return this.throwError(); }
 
-  // KPI Metrics
-  async getKpiMetrics(companyId: number): Promise<KpiMetric[]> {
+  // KPI Metrics - Updated to read from company-specific analytics schema
+  async getKpiMetrics(companyId: number): Promise<Metric[]> {
     try {
-      const result = await this.db.select()
-        .from(kpiMetrics)
-        .where(eq(kpiMetrics.companyId, companyId))
-        .orderBy(kpiMetrics.priority, kpiMetrics.id);
-      return result;
+      const schemaName = `analytics_company_${companyId}`;
+      
+      // Query the company-specific metrics table using raw SQL
+      const result = await this.sql.unsafe(`
+        SELECT 
+          id, company_id as "companyId", metric_key as "metricKey", name, description,
+          source_table as "sourceTable", expr_sql as "exprSql", filters, date_column as "dateColumn",
+          category, format, unit, yearly_goal as "yearlyGoal", quarterly_goals as "quarterlyGoals", 
+          monthly_goals as "monthlyGoals", goal_type as "goalType", is_increasing as "isIncreasing", 
+          is_north_star as "isNorthStar", use_calculated_field as "useCalculatedField",
+          calculation_type as "calculationType", date_from_column as "dateFromColumn", 
+          date_to_column as "dateToColumn", time_unit as "timeUnit", conditional_field as "conditionalField",
+          conditional_operator as "conditionalOperator", conditional_value as "conditionalValue",
+          convert_to_number as "convertToNumber", handle_nulls as "handleNulls", tags, priority,
+          is_active as "isActive", last_calculated_at as "lastCalculatedAt", 
+          created_at as "createdAt", updated_at as "updatedAt"
+        FROM ${schemaName}.metrics 
+        WHERE company_id = ${companyId} AND is_active = true
+        ORDER BY priority, id
+      `);
+      
+      return result as Metric[];
     } catch (error) {
-      console.error('Error fetching KPI metrics:', error);
-      throw error;
+      console.error(`Error fetching metrics from ${`analytics_company_${companyId}`}:`, error);
+      // Fallback to old table if new schema doesn't exist yet
+      try {
+        const result = await this.db.select()
+          .from(kpiMetrics)
+          .where(eq(kpiMetrics.companyId, companyId))
+          .orderBy(kpiMetrics.priority, kpiMetrics.id);
+        return result as any; // Type compatibility
+      } catch (fallbackError) {
+        console.error('Fallback to old kpi_metrics also failed:', fallbackError);
+        throw error;
+      }
     }
   }
   async getKpiMetric(id: number): Promise<KpiMetric | undefined> { return this.throwError(); }
   async createKpiMetric(insertMetric: InsertKpiMetric): Promise<KpiMetric> {
     try {
-      const result = await this.db.insert(kpiMetrics).values(insertMetric).returning();
-      return result[0];
+      const companyId = insertMetric.companyId;
+      if (!companyId) {
+        throw new Error('Company ID is required');
+      }
+      
+      const schemaName = `analytics_company_${companyId}`;
+      console.log(`🔄 Creating metric in schema ${schemaName}`);
+      
+      // Build INSERT query for company-specific schema
+      const fields = [];
+      const placeholders = [];
+      const values = [];
+      let paramIndex = 1;
+      
+      for (const [key, value] of Object.entries(insertMetric)) {
+        // Skip undefined values
+        if (value === undefined) continue;
+        
+        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        fields.push(snakeKey);
+        placeholders.push(`$${paramIndex}`);
+        
+        // Handle JSON fields that need to be stringified
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          values.push(JSON.stringify(value));
+        } else if (Array.isArray(value)) {
+          values.push(JSON.stringify(value));
+        } else {
+          values.push(value);
+        }
+        paramIndex++;
+      }
+      
+      const insertQuery = `
+        INSERT INTO ${schemaName}.metrics (${fields.join(', ')})
+        VALUES (${placeholders.join(', ')})
+        RETURNING *
+      `;
+      
+      console.log(`🔄 Executing create in ${schemaName}:`, insertQuery);
+      
+      const result = await this.sql.unsafe(insertQuery, values);
+      
+      if (result.length > 0) {
+        console.log(`✅ Created metric in ${schemaName}`);
+        // Convert snake_case back to camelCase
+        const row = result[0];
+        const camelRow: any = {};
+        for (const [key, value] of Object.entries(row)) {
+          const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+          camelRow[camelKey] = value;
+        }
+        return camelRow as KpiMetric;
+      }
+      
+      throw new Error('Failed to create metric');
+      
     } catch (error) {
       console.error('Error creating KPI metric:', error);
       throw error;
     }
   }
-  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>): Promise<KpiMetric | undefined> { return this.throwError(); }
-  async deleteKpiMetric(id: number): Promise<boolean> { return this.throwError(); }
+  async updateKpiMetric(id: number, updates: Partial<InsertKpiMetric>, companyId?: number): Promise<KpiMetric | undefined> {
+    console.log(`🔄 updateKpiMetric called for ID ${id}, companyId: ${companyId}`);
+    
+    try {
+      if (companyId) {
+        // Direct update with known company ID
+        const schemaName = `analytics_company_${companyId}`;
+        
+        try {
+          // Build UPDATE query for company-specific schema
+          const updateFields = [];
+          const values = [id];
+          let paramIndex = 2;
+          
+          for (const [key, value] of Object.entries(updates)) {
+            // Skip undefined values
+            if (value === undefined) continue;
+            
+            const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+            updateFields.push(`${snakeKey} = $${paramIndex}`);
+            
+            // Handle JSON fields that need to be stringified
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+              values.push(JSON.stringify(value));
+            } else if (Array.isArray(value)) {
+              values.push(JSON.stringify(value));
+            } else {
+              values.push(value);
+            }
+            paramIndex++;
+          }
+          
+          const updateQuery = `
+            UPDATE ${schemaName}.metrics 
+            SET ${updateFields.join(', ')}, updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+          `;
+          
+          console.log(`🔄 Executing update in ${schemaName}:`, updateQuery);
+          console.log(`🔄 Values:`, values);
+          
+          const result = await this.sql.unsafe(updateQuery, values);
+          
+          if (result.length > 0) {
+            console.log(`✅ Updated metric in ${schemaName}`);
+            // Convert snake_case back to camelCase
+            const row = result[0];
+            const camelRow: any = {};
+            for (const [key, value] of Object.entries(row)) {
+              const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+              camelRow[camelKey] = value;
+            }
+            return camelRow as KpiMetric;
+          } else {
+            console.log(`⚠️ Metric ${id} not found in ${schemaName}`);
+            return undefined;
+          }
+          
+        } catch (e) {
+          console.log(`⚠️ Error updating metric in ${schemaName}:`, e);
+          return undefined;
+        }
+        
+      } else {
+        // Fallback: Search all companies (original behavior)
+        const activeCompanies = await this.db.select().from(companies).where(eq(companies.isActive, true));
+        
+        for (const company of activeCompanies) {
+          const schemaName = `analytics_company_${company.id}`;
+          try {
+            // Check if metric exists in this company's schema
+            const existsResult = await this.sql.unsafe(`
+              SELECT id FROM ${schemaName}.metrics WHERE id = $1
+            `, [id]);
+            
+            if (existsResult.length > 0) {
+              console.log(`🎯 Found metric ${id} in schema ${schemaName}`);
+              // Recursively call with the found companyId
+              return this.updateKpiMetric(id, updates, company.id);
+            }
+          } catch (e) {
+            console.log(`⚠️ Schema ${schemaName} doesn't exist or metric not found`);
+            continue;
+          }
+        }
+        
+        console.error(`❌ Metric ${id} not found in any company schema`);
+        return undefined;
+      }
+      
+    } catch (error) {
+      console.error('❌ Error updating KPI metric:', error);
+      throw error;
+    }
+  }
+  async deleteKpiMetric(id: number): Promise<boolean> {
+    try {
+      const result = await this.db
+        .delete(kpiMetrics)
+        .where(eq(kpiMetrics.id, id))
+        .returning();
+      
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error deleting KPI metric:', error);
+      throw error;
+    }
+  }
 
   // Chat Messages
   async getChatMessages(companyId: number): Promise<ChatMessage[]> {
@@ -2049,6 +2243,10 @@ class PersistentMemStorage extends MemStorage {
     return result;
   }
 }
+
+// Type aliases for backward compatibility
+export type KpiMetric = Metric;
+export type InsertKpiMetric = InsertMetric;
 
 // Use real Neon PostgreSQL database storage
 export const storage = new DatabaseStorage();

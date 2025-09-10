@@ -5,6 +5,8 @@
 
 import { pythonConnectorService } from './python-connector-service';
 import { storage } from '../storage';
+import { PostgresAnalyticsService } from './postgres-analytics';
+import { MetricsTimeSeriesETL } from './metrics-time-series-etl';
 
 interface ScheduledSync {
   companyId: number;
@@ -19,8 +21,13 @@ class SyncScheduler {
   private scheduledSyncs: ScheduledSync[] = [];
   private intervalId: NodeJS.Timeout | null = null;
   private checkInterval = 60000; // Check every 1 minute
+  private etlService: MetricsTimeSeriesETL;
 
   constructor() {
+    // Initialize ETL service
+    const postgres = new PostgresAnalyticsService();
+    this.etlService = new MetricsTimeSeriesETL(postgres);
+    
     // Initialize scheduler
     this.start();
   }
@@ -150,6 +157,16 @@ class SyncScheduler {
           if (result.success) {
             console.log(`✅ Scheduled sync completed: ${result.records_synced} records, ${result.tables_synced.length} tables`);
             
+            // Run daily ETL processing after successful sync
+            console.log(`🔄 Running daily ETL processing for company ${scheduledSync.companyId}...`);
+            try {
+              await this.runDailyETLForCompany(scheduledSync.companyId);
+              console.log(`✅ Daily ETL completed for company ${scheduledSync.companyId}`);
+            } catch (etlError) {
+              console.error(`⚠️ Daily ETL failed for company ${scheduledSync.companyId}:`, etlError);
+              // Continue with sync scheduling even if ETL fails
+            }
+            
             // Update last sync time and schedule next sync
             scheduledSync.lastSyncAt = now;
             scheduledSync.nextSyncAt = new Date(now.getTime() + (scheduledSync.interval * 60 * 1000));
@@ -224,6 +241,24 @@ class SyncScheduler {
   }
 
   /**
+   * Run daily ETL processing for a company to update metrics_time_series
+   * Only runs daily period to avoid interfering with quarterly/yearly accumulation
+   */
+  private async runDailyETLForCompany(companyId: number): Promise<void> {
+    // Only run daily ETL to avoid interference with quarterly/yearly running sums
+    // Quarterly and yearly ETL should be run separately when needed
+    const result = await this.etlService.runETLJob({
+      companyId: companyId,
+      periodType: 'daily',
+      forceRefresh: true
+    });
+    
+    if (!result.success) {
+      throw new Error(`Daily ETL failed: ${result.message}`);
+    }
+  }
+
+  /**
    * Trigger immediate sync (bypasses schedule)
    */
   async triggerImmediateSync(companyId: number, connectorType: string): Promise<any> {
@@ -233,6 +268,16 @@ class SyncScheduler {
       const result = await pythonConnectorService.syncConnector(companyId, connectorType);
       
       if (result.success) {
+        // Run daily ETL processing after successful immediate sync
+        console.log(`🔄 Running daily ETL processing after immediate sync for company ${companyId}...`);
+        try {
+          await this.runDailyETLForCompany(companyId);
+          console.log(`✅ Daily ETL completed after immediate sync for company ${companyId}`);
+        } catch (etlError) {
+          console.error(`⚠️ Daily ETL failed after immediate sync for company ${companyId}:`, etlError);
+          // Continue with sync completion even if ETL fails
+        }
+        
         // Update the scheduled sync's last sync time
         const scheduledSync = this.scheduledSyncs.find(
           s => s.companyId === companyId && s.connectorType === connectorType

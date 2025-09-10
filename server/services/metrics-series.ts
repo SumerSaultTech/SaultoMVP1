@@ -372,12 +372,20 @@ export class MetricsSeriesService {
         whereClause = `AND series_label IN (${keyFilters})`;
       }
       
+      // For yearly views, restrict to current year only (2025)
+      let dateFilter = '';
+      if (periodType === 'yearly') {
+        const currentYear = new Date().getFullYear();
+        dateFilter = `AND EXTRACT(YEAR FROM ts) = ${currentYear}`;
+      }
+      
       const result = await this.postgres.executeQuery(`
         SELECT ts, series_label as series, value, running_sum, is_goal,
                period_relative_value, period_relative_running_sum, period_baseline_value
         FROM ${schemaName}.metrics_time_series 
         WHERE period_type = '${periodType}' 
           ${whereClause}
+          ${dateFilter}
         ORDER BY ts ASC, series_label, is_goal
       `);
       
@@ -408,6 +416,18 @@ export class MetricsSeriesService {
         console.log(`📊 Before aggregation: ${actualSeries.length} daily data points`);
         actualSeries = this.aggregateToMonthlyPoints(actualSeries);
         console.log(`📊 After aggregation: ${actualSeries.length} monthly points`);
+        
+        // Debug: Log the exact months included
+        const uniqueMonths = Array.from(new Set(actualSeries.map(point => point.ts.substring(0, 7)))).sort();
+        console.log(`📅 Monthly points included: ${uniqueMonths.join(', ')}`);
+        
+        // Debug: Log first and last points
+        if (actualSeries.length > 0) {
+          const firstPoint = actualSeries[0];
+          const lastPoint = actualSeries[actualSeries.length - 1];
+          console.log(`🗓️ First monthly point: ${firstPoint.ts} (${firstPoint.series})`);
+          console.log(`🗓️ Last monthly point: ${lastPoint.ts} (${lastPoint.series})`);
+        }
       }
       
       // Check feature flags for goal generation method
@@ -450,6 +470,12 @@ export class MetricsSeriesService {
     // Group data by metric series and month
     const monthlyGroups = new Map<string, Map<string, MetricsSeries[]>>();
     
+    // Debug: Log date range of input data
+    if (dailySeries.length > 0) {
+      const dates = dailySeries.map(p => p.ts).sort();
+      console.log(`🔍 Input date range: ${dates[0]} to ${dates[dates.length-1]}`);
+    }
+    
     for (const point of dailySeries) {
       const date = new Date(point.ts);
       const monthKey = format(date, 'yyyy-MM'); // e.g., "2025-08"
@@ -468,6 +494,12 @@ export class MetricsSeriesService {
     }
     
     const monthlyPoints: MetricsSeries[] = [];
+    
+    // Debug: Log all grouped months
+    for (const [seriesKey, monthsMap] of monthlyGroups) {
+      const months = Array.from(monthsMap.keys()).sort();
+      console.log(`🗓️  ${seriesKey}: ${months.join(', ')}`);
+    }
     
     // Convert grouped data to monthly aggregated points
     for (const [seriesKey, monthsMap] of monthlyGroups) {

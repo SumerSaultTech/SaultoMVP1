@@ -9,6 +9,7 @@ import { RefreshCw, Calendar, Info, Database, Table, Columns } from "lucide-reac
 import MetricProgressChart from "./metric-progress-chart";
 import NorthStarMetrics from "./north-star-metrics";
 import type { KpiMetric } from "@/../../shared/schema";
+import { formatActualValue } from "@/lib/format-utils";
 
 interface MetricsOverviewProps {
   onRefresh: () => void;
@@ -432,7 +433,20 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
         break;
     }
     
-    return periodGoal > 0 ? Math.round((current / periodGoal) * 100) : 0;
+    // Check if this is a "lower is better" metric (e.g., Average Jira Cycle Time)
+    const isLowerIsBetter = metric?.isIncreasing === false;
+    
+    if (periodGoal <= 0) return 0;
+    
+    if (isLowerIsBetter) {
+      // For "lower is better" metrics: goal/current * 100
+      // If current < goal (good), result > 100%
+      // If current > goal (bad), result < 100%
+      return current > 0 ? Math.round((periodGoal / current) * 100) : 0;
+    } else {
+      // For "higher is better" metrics: current/goal * 100 (original logic)
+      return Math.round((current / periodGoal) * 100);
+    }
   };
 
   const getAdaptiveActual = (yearlyValue: string, timePeriod: string, metricId: number, metric?: any) => {
@@ -531,15 +545,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     }
   };
 
-  const formatActualValue = (value: number) => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`;
-    } else if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`;
-    } else {
-      return `$${Math.round(value).toLocaleString()}`;
-    }
-  };
+  // Using shared formatActualValue from format-utils (imported above)
 
   // Group metrics by category
   const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
