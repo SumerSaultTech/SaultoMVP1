@@ -104,11 +104,16 @@ export const SERVICE_CONFIGS = {
     apiBaseUrl: '', // Dynamic - uses instance URL
     rateLimit: { requestsPerSecond: 5, maxRetries: 3 }
   },
+  zoho: {
+    authorizationUrl: 'https://accounts.zoho.com/oauth/v2/auth',
+    tokenUrl: 'https://accounts.zoho.com/oauth/v2/token',
+    apiBaseUrl: 'https://www.zohoapis.com/crm/v6',
+    rateLimit: { requestsPerSecond: 10, maxRetries: 3 }
+  },
   activecampaign: {
-    // To be configured when OAuth is available
-    authorizationUrl: '', 
-    tokenUrl: '',
-    apiBaseUrl: '',
+    authorizationUrl: '', // Not used - API key authentication
+    tokenUrl: '', // Not used - API key authentication  
+    apiBaseUrl: '', // Dynamic - user provides their API URL
     rateLimit: { requestsPerSecond: 5, maxRetries: 3 }
   }
 } as const;

@@ -78,7 +78,7 @@ export class HubSpotOAuthService extends OAuthServiceBase {
   /**
    * Exchange authorization code for tokens
    */
-  async exchangeCodeForTokens(code: string, state: string): Promise<HubSpotTokenResponse> {
+  async exchangeCodeForTokens(code: string, state: string): Promise<TokenResponse> {
     try {
       const tokenParams = new URLSearchParams({
         grant_type: 'authorization_code',

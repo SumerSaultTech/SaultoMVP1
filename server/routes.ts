@@ -11,6 +11,7 @@ import { jiraOAuthService } from "./services/jira-oauth";
 import { hubspotOAuthService } from "./services/hubspot-oauth";
 import { odooOAuthService } from "./services/odoo-oauth";
 import { odooApiService } from "./services/odoo-api";
+import { zohoOAuthService } from "./services/zoho-oauth";
 import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
@@ -192,6 +193,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('HubSpot OAuth service initialized');
     } catch (error) {
       console.warn('Failed to initialize HubSpot OAuth service:', error);
+    }
+  })();
+
+  // Initialize Zoho OAuth service
+  (async () => {
+    try {
+      await zohoOAuthService.initialize();
+      console.log('Zoho OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Zoho OAuth service:', error);
     }
   })();
 
@@ -904,6 +915,423 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Odoo setup error:', error);
       res.status(500).json({ error: "Failed to save Odoo setup configuration" });
+    }
+  });
+
+  // Zoho OAuth2 Routes
+  app.get("/api/auth/zoho/authorize", async (req, res) => {
+    try {
+      const companyId = parseInt(req.query.company_id as string);
+      const userId = req.query.user_id ? parseInt(req.query.user_id as string) : undefined;
+      
+      if (!companyId) {
+        return res.status(400).json({ error: "Company ID is required" });
+      }
+
+      const authUrl = zohoOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Failed to generate Zoho authorization URL:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/zoho/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const state = req.query.state as string;
+      const error = req.query.error as string;
+
+      if (error) {
+        console.error('Zoho OAuth error:', error);
+        return res.redirect(`${process.env.APP_URL || 'http://localhost:5000'}/setup?error=zoho_auth_denied`);
+      }
+
+      if (!code || !state) {
+        return res.status(400).send('Missing authorization code or state');
+      }
+
+      // Parse state to get company and user info
+      const stateData = zohoOAuthService.parseState(state);
+      const { companyId, userId } = stateData;
+
+      // Exchange code for tokens
+      const tokens = await zohoOAuthService.exchangeCodeForTokens(code, state);
+      
+      // Get user info
+      const userInfo = await zohoOAuthService.getUserInfo(tokens.access_token);
+
+      // Store tokens in database
+      const zohoConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)).toISOString(),
+        userInfo: userInfo,
+        datacenter: process.env.ZOHO_DATACENTER || 'com',
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Check if Zoho data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingZoho = dataSources.find(ds => ds.type === 'zoho');
+
+      if (existingZoho) {
+        // Update existing data source
+        await storage.updateDataSource(existingZoho.id, {
+          status: 'connected',
+          config: zohoConfig,
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Zoho CRM (${userInfo?.full_name || 'Connected'})`,
+          type: 'zoho',
+          status: 'connected',
+          config: zohoConfig,
+        });
+      }
+
+      console.log(`✅ Zoho OAuth connection established for company ${companyId}`);
+      
+      // Redirect back to setup page with success
+      res.redirect(`${process.env.APP_URL || 'http://localhost:5000'}/setup?zoho=connected`);
+    } catch (error) {
+      console.error('Zoho OAuth callback error:', error);
+      res.redirect(`${process.env.APP_URL || 'http://localhost:5000'}/setup?error=zoho_auth_failed`);
+    }
+  });
+
+  app.get("/api/auth/zoho/discover-tables/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get stored OAuth tokens
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const zohoSource = dataSources.find(ds => ds.type === 'zoho');
+      
+      if (!zohoSource || !zohoSource.config) {
+        return res.status(404).json({ error: "Zoho OAuth connection not found" });
+      }
+
+      const config = typeof zohoSource.config === 'string' 
+        ? JSON.parse(zohoSource.config) 
+        : zohoSource.config;
+      const { accessToken } = config;
+
+      // Use executeWithTokenRefresh for automatic token refresh
+      const tables = await zohoOAuthService.executeWithTokenRefresh(
+        companyId,
+        (token) => zohoOAuthService.discoverTables(token)
+      );
+
+      res.json({
+        success: true,
+        tables,
+        totalTables: tables.length
+      });
+    } catch (error) {
+      console.error('Failed to discover Zoho tables:', error);
+      res.status(500).json({ 
+        error: "Failed to discover Zoho tables",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get("/api/auth/zoho/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get stored OAuth tokens
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const zohoSource = dataSources.find(ds => ds.type === 'zoho');
+      
+      if (!zohoSource || !zohoSource.config) {
+        return res.json({
+          connected: false,
+          message: "No Zoho OAuth connection found"
+        });
+      }
+
+      const config = typeof zohoSource.config === 'string' 
+        ? JSON.parse(zohoSource.config) 
+        : zohoSource.config;
+      const { accessToken, userInfo } = config;
+
+      // Test API access with automatic token refresh
+      const isValid = await zohoOAuthService.executeWithTokenRefresh(
+        companyId,
+        (token) => zohoOAuthService.testApiAccess(token)
+      );
+
+      res.json({
+        connected: isValid,
+        userInfo: userInfo || null,
+        message: isValid ? "Zoho OAuth connection is active" : "Zoho OAuth connection is invalid"
+      });
+    } catch (error) {
+      console.error('Failed to check Zoho OAuth status:', error);
+      res.status(500).json({ 
+        connected: false,
+        error: "Failed to check Zoho OAuth status" 
+      });
+    }
+  });
+
+  app.post("/api/auth/zoho/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based Zoho sync for company ${companyId}`);
+      
+      // Use the OAuth service to sync data
+      const result = await zohoOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth Zoho sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Zoho CRM`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Zoho sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Zoho data",
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth Zoho sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync Zoho data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // ActiveCampaign API Key Routes
+  app.post("/api/auth/activecampaign/setup", async (req, res) => {
+    try {
+      const companyId = req.session?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ error: "No company selected" });
+      }
+
+      const { activeCampaignApiUrl, activeCampaignApiKey } = req.body;
+
+      // Validate required parameters
+      const missing = [];
+      if (!activeCampaignApiUrl) missing.push('activeCampaignApiUrl');
+      if (!activeCampaignApiKey) missing.push('activeCampaignApiKey');
+
+      if (missing.length > 0) {
+        return res.status(400).json({ 
+          error: `Missing required parameters: ${missing.join(', ')}` 
+        });
+      }
+
+      // Validate URL format
+      try {
+        new URL(activeCampaignApiUrl);
+      } catch {
+        return res.status(400).json({ error: "Invalid ActiveCampaign API URL format" });
+      }
+
+      // Create or update ActiveCampaign data source with setup configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingActiveCampaign = dataSources.find(ds => ds.type === 'activecampaign');
+
+      // Test API key connection before saving
+      console.log(`🔐 Testing ActiveCampaign API key connection for ${activeCampaignApiUrl}`);
+      const { activeCampaignApiService } = await import('./services/activecampaign-api.js');
+      const authResult = await activeCampaignApiService.authenticate(
+        activeCampaignApiUrl.replace(/\/$/, ''),
+        activeCampaignApiKey
+      );
+
+      if (!authResult.success) {
+        return res.status(400).json({ 
+          error: `ActiveCampaign authentication failed: ${authResult.error}` 
+        });
+      }
+
+      console.log(`✅ ActiveCampaign API key authentication successful for user: ${authResult.userInfo?.email}`);
+
+      const setupConfig = {
+        activeCampaignApiUrl: activeCampaignApiUrl.replace(/\/$/, ''), // Remove trailing slash
+        activeCampaignApiKey,
+        userInfo: authResult.userInfo,
+        setupAt: new Date().toISOString(),
+      };
+
+      if (existingActiveCampaign) {
+        // Update existing data source
+        await storage.updateDataSource(existingActiveCampaign.id, {
+          status: 'connected',
+          config: setupConfig,
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `ActiveCampaign (${authResult.userInfo?.email || 'Connected'})`,
+          type: 'activecampaign',
+          status: 'connected',
+          config: setupConfig,
+        });
+      }
+
+      console.log(`✅ ActiveCampaign setup completed for company ${companyId}`);
+      res.json({ success: true, message: "ActiveCampaign connected successfully" });
+
+    } catch (error) {
+      console.error("ActiveCampaign setup error:", error);
+      res.status(500).json({ 
+        error: "Failed to save ActiveCampaign setup configuration" 
+      });
+    }
+  });
+
+  app.get("/api/auth/activecampaign/discover-tables/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get ActiveCampaign data source for this company
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const activeCampaignSource = dataSources.find(ds => ds.type === 'activecampaign' && ds.status === 'connected');
+      
+      if (!activeCampaignSource) {
+        return res.status(404).json({ 
+          success: false,
+          error: "ActiveCampaign not connected for this company" 
+        });
+      }
+
+      const config = activeCampaignSource.config as any;
+      const { activeCampaignApiUrl, activeCampaignApiKey } = config;
+
+      // Discover tables using the API service
+      const { activeCampaignApiService } = await import('./services/activecampaign-api.js');
+      const result = await activeCampaignApiService.discoverTables(activeCampaignApiUrl, activeCampaignApiKey);
+      
+      if (result.success) {
+        console.log(`✅ ActiveCampaign table discovery completed for company ${companyId}`);
+        res.json(result);
+      } else {
+        console.error(`❌ ActiveCampaign table discovery failed for company ${companyId}: ${result.error}`);
+        res.status(500).json(result);
+      }
+      
+    } catch (error) {
+      console.error('ActiveCampaign table discovery error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to discover ActiveCampaign tables" 
+      });
+    }
+  });
+
+  app.get("/api/auth/activecampaign/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get ActiveCampaign data source for this company
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const activeCampaignSource = dataSources.find(ds => ds.type === 'activecampaign');
+      
+      if (!activeCampaignSource) {
+        return res.json({
+          connected: false,
+          status: 'not_connected'
+        });
+      }
+
+      const config = activeCampaignSource.config as any;
+      const { activeCampaignApiUrl, activeCampaignApiKey } = config;
+
+      // Test connection
+      const { activeCampaignApiService } = await import('./services/activecampaign-api.js');
+      const authResult = await activeCampaignApiService.authenticate(activeCampaignApiUrl, activeCampaignApiKey);
+      
+      res.json({
+        connected: authResult.success,
+        status: authResult.success ? 'connected' : 'authentication_failed',
+        error: authResult.error,
+        userInfo: authResult.userInfo
+      });
+      
+    } catch (error) {
+      console.error('ActiveCampaign status check error:', error);
+      res.status(500).json({
+        connected: false,
+        status: 'error',
+        error: "Failed to check ActiveCampaign status" 
+      });
+    }
+  });
+
+  app.post("/api/auth/activecampaign/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { setupType = 'standard' } = req.body;
+      
+      console.log(`🔄 Starting ActiveCampaign sync for company ${companyId} with ${setupType} setup`);
+      
+      // Get ActiveCampaign data source for this company
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const activeCampaignSource = dataSources.find(ds => ds.type === 'activecampaign' && ds.status === 'connected');
+      
+      if (!activeCampaignSource) {
+        return res.status(404).json({ 
+          success: false,
+          error: "ActiveCampaign not connected for this company" 
+        });
+      }
+
+      const config = activeCampaignSource.config as any;
+      const { activeCampaignApiUrl, activeCampaignApiKey } = config;
+
+      // Sync data using the API service
+      const { activeCampaignApiService } = await import('./services/activecampaign-api.js');
+      const result = await activeCampaignApiService.syncData(
+        companyId, 
+        activeCampaignApiUrl, 
+        activeCampaignApiKey, 
+        setupType as 'standard' | 'custom'
+      );
+      
+      if (result.success) {
+        console.log(`✅ ActiveCampaign sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from ActiveCampaign`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'api_key'
+        });
+      } else {
+        console.error(`❌ ActiveCampaign sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync ActiveCampaign data",
+          method: 'api_key'
+        });
+      }
+      
+    } catch (error) {
+      console.error('ActiveCampaign sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync ActiveCampaign data",
+        method: 'api_key'
+      });
     }
   });
   
