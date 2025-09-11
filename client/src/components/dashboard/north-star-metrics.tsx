@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info, Database, Table, Columns } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { formatActualValue, formatNumber } from '@/lib/format-utils';
 
 interface NorthStarMetric {
   id: string;
@@ -17,16 +18,7 @@ interface NorthStarMetric {
   format: string;
 }
 
-// Format large numbers as millions for display
-const formatLargeNumber = (value: number): string => {
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
-  } else {
-    return `$${Math.round(value).toLocaleString()}`;
-  }
-};
+// Using shared formatActualValue from format-utils (imported above)
 
 // Generate progress data for North Star metrics based on time period
 function generateNorthStarData(metric: NorthStarMetric, timePeriod: string = "ytd") {
@@ -162,33 +154,16 @@ function generateYTDNorthStarData(yearlyGoal: number, pattern: number[]) {
 }
 
 function formatValue(value: string | number, format: string): string {
-  if (!value && value !== 0) return '0';
+  if (!value && value !== 0) return '0.0';
   
   const valueStr = typeof value === 'number' ? value.toString() : value;
+  const numValue = parseFloat(valueStr.replace(/[$,]/g, '')) || 0;
   
-  if (format === 'currency') {
-    const numValue = parseFloat(valueStr.replace(/[$,]/g, '')) || 0;
-    if (numValue >= 1000000) {
-      return `$${(numValue / 1000000).toFixed(1)}M`;
-    } else if (numValue >= 1000) {
-      return `$${(numValue / 1000).toFixed(0)}K`;
-    } else {
-      return `$${Math.round(numValue).toLocaleString()}`;
-    }
-  }
-  return valueStr;
+  // Use formatNumber for consistent 1 decimal place formatting without dollar signs
+  return formatNumber(numValue);
 }
 
-// Same formatting function as Business Metrics for consistency
-function formatActualValue(value: number): string {
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
-  } else {
-    return `$${Math.round(value).toLocaleString()}`;
-  }
-}
+// Using shared formatActualValue from format-utils (imported above)
 
 function calculateProgress(currentValue: string | number, goalValue: string | number): number {
   if (!currentValue && currentValue !== 0) return 0;
@@ -275,41 +250,26 @@ export default function NorthStarMetrics() {
     { value: "Yearly View", label: "Yearly" }
   ];
 
-  // Create North Star metrics from real Snowflake data
+  // Create North Star metrics from real database data
   const northStarMetrics: NorthStarMetric[] = (() => {
     if (!dashboardMetrics || !Array.isArray(dashboardMetrics)) {
       return [];
     }
 
-    // Find revenue and profit metrics by metricId from real Snowflake calculations
-    const revenueMetric = dashboardMetrics.find(m => m.metricId === 1); // Annual Revenue 
-    const profitMetric = dashboardMetrics.find(m => m.metricId === 2); // Annual Profit (calculated in backend)
+    // Find all metrics marked as North Star metrics for this company
+    const northStarMetricsArray = dashboardMetrics
+      .filter(m => m.isNorthStar === true)
+      .map(metric => ({
+        id: `metric-${metric.metricId}`,
+        name: metric.metricName,
+        value: formatNumber(metric.currentValue || 0),
+        yearlyGoal: formatNumber(metric.yearlyGoal || 0),
+        changePercent: "+12.5", // Could be calculated from time series data
+        description: metric.description || "Key business metric",
+        format: metric.format || "number"
+      }));
 
-    // Use real Snowflake calculated values
-    const revenueValue = revenueMetric?.currentValue || 0;
-    const profitValue = profitMetric?.currentValue || 0;
-    const profitGoal = profitMetric?.yearlyGoal || 0;
-
-    return [
-      {
-        id: "annual-revenue",
-        name: "Annual Revenue",
-        value: formatLargeNumber(revenueValue),
-        yearlyGoal: formatLargeNumber(revenueMetric?.yearlyGoal || 0),
-        changePercent: "+12.5",
-        description: "Total revenue from QuickBooks data",
-        format: "currency"
-      },
-      {
-        id: "annual-profit", 
-        name: "Annual Profit",
-        value: formatLargeNumber(profitValue),
-        yearlyGoal: formatLargeNumber(profitGoal),
-        changePercent: "+8.2",
-        description: "Net profit after all expenses",
-        format: "currency"
-      }
-    ];
+    return northStarMetricsArray;
   })();
 
   const getTimePeriodLabel = (period: string) => {
@@ -393,6 +353,11 @@ export default function NorthStarMetrics() {
     };
   };
 
+  // Don't render anything if no North Star metrics are defined
+  if (northStarMetrics.length === 0 && !isLoading) {
+    return null;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -443,13 +408,13 @@ export default function NorthStarMetrics() {
           </>
         ) : (
           northStarMetrics.map((metric) => {
-          // Use API values directly instead of chart-derived values
-          const revenueMetric = dashboardMetrics.find((m: any) => m.metricId === 1);
-          const profitMetric = dashboardMetrics.find((m: any) => m.metricId === 2);
+          // Get the actual metric data from dashboard using the metric ID
+          const metricId = parseInt(metric.id.replace('metric-', ''));
+          const actualMetric = dashboardMetrics.find((m: any) => m.metricId === metricId);
           
           // Get current value and goal from API data
-          const apiCurrentValue = metric.id === "annual-revenue" ? (revenueMetric?.currentValue || 0) : (profitMetric?.currentValue || 0);
-          const apiYearlyGoal = metric.id === "annual-revenue" ? (revenueMetric?.yearlyGoal || 0) : (profitMetric?.yearlyGoal || 0);
+          const apiCurrentValue = actualMetric?.currentValue || 0;
+          const apiYearlyGoal = actualMetric?.yearlyGoal || 0;
           
           // Calculate period-specific current values (EXACT same logic as Business Metrics getAdaptiveActual)
           const getPeriodCurrentValue = (annualValue: number, timePeriod: string, metricId: number): number => {
@@ -520,7 +485,7 @@ export default function NorthStarMetrics() {
             }
           };
 
-          const metricIdNumber = metric.id === "annual-revenue" ? 1 : 2; // Revenue = 1, Profit = 2
+          const metricIdNumber = metricId; // Use the actual metric ID from database
           const periodCurrentValue = getPeriodCurrentValue(apiCurrentValue, northStarTimePeriod, metricIdNumber);
           const periodGoal = getPeriodGoal(apiYearlyGoal, northStarTimePeriod);
           const progress = calculateProgress(periodCurrentValue, periodGoal);

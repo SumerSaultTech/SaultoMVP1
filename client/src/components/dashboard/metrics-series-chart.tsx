@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Calendar, TrendingUp } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
+import { formatNumber } from "@/lib/format-utils";
 
 export type TimePeriod = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
@@ -220,13 +221,15 @@ export default function MetricsSeriesChart({ className }: MetricsSeriesChartProp
                       const dataPoint = chartData.find((d: any) => d.date === label);
                       const fullDate = dataPoint?.fullDate || label;
                       
+                      // Use shared utility for consistent number formatting
+                      
                       return (
                         <div className="bg-background border rounded-lg shadow-lg p-3">
                           <p className="font-semibold mb-2">{fullDate}</p>
                           {payload.map((entry, index) => (
                             <p key={index} style={{ color: entry.color }} className="text-sm">
                               {entry.name}: {typeof entry.value === 'number' 
-                                ? entry.value.toLocaleString() 
+                                ? formatNumber(entry.value)
                                 : entry.value}
                             </p>
                           ))}

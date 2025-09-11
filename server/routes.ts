@@ -20,7 +20,7 @@ import fs from 'fs';
 import {
   insertDataSourceSchema,
   insertSqlModelSchema,
-  insertKpiMetricSchema,
+  insertMetricSchema,
   insertChatMessageSchema,
   insertPipelineActivitySchema,
   insertMetricReportSchema,
@@ -32,6 +32,7 @@ import { createTenantScopedSQL } from "./services/tenant-query-builder";
 import { requireAdmin, auditAdminAction } from "./middleware/admin-middleware";
 import { rbacService, PERMISSIONS } from "./services/rbac-service";
 import { syncScheduler } from "./services/sync-scheduler";
+import { MetricsTimeSeriesETL } from "./services/metrics-time-series-etl";
 // Force server reload to initialize sync scheduler
 import { mfaService } from "./services/mfa-service";
 import { MetricsSeriesService } from "./services/metrics-series.js";
@@ -2017,6 +2018,8 @@ The Saulto Analytics Team
       }
       
       const metrics = await storage.getKpiMetrics(companyId);
+      console.log('🔍 API RETURNING METRICS:', JSON.stringify(metrics, null, 2));
+      res.set('Cache-Control', 'no-cache');
       res.json(metrics);
     } catch (error) {
       res.status(500).json({ message: "Failed to get KPI metrics" });
@@ -2078,7 +2081,9 @@ The Saulto Analytics Team
               onPace: result.progress.onPace, // % to today's goal
               format: metric.format || 'number',
               category: metric.category || 'general',
-              timePeriod: periodType
+              timePeriod: periodType,
+              isNorthStar: metric.isNorthStar || false,
+              description: metric.description
             });
           } else {
             console.log(`❌ No progress data available for metric ${metric.name}`);
@@ -2146,7 +2151,7 @@ The Saulto Analytics Team
         console.log("SQL Parameters:", JSON.stringify(sqlResult.parameters, null, 2));
       }
       
-      const validatedData = insertKpiMetricSchema.parse(dataWithCompanyId);
+      const validatedData = insertMetricSchema.parse(dataWithCompanyId);
       const metric = await storage.createKpiMetric(validatedData);
       console.log("Successfully saved metric:", metric.name);
 
@@ -2169,6 +2174,30 @@ The Saulto Analytics Team
         } catch (registryError) {
           console.error("⚠️ Failed to save to metric registry:", registryError);
           // Don't fail the whole request if registry save fails
+        }
+      }
+
+      // Refresh time series data since a new metric was created
+      if (companyId) {
+        try {
+          console.log(`🔄 Refreshing time series data for company ${companyId} after metric creation`);
+          const etlService = new MetricsTimeSeriesETL(postgresAnalyticsService);
+          
+          // Refresh monthly data (most commonly used in dashboard)
+          const monthlyRefresh = await etlService.runETLJob({
+            companyId: companyId,
+            periodType: 'monthly',
+            forceRefresh: true
+          });
+          
+          if (monthlyRefresh.success) {
+            console.log(`✅ Monthly time series data refreshed for company ${companyId}`);
+          } else {
+            console.log(`⚠️ Failed to refresh monthly time series: ${monthlyRefresh.message}`);
+          }
+        } catch (etlError) {
+          console.error(`⚠️ ETL refresh error after metric creation:`, etlError);
+          // Don't fail the response if ETL fails
         }
       }
 
@@ -2500,19 +2529,57 @@ The Saulto Analytics Team
   app.patch("/api/kpi-metrics/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const validatedData = insertKpiMetricSchema.partial().parse(req.body);
-      const metric = await storage.updateKpiMetric(id, validatedData);
+      console.log(`🔄 PATCH /api/kpi-metrics/${id} called with body:`, JSON.stringify(req.body, null, 2));
+      
+      // Filter out non-schema fields that come from the frontend
+      const { mainDataSource, table, valueColumn, aggregationType, ...filteredBody } = req.body;
+      console.log(`🔄 Filtered body (removed frontend-only fields):`, JSON.stringify(filteredBody, null, 2));
+      
+      const validatedData = insertMetricSchema.partial().parse(filteredBody);
+      console.log(`🔄 Validated data:`, JSON.stringify(validatedData, null, 2));
+      
+      // Get company ID from session for direct update
+      const companyId = req.session?.selectedCompany?.id;
+      const metric = await storage.updateKpiMetric(id, validatedData, companyId);
+      console.log(`🔄 Update result:`, metric);
       
       if (!metric) {
         res.status(404).json({ message: "Metric not found" });
         return;
       }
       
+      // Refresh time series data since goals may have changed
+      if (companyId) {
+        try {
+          console.log(`🔄 Refreshing time series data for company ${companyId} after metric update`);
+          const etlService = new MetricsTimeSeriesETL(postgresAnalyticsService);
+          
+          // Refresh monthly data (most commonly used in dashboard)
+          const monthlyRefresh = await etlService.runETLJob({
+            companyId: companyId,
+            periodType: 'monthly',
+            forceRefresh: true
+          });
+          
+          if (monthlyRefresh.success) {
+            console.log(`✅ Monthly time series data refreshed for company ${companyId}`);
+          } else {
+            console.log(`⚠️ Failed to refresh monthly time series: ${monthlyRefresh.message}`);
+          }
+        } catch (etlError) {
+          console.error(`⚠️ ETL refresh error after metric update:`, etlError);
+          // Don't fail the response if ETL fails
+        }
+      }
+      
       res.json(metric);
     } catch (error) {
+      console.error(`❌ PATCH /api/kpi-metrics/${id} error:`, error);
       if (error instanceof z.ZodError) {
+        console.error(`❌ Validation errors:`, error.errors);
         res.status(400).json({ message: "Invalid data", errors: error.errors });
       } else {
+        console.error(`❌ General error:`, error.message);
         res.status(500).json({ message: "Failed to update KPI metric" });
       }
     }
