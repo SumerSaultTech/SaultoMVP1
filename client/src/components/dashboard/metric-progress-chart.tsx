@@ -3,10 +3,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatNumber } from '@/lib/format-utils';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import type { KpiMetric } from '@shared/schema';
+import type { Metric } from '@shared/schema';
 
 interface MetricProgressChartProps {
-  metric: Partial<KpiMetric>;
+  metric: Partial<Metric>;
   timePeriod?: string;
 }
 
@@ -17,14 +17,18 @@ interface ChartDataPoint {
   isCurrent: boolean;
 }
 
-// Map metric names to our analytics series names
-function getSeriesName(metricName: string): string | null {
+// Map metric names to metric keys for API calls
+function getMetricKey(metricName: string): string | null {
   if (!metricName) return null;
   
+  // For the new tenant-isolated metrics system, we need to use the actual metric_key
+  // This should match the metric_key from the database
   const mapping: Record<string, string> = {
-    'jira story points completed': 'Jira Story Points Completed',
-    'jira issues resolved': 'Jira Issues Resolved', 
-    'average jira cycle time': 'Average Jira Cycle Time',
+    'jira story points completed': 'jira_story_points_completed',
+    'jira issues resolved': 'jira_issues_resolved', 
+    'average jira cycle time': 'average_jira_cycle_time',
+    'test': 'test',
+    'testing b2': 'testing_b2',
   };
   
   const key = metricName.toLowerCase().trim();
@@ -45,168 +49,143 @@ function getDotConfig(granularity: string) {
   }
 }
 
-// Get date range based on time period
-function getDateRange(timePeriod: string) {
-  // For testing with July-August 2025 data, simulate "today" as mid-August
-  const today = new Date(); // Use actual current date
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth(); // 0-based
-  const currentDate = today.getDate();
+// Map time period to backend period type and granularity
+function getPeriodMapping(timePeriod: string) {
+  const periodTypeMap = {
+    'weekly view': 'weekly',
+    'weekly': 'weekly',
+    'monthly view': 'monthly', 
+    'monthly': 'monthly',
+    'quarterly view': 'quarterly',
+    'quarterly': 'quarterly',
+    'yearly view': 'yearly',
+    'yearly': 'yearly'
+  };
   
-  switch (timePeriod.toLowerCase()) {
-    case 'weekly view':
-    case 'weekly':
-      // Last 7 days (including today)
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - 6);
-      return {
-        start: format(weekStart, 'yyyy-MM-dd'),
-        end: format(today, 'yyyy-MM-dd'),
-        granularity: 'day'
-      };
-      
-    case 'monthly view':
-    case 'monthly':
-      // Current month - full month but actuals only through today
-      const monthStart = new Date(currentYear, currentMonth, 1);
-      const monthEnd = new Date(currentYear, currentMonth + 1, 0); // Last day of month
-      return {
-        start: format(monthStart, 'yyyy-MM-dd'),
-        end: format(monthEnd, 'yyyy-MM-dd'),
-        granularity: 'day'
-      };
-      
-    case 'quarterly view':
-    case 'quarterly':
-      // Current quarter - full quarter but actuals only through today
-      const quarterStartMonth = Math.floor(currentMonth / 3) * 3;
-      const quarterStart = new Date(currentYear, quarterStartMonth, 1);
-      const quarterEnd = new Date(currentYear, quarterStartMonth + 3, 0); // Last day of quarter
-      return {
-        start: format(quarterStart, 'yyyy-MM-dd'),
-        end: format(quarterEnd, 'yyyy-MM-dd'),
-        granularity: 'week'
-      };
-      
-    case 'yearly view':
-    case 'yearly':
-    default:
-      // Current year - full year but actuals only through today
-      const yearStart = new Date(currentYear, 0, 1);
-      const yearEnd = new Date(currentYear, 11, 31); // Dec 31
-      return {
-        start: format(yearStart, 'yyyy-MM-dd'),
-        end: format(yearEnd, 'yyyy-MM-dd'),
-        granularity: 'month'
-      };
-  }
+  return periodTypeMap[timePeriod.toLowerCase() as keyof typeof periodTypeMap] || 'weekly';
 }
 
 export default function MetricProgressChart({ metric, timePeriod = "Monthly View" }: MetricProgressChartProps) {
-  const seriesName = getSeriesName(metric.name || '');
-  const { start, end, granularity } = getDateRange(timePeriod);
+  console.log('🔍 Chart Rendering for:', metric.name);
+  console.log('🔍 MetricProgressChart component loaded and executing');
   
+  // Get the metric key for API calls
+  const metricKey = getMetricKey(metric.name || '');
+  console.log('🔍 Metric key mapping result:', { name: metric.name, metricKey });
+  const periodType = getPeriodMapping(timePeriod);
   
-  const { data: seriesData, isLoading } = useQuery({
-    queryKey: ['metric-series', seriesName, start, end, granularity],
+  // Fetch chart data from original working API
+  const { data: chartDataResponse, isLoading, error } = useQuery({
+    queryKey: ['chart-data', metricKey, periodType],
     queryFn: async () => {
-      const params = new URLSearchParams({
-        start,
-        end,
-        granularity,
-        include_goals: 'true',
-        cumulative: 'true', // Request cumulative data from backend
-        relative: 'true', // Request period-relative values starting from 0
-      });
-
-      const response = await fetch(`/api/series?${params}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch metrics series data');
+      if (!metricKey) {
+        console.warn('No metric key found for:', metric.name);
+        return [];
       }
-      return response.json();
+      
+      console.log('📊 Fetching chart data:', { metricKey, timePeriod });
+      console.log('📊 Making API call to:', `/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`);
+      
+      const response = await fetch(`/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch chart data: ${response.statusText}`);
+      }
+      const result = await response.json();
+      return result.data || [];
     },
-    enabled: !!seriesName, // Only fetch if we have a valid series name
+    enabled: !!metricKey,
   });
 
-  // Process the data for the chart (backend provides cumulative data)
-  const chartData: ChartDataPoint[] = React.useMemo(() => {
-    if (!seriesData?.data || !seriesName) return [];
-    
-    const today = new Date();
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    
-    // Filter actual data for this specific metric and date range
-    const actualDataPoints = seriesData.data
-      .filter((item: any) => {
-        const itemDate = new Date(item.ts);
-        return item.series === seriesName && 
-               itemDate >= startDate && 
-               itemDate <= endDate;
-      })
+  // Chart data is directly from the API response
+  const rawChartData = chartDataResponse || [];
+
+  // Process the real API data
+  const chartData = React.useMemo(() => {
+    if (!rawChartData || rawChartData.length === 0) {
+      console.warn('No chart data available for:', metric.name);
+      return [];
+    }
+
+    // Process real data points
+    const processedPoints = rawChartData
+      .filter((item: any) => item.metric_key === metricKey)
       .map((item: any) => ({
         ts: item.ts,
-        value: parseFloat(item.value) || 0
+        value: parseFloat(item.value) || 0,
+        is_goal: item.is_goal
       }))
       .sort((a: any, b: any) => a.ts.localeCompare(b.ts));
+
+    // Group by date to combine actual and goal values
+    const dataByDate: Record<string, any> = {};
     
-    // Filter goal data for this specific metric and date range
-    const goalSeriesName = `Goal: ${seriesName}`;
-    const goalDataPoints = seriesData.data
-      .filter((item: any) => {
-        const itemDate = new Date(item.ts);
-        return item.series === goalSeriesName && 
-               itemDate >= startDate && 
-               itemDate <= endDate;
-      })
-      .map((item: any) => ({
-        ts: item.ts,
-        value: parseFloat(item.value) || 0
-      }))
-      .sort((a: any, b: any) => a.ts.localeCompare(b.ts));
-    
-    // Create a map of goal data by date for easy lookup
-    const goalDataMap = goalDataPoints.reduce((acc: any, item: any) => {
-      acc[item.ts] = item.value;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    // Build chart data using actual dates from backend within the selected range
-    return actualDataPoints.map((item: any, index: number) => {
-      const date = new Date(item.ts);
-      const isInFuture = date > today;
-      
-      // Format period label based on granularity
-      let periodLabel = '';
-      if (granularity === 'day') {
-        periodLabel = format(date, 'MMM dd');
-      } else if (granularity === 'week') {
-        periodLabel = format(date, 'MMM dd');
-      } else if (granularity === 'month') {
-        periodLabel = format(date, 'MMM yyyy');
+    processedPoints.forEach((item: any) => {
+      const dateKey = item.ts.split('T')[0];
+      if (!dataByDate[dateKey]) {
+        dataByDate[dateKey] = {};
       }
       
-      return {
-        period: periodLabel,
-        actual: isInFuture ? null : item.value,
-        goal: goalDataMap[item.ts] || null,
-        isCurrent: !isInFuture && index === actualDataPoints.length - 1
-      };
+      if (item.is_goal) {
+        dataByDate[dateKey].goal = item.value;
+      } else {
+        dataByDate[dateKey].actual = item.value;
+      }
     });
-  }, [seriesData, seriesName, granularity, start, end]);
 
+    // Convert to chart format with appropriate date formatting based on period type
+    return Object.entries(dataByDate)
+      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+      .map(([date, data]: [string, any]) => {
+        let periodLabel = '';
+        
+        // Format period label based on period type
+        switch (periodType) {
+          case 'weekly':
+          case 'monthly':
+            periodLabel = format(new Date(date), 'MMM dd');
+            break;
+          case 'quarterly':
+            periodLabel = format(new Date(date), 'MMM dd');
+            break;
+          case 'yearly':
+            periodLabel = format(new Date(date), 'MMM');
+            break;
+          default:
+            periodLabel = format(new Date(date), 'MMM dd');
+        }
+        
+        return {
+          period: periodLabel,
+          actual: data.actual !== undefined ? data.actual : null,
+          goal: data.goal !== undefined ? data.goal : null,
+          isCurrent: true
+        };
+      });
+  }, [rawChartData, metricKey]);
+
+  // Show loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-32 text-gray-500 dark:text-gray-400">
-        <span className="text-sm">Loading...</span>
+      <div className="flex items-center justify-center h-full">
+        <div className="text-sm text-gray-500">Loading chart data...</div>
       </div>
     );
   }
 
-  if (!seriesName || !chartData || chartData.length === 0) {
+  // Show error state
+  if (error) {
     return (
-      <div className="flex items-center justify-center h-32 text-gray-500 dark:text-gray-400">
-        <span className="text-sm">No analytics data available</span>
+      <div className="flex items-center justify-center h-full">
+        <div className="text-sm text-red-500">Error loading chart data</div>
+      </div>
+    );
+  }
+
+  // Show no data state
+  if (!chartData || chartData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-sm text-gray-500">No chart data available</div>
       </div>
     );
   }
@@ -255,7 +234,7 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
           dataKey="actual" 
           stroke="#10b981" 
           strokeWidth={3}
-          dot={getDotConfig(granularity)}
+          dot={{ fill: '#10b981', strokeWidth: 2, r: 2 }}
           name="Actual"
           connectNulls={false} // Don't connect lines across null values (future dates)
         />
