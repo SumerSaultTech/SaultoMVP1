@@ -26,9 +26,6 @@ export class JiraOAuthService {
   private config: JiraOAuthConfig;
 
   constructor() {
-    console.log('🔍 JIRA_OAUTH_CLIENT_ID:', process.env.JIRA_OAUTH_CLIENT_ID ? 'SET' : 'NOT SET');
-    console.log('🔍 JIRA_OAUTH_CLIENT_SECRET:', process.env.JIRA_OAUTH_CLIENT_SECRET ? 'SET' : 'NOT SET');
-    
     this.config = {
       clientId: process.env.JIRA_OAUTH_CLIENT_ID || '',
       clientSecret: process.env.JIRA_OAUTH_CLIENT_SECRET || '',
@@ -70,7 +67,7 @@ export class JiraOAuthService {
       if (!this.config.clientId || !this.config.clientSecret) {
         throw new Error('Missing Jira OAuth credentials');
       }
-      console.log('Jira OAuth client initialized successfully');
+      // Jira OAuth client initialized successfully
     } catch (error) {
       console.error('Failed to initialize Jira OAuth client:', error);
       throw error;
@@ -406,8 +403,7 @@ export class JiraOAuthService {
         if (!response.ok) {
           // Handle 401 Unauthorized - try to refresh token
           if (response.status === 401 && retryCount === 0) {
-            console.log('🔄 Access token expired, attempting to refresh...');
-            throw new Error(`TOKEN_EXPIRED:${response.status}:${response.statusText}`);
+              throw new Error(`TOKEN_EXPIRED:${response.status}:${response.statusText}`);
           }
           throw new Error(`Failed to fetch issues: ${response.status} ${response.statusText}`);
         }
@@ -418,7 +414,7 @@ export class JiraOAuthService {
         total = data.total;
         startAt += data.issues.length;
         
-        console.log(`Fetched ${allIssues.length}/${total} issues`);
+        // Fetched ${allIssues.length}/${total} issues
         
       } while (allIssues.length < total && allIssues.length < maxResults);
 
@@ -508,7 +504,7 @@ export class JiraOAuthService {
       // Ensure main schema exists
       await sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`;
       
-      console.log('🧹 Cleaning up existing transformation objects...');
+      // Cleaning up existing transformation objects
       // Drop views first (they depend on tables)
       await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_jira_issues`;
       await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_jira_users`;
@@ -522,7 +518,7 @@ export class JiraOAuthService {
       await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_jira_projects`;
       await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_jira_issues`;
       
-      console.log('📋 Creating staging tables (stg)...');
+      // Creating staging tables (stg)
       
       // STG: jira_issues - normalized and cleaned
       await sql`
@@ -580,7 +576,7 @@ export class JiraOAuthService {
         WHERE data IS NOT NULL
       `;
       
-      console.log('🔗 Creating integration tables (int)...');
+      // Creating integration tables (int)
       
       // INT: jira_users - enriched user data with calculated fields
       await sql`
@@ -655,7 +651,7 @@ export class JiraOAuthService {
         LEFT JOIN ${sql(schema)}.int_jira_projects p ON i.project_id = p.project_id
       `;
       
-      console.log('👁️ Creating core views...');
+      // Creating core views
       
       // CORE: Views that mirror int tables (no aggregation)
       await sql`
@@ -673,7 +669,7 @@ export class JiraOAuthService {
         SELECT * FROM ${sql(schema)}.int_jira_projects
       `;
       
-      console.log('✅ Transformation pipeline completed (raw → stg → int → core)');
+      // Transformation pipeline completed (raw → stg → int → core)
       
     } catch (error) {
       console.error('❌ Transformation pipeline failed:', error);
@@ -688,7 +684,7 @@ export class JiraOAuthService {
     companyId: number, 
     apiCall: (accessToken: string) => Promise<T>
   ): Promise<T> {
-    console.log('🔧 executeWithTokenRefresh called for company:', companyId);
+    // executeWithTokenRefresh called
     const storage = await import('../storage');
     
     // Get current tokens from database
@@ -703,14 +699,14 @@ export class JiraOAuthService {
     let { accessToken, refreshToken } = config;
 
     try {
-      console.log('🔧 Calling API with current access token...');
+      // Calling API with current access token
       // Try the API call with current access token
       return await apiCall(accessToken);
     } catch (error: any) {
-      console.log('🔧 API call failed with error:', error.message);
+      // API call failed with error
       // Check if it's a token expiration error
       if (error.message?.includes('TOKEN_EXPIRED') || error.message?.includes('401')) {
-        console.log('🔄 Access token expired, refreshing automatically...');
+        // Access token expired, refreshing automatically
         
         if (!refreshToken) {
           throw new Error('No refresh token available for automatic refresh');
@@ -732,7 +728,7 @@ export class JiraOAuthService {
             config: updatedConfig,
           });
 
-          console.log('✅ Access token refreshed successfully');
+          // Access token refreshed successfully
 
           // Retry the API call with the new access token
           return await apiCall(newTokens.access_token);
@@ -766,7 +762,7 @@ export class JiraOAuthService {
       const sql = postgres(databaseUrl);
       const db = drizzle(sql);
 
-      console.log(`🔄 Starting Jira OAuth sync for company ${companyId}`);
+      // Starting Jira OAuth sync
       
       // Get stored OAuth tokens from database
       const storage = (await import('../storage')).storage;
@@ -787,7 +783,7 @@ export class JiraOAuthService {
       const cloudId = resources[0].id;
       const baseUrl = resources[0].url;
       
-      console.log(`🔗 Using Jira instance: ${baseUrl} (${cloudId})`);
+      // Using Jira instance
 
       let totalRecords = 0;
       const tablesCreated: string[] = [];
@@ -831,21 +827,20 @@ export class JiraOAuthService {
       };
 
       // Fetch and sync issues (most important table) with automatic token refresh
-      console.log('📋 Fetching Jira issues...');
-      console.log('🔧 ABOUT TO CALL executeWithTokenRefresh for company:', companyId);
+      // Fetching Jira issues
       const issues = await this.executeWithTokenRefresh(companyId, 
         (token) => this.fetchIssues(token, cloudId, 500)
       );
-      console.log('🔧 executeWithTokenRefresh COMPLETED, got', issues?.length || 0, 'issues');
+      // executeWithTokenRefresh completed
       if (issues.length > 0) {
         const recordsLoaded = await insertDataToSchema('jira_issues', issues, 'jira_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_jira_issues');
-        console.log(`✅ Synced ${recordsLoaded} issues`);
+        // Synced issues
       }
 
       // Fetch and sync projects with automatic token refresh
-      console.log('📂 Fetching Jira projects...');
+      // Fetching Jira projects
       const projects = await this.executeWithTokenRefresh(companyId,
         (token) => this.fetchProjects(token, cloudId)
       );
@@ -853,11 +848,11 @@ export class JiraOAuthService {
         const recordsLoaded = await insertDataToSchema('jira_projects', projects, 'jira_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_jira_projects');
-        console.log(`✅ Synced ${recordsLoaded} projects`);
+        // Synced projects
       }
 
       // Fetch and sync users with automatic token refresh
-      console.log('👥 Fetching Jira users...');
+      // Fetching Jira users
       const users = await this.executeWithTokenRefresh(companyId,
         (token) => this.fetchUsers(token, cloudId)
       );
@@ -865,14 +860,14 @@ export class JiraOAuthService {
         const recordsLoaded = await insertDataToSchema('jira_users', users, 'jira_oauth');
         totalRecords += recordsLoaded;
         tablesCreated.push('raw_jira_users');
-        console.log(`✅ Synced ${recordsLoaded} users`);
+        // Synced users
       }
       
       // Run automatic dbt-style transformations
-      console.log('🔄 Running dbt-style transformations...');
+      // Running dbt-style transformations
       try {
         await this.runTransformations(companyId, sql);
-        console.log('✅ Transformations completed successfully');
+        // Transformations completed successfully
       } catch (transformError) {
         console.error('❌ Transformation failed:', transformError);
         // Continue with sync even if transformations fail
@@ -881,7 +876,7 @@ export class JiraOAuthService {
       // Close database connection
       await sql.end();
 
-      console.log(`🎉 Jira OAuth sync completed: ${totalRecords} total records across ${tablesCreated.length} tables`);
+      // Jira OAuth sync completed
 
       return {
         success: true,
