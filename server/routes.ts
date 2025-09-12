@@ -12,7 +12,6 @@ import { hubspotOAuthService } from "./services/hubspot-oauth";
 import { odooOAuthService } from "./services/odoo-oauth";
 import { odooApiService } from "./services/odoo-api";
 import { zohoOAuthService } from "./services/zoho-oauth";
-import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
 import path from 'path';
@@ -265,6 +264,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: new Date()
       };
 
+      console.log(`💾 [JIRA] Storing OAuth tokens for company ${stateData.companyId}:`);
+      console.log(`💾 - Access Token: ${tokens.access_token ? `${tokens.access_token.substring(0, 20)}...` : 'MISSING'}`);
+      console.log(`💾 - Refresh Token: ${tokens.refresh_token ? `${tokens.refresh_token.substring(0, 20)}...` : 'MISSING'}`);
+      console.log(`💾 - Expires In: ${tokens.expires_in} seconds`);
+
       // Store in your dataSources table or create a new oauth_connections table
       await storage.createDataSource({
         companyId: stateData.companyId,
@@ -281,6 +285,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         isActive: true
       });
+
+      console.log(`✅ [JIRA] OAuth tokens successfully stored for company ${stateData.companyId}`);
 
       // Redirect to frontend setup page with OAuth parameters
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
@@ -4794,146 +4800,7 @@ CRITICAL REQUIREMENTS:
     }
   });
 
-  // Demo version - Mock connector sync that always succeeds + creates schema layers
-  app.post("/api/connectors/:companyId/:connectorType/sync", async (req, res) => {
-    try {
-      const { companyId, connectorType } = req.params;
-      const { tables } = req.body; // Optional: specific tables to sync
-      
-      console.log(`✅ DEMO: Syncing ${connectorType} for company ${companyId}`);
-      
-      // Simulate sync delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const mockRecords = Math.floor(Math.random() * 10000) + 1000; // Random 1000-11000 records
-      const tablesProcessed = tables ? tables.length : Math.floor(Math.random() * 8) + 3;
-      
-      // **AUTOMATIC SCHEMA LAYER CREATION** - This is the new automated behavior
-      let schemaLayersCreated: string[] = [];
-      let schemaError: string | undefined;
-      
-      try {
-        const analyticsSchema = `analytics_company_${companyId}`;
-        const mockTables = tables || ['issues', 'users', 'sprints']; // Default mock tables
-        
-        console.log(`🔨 Creating schema layers for ${connectorType}...`);
-        
-        const schemaResult = await schemaLayerManager.createSchemaLayers({
-          companyId: parseInt(companyId),
-          connectorType,
-          tables: mockTables,
-          analyticsSchema
-        });
-        
-        if (schemaResult.success) {
-          schemaLayersCreated = schemaResult.layersCreated;
-          console.log(`✅ Automatic schema layers created: ${schemaLayersCreated.join(' → ')}`);
-        } else {
-          schemaError = schemaResult.error;
-          console.warn(`⚠️ Schema layer creation failed: ${schemaError}`);
-        }
-        
-      } catch (error) {
-        schemaError = error instanceof Error ? error.message : 'Schema layer creation failed';
-        console.error('Schema layer creation error:', error);
-      }
-      
-      res.json({
-        success: true,
-        message: `✅ Demo: Successfully synced ${connectorType}`,
-        recordsSynced: mockRecords,
-        tablesProcessed: tablesProcessed,
-        syncDuration: `${Math.floor(Math.random() * 30) + 10}s`,
-        lastSyncAt: new Date().toISOString(),
-        demo: true,
-        // New schema layer information
-        schemaLayers: {
-          created: schemaLayersCreated,
-          error: schemaError,
-          automatic: true
-        }
-      });
-    } catch (error: any) {
-      console.error("Error syncing connector:", error);
-      res.status(500).json({ 
-        success: false,
-        error: "Failed to sync connector",
-        details: error.message
-      });
-    }
-  });
 
-  // Schema Layer Management endpoints
-  app.get("/api/schema-layers/:companyId/:connectorType/status", async (req, res) => {
-    try {
-      const { companyId, connectorType } = req.params;
-      
-      const status = await schemaLayerManager.getSchemaLayerStatus(
-        parseInt(companyId),
-        connectorType
-      );
-      
-      res.json({
-        success: true,
-        ...status
-      });
-      
-    } catch (error: any) {
-      console.error("Error getting schema layer status:", error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to get schema layer status",
-        details: error.message
-      });
-    }
-  });
-
-  app.post("/api/schema-layers/:companyId/:connectorType/create", async (req, res) => {
-    try {
-      const { companyId, connectorType } = req.params;
-      const { tables, force = false } = req.body;
-      
-      if (!tables || !Array.isArray(tables) || tables.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: "Tables array is required"
-        });
-      }
-      
-      console.log(`🔨 Manual schema layer creation requested for ${connectorType}`);
-      
-      const analyticsSchema = `analytics_company_${companyId}`;
-      
-      const result = await schemaLayerManager.createSchemaLayers({
-        companyId: parseInt(companyId),
-        connectorType,
-        tables,
-        analyticsSchema
-      });
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          message: `Schema layers created: ${result.layersCreated.join(' → ')}`,
-          layersCreated: result.layersCreated
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: "Failed to create schema layers",
-          details: result.error
-        });
-      }
-      
-    } catch (error: any) {
-      console.error("Error creating schema layers:", error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to create schema layers",
-        details: error.message
-      });
-    }
-  });
 
   // Trigger immediate sync via scheduler (bypasses schedule)
   app.post("/api/sync-now/:companyId/:connectorType", async (req, res) => {

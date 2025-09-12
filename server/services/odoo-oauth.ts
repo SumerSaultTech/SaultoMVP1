@@ -422,6 +422,25 @@ export class OdooOAuthService extends OAuthServiceBase {
         console.log(`✅ Synced ${recordsLoaded} products`);
       }
       
+      // Run automatic dbt-style transformations
+      console.log('🔄 Running dbt-style transformations...');
+      try {
+        const postgres = (await import('postgres')).default;
+        const databaseUrl = process.env.DATABASE_URL;
+        
+        if (!databaseUrl) {
+          throw new Error('DATABASE_URL not configured');
+        }
+        
+        const sql = postgres(databaseUrl);
+        await this.runTransformations(companyId, sql);
+        await sql.end();
+        console.log('✅ Transformations completed successfully');
+      } catch (transformError) {
+        console.error('❌ Transformation failed:', transformError);
+        // Continue with sync even if transformations fail
+      }
+      
       console.log(`🎉 Odoo OAuth sync completed: ${totalRecords} total records across ${tablesCreated.length} tables`);
 
       return {
@@ -554,6 +573,364 @@ export class OdooOAuthService extends OAuthServiceBase {
       return products || [];
     } catch (error) {
       console.error('Failed to fetch Odoo products:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Run dbt-style transformations for Odoo data (raw → stg → int → core)
+   */
+  async runTransformations(companyId: number, sql: any): Promise<void> {
+    const schema = `analytics_company_${companyId}`;
+    
+    try {
+      // Ensure main schema exists
+      await sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`;
+      
+      console.log('🔍 Checking which Odoo RAW tables exist...');
+      
+      // Check which RAW tables exist
+      const existingTables = await sql`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = ${schema} 
+        AND table_name LIKE 'raw_odoo_%'
+      `;
+      
+      const tableNames = existingTables.map((row: any) => row.table_name);
+      const hasSalesOrders = tableNames.includes('raw_odoo_sales_orders');
+      const hasInvoices = tableNames.includes('raw_odoo_invoices');
+      const hasCustomers = tableNames.includes('raw_odoo_customers');
+      const hasProducts = tableNames.includes('raw_odoo_products');
+      
+      console.log('📊 Found RAW tables:', {
+        salesOrders: hasSalesOrders,
+        invoices: hasInvoices,
+        customers: hasCustomers,
+        products: hasProducts
+      });
+      
+      if (!hasSalesOrders && !hasInvoices && !hasCustomers && !hasProducts) {
+        console.log('⚠️ No Odoo RAW tables found, skipping transformations');
+        return;
+      }
+      
+      console.log('🧹 Cleaning up existing Odoo transformation objects...');
+      
+      // Drop views first (they depend on tables)
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_odoo_sales_orders`;
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_odoo_invoices`;
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_odoo_customers`;
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_odoo_products`;
+      
+      // Drop tables in reverse dependency order
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_odoo_sales_orders`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_odoo_invoices`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_odoo_customers`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_odoo_products`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_odoo_sales_orders`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_odoo_invoices`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_odoo_customers`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_odoo_products`;
+      
+      console.log('📋 Creating Odoo staging tables (stg)...');
+      
+      // STG: odoo_sales_orders - normalized and cleaned
+      if (hasSalesOrders) {
+        console.log('  ✅ Creating stg_odoo_sales_orders');
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_odoo_sales_orders AS
+          SELECT DISTINCT 
+            (data->>'id')::bigint as order_id,
+            data->>'name' as order_name,
+            (data#>>'{partner_id,1}') as customer_name,
+            (data->>'date_order')::timestamp as order_date,
+            data->>'state' as status,
+            COALESCE((data->>'amount_total')::numeric, 0) as amount_total,
+            COALESCE((data->>'amount_untaxed')::numeric, 0) as amount_untaxed,
+            (data#>>'{currency_id,1}') as currency,
+            (data#>>'{user_id,1}') as salesperson,
+            (data#>>'{team_id,1}') as sales_team,
+            (data->>'create_date')::timestamp as created_at,
+            (data->>'write_date')::timestamp as updated_at,
+            data as raw_data
+          FROM ${sql(schema)}.raw_odoo_sales_orders
+          WHERE data IS NOT NULL
+        `;
+      }
+      
+      // STG: odoo_invoices - normalized
+      if (hasInvoices) {
+        console.log('  ✅ Creating stg_odoo_invoices');
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_odoo_invoices AS
+          SELECT DISTINCT
+            (data->>'id')::bigint as invoice_id,
+            data->>'name' as invoice_number,
+            (data#>>'{partner_id,1}') as customer_name,
+            (data->>'invoice_date')::timestamp as invoice_date,
+            data->>'state' as status,
+            data->>'move_type' as invoice_type,
+            COALESCE((data->>'amount_total')::numeric, 0) as amount_total,
+            COALESCE((data->>'amount_untaxed')::numeric, 0) as amount_untaxed,
+            COALESCE((data->>'amount_residual')::numeric, 0) as amount_due,
+            (data#>>'{currency_id,1}') as currency,
+            data->>'invoice_payment_state' as payment_status,
+            (data->>'create_date')::timestamp as created_at,
+            (data->>'write_date')::timestamp as updated_at
+          FROM ${sql(schema)}.raw_odoo_invoices
+          WHERE data IS NOT NULL
+        `;
+      }
+      
+      // STG: odoo_customers - normalized
+      if (hasCustomers) {
+        console.log('  ✅ Creating stg_odoo_customers');
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_odoo_customers AS  
+          SELECT DISTINCT
+            (data->>'id')::bigint as customer_id,
+            data->>'name' as customer_name,
+            data->>'email' as email,
+            data->>'phone' as phone,
+            CASE WHEN data->>'is_company' = 'true' THEN true ELSE false END as is_company,
+            COALESCE((data->>'customer_rank')::integer, 0) as customer_rank,
+            COALESCE((data->>'supplier_rank')::integer, 0) as supplier_rank,
+            (data#>>'{country_id,1}') as country,
+            data->>'city' as city,
+            data->>'street' as street,
+            data->>'website' as website,
+            (data->>'create_date')::timestamp as created_at,
+            (data->>'write_date')::timestamp as updated_at
+          FROM ${sql(schema)}.raw_odoo_customers
+          WHERE data IS NOT NULL
+        `;
+      }
+      
+      // STG: odoo_products - normalized
+      if (hasProducts) {
+        console.log('  ✅ Creating stg_odoo_products');
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_odoo_products AS  
+          SELECT DISTINCT
+            (data->>'id')::bigint as product_id,
+            data->>'name' as product_name,
+            data->>'default_code' as product_code,
+            COALESCE((data->>'list_price')::numeric, 0) as list_price,
+            COALESCE((data->>'standard_price')::numeric, 0) as cost_price,
+            COALESCE((data->>'qty_available')::numeric, 0) as qty_available,
+            COALESCE((data->>'virtual_available')::numeric, 0) as virtual_available,
+            (data#>>'{categ_id,1}') as category,
+            CASE WHEN data->>'active' = 'true' THEN true ELSE false END as is_active,
+            (data->>'create_date')::timestamp as created_at,
+            (data->>'write_date')::timestamp as updated_at
+          FROM ${sql(schema)}.raw_odoo_products
+          WHERE data IS NOT NULL
+        `;
+      }
+      
+      console.log('🔗 Creating Odoo integration tables (int)...');
+      
+      // INT: odoo_sales_orders - enriched with calculated fields
+      if (hasSalesOrders) {
+        console.log('  ✅ Creating int_odoo_sales_orders');
+        await sql`
+          CREATE TABLE ${sql(schema)}.int_odoo_sales_orders AS
+          SELECT 
+            order_id,
+            order_name,
+            customer_name,
+            order_date,
+            status,
+            amount_total,
+            amount_untaxed,
+            currency,
+            salesperson,
+            sales_team,
+            created_at,
+            updated_at,
+            -- Calculated fields
+            amount_total - amount_untaxed as tax_amount,
+            CASE 
+              WHEN status = 'sale' THEN 'Confirmed'
+              WHEN status = 'done' THEN 'Delivered'
+              WHEN status = 'draft' THEN 'Draft'
+              WHEN status = 'cancel' THEN 'Cancelled'
+              ELSE 'Other'
+            END as order_status_category,
+            EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - order_date))/86400 as days_since_order,
+            CASE 
+              WHEN amount_total > 10000 THEN 'Large'
+              WHEN amount_total > 1000 THEN 'Medium'
+              ELSE 'Small'
+            END as order_size,
+            EXTRACT(EPOCH FROM (updated_at - created_at))/86400 as processing_days
+          FROM ${sql(schema)}.stg_odoo_sales_orders
+        `;
+      }
+      
+      // INT: odoo_invoices - enriched with calculated fields
+      if (hasInvoices) {
+        console.log('  ✅ Creating int_odoo_invoices');
+        await sql`
+          CREATE TABLE ${sql(schema)}.int_odoo_invoices AS
+          SELECT 
+            invoice_id,
+            invoice_number,
+            customer_name,
+            invoice_date,
+            status,
+            invoice_type,
+            amount_total,
+            amount_untaxed,
+            amount_due,
+            currency,
+            payment_status,
+            created_at,
+            updated_at,
+            -- Calculated fields
+            amount_total - amount_untaxed as tax_amount,
+            amount_total - amount_due as amount_paid,
+            CASE 
+              WHEN amount_due = 0 THEN 'Paid'
+              WHEN amount_due > 0 AND payment_status = 'partial' THEN 'Partially Paid'
+              WHEN amount_due > 0 THEN 'Outstanding'
+              ELSE 'Unknown'
+            END as payment_status_category,
+            CASE 
+              WHEN invoice_date < CURRENT_DATE - INTERVAL '30 days' AND amount_due > 0 THEN 'Overdue'
+              WHEN invoice_date < CURRENT_DATE - INTERVAL '14 days' AND amount_due > 0 THEN 'Due Soon'
+              ELSE 'Current'
+            END as aging_category,
+            EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - invoice_date))/86400 as days_since_invoice
+          FROM ${sql(schema)}.stg_odoo_invoices
+        `;
+      }
+      
+      // INT: odoo_customers - enriched customer data
+      if (hasCustomers) {
+        console.log('  ✅ Creating int_odoo_customers');
+        await sql`
+          CREATE TABLE ${sql(schema)}.int_odoo_customers AS
+          SELECT 
+            customer_id,
+            customer_name,
+            email,
+            phone,
+            is_company,
+            customer_rank,
+            supplier_rank,
+            country,
+            city,
+            street,
+            website,
+            created_at,
+            updated_at,
+            -- Calculated fields
+            CASE 
+              WHEN is_company THEN 'Company'
+              ELSE 'Individual'
+            END as customer_type,
+            CASE 
+              WHEN customer_rank > 0 AND supplier_rank > 0 THEN 'Customer & Supplier'
+              WHEN customer_rank > 0 THEN 'Customer Only'
+              WHEN supplier_rank > 0 THEN 'Supplier Only'
+              ELSE 'Prospect'
+            END as relationship_type,
+            EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at))/86400 as days_since_created,
+            CASE 
+              WHEN email IS NOT NULL AND phone IS NOT NULL THEN 'Complete'
+              WHEN email IS NOT NULL OR phone IS NOT NULL THEN 'Partial'
+              ELSE 'Missing'
+            END as contact_completeness,
+            CONCAT(COALESCE(street, ''), ', ', COALESCE(city, ''), ', ', COALESCE(country, '')) as full_address
+          FROM ${sql(schema)}.stg_odoo_customers
+        `;
+      }
+      
+      // INT: odoo_products - enriched with calculated fields
+      if (hasProducts) {
+        console.log('  ✅ Creating int_odoo_products');
+        await sql`
+          CREATE TABLE ${sql(schema)}.int_odoo_products AS
+          SELECT 
+            product_id,
+            product_name,
+            product_code,
+            list_price,
+            cost_price,
+            qty_available,
+            virtual_available,
+            category,
+            is_active,
+            created_at,
+            updated_at,
+            -- Calculated fields
+            list_price - cost_price as profit_margin,
+            CASE 
+              WHEN cost_price > 0 THEN ROUND(((list_price - cost_price) / cost_price) * 100, 2)
+              ELSE 0
+            END as profit_margin_percent,
+            CASE 
+              WHEN qty_available <= 0 THEN 'Out of Stock'
+              WHEN qty_available < 10 THEN 'Low Stock'
+              ELSE 'In Stock'
+            END as stock_status,
+            virtual_available - qty_available as reserved_qty,
+            CASE 
+              WHEN list_price > 1000 THEN 'Premium'
+              WHEN list_price > 100 THEN 'Standard'
+              ELSE 'Economy'
+            END as price_category
+          FROM ${sql(schema)}.stg_odoo_products
+        `;
+      }
+      
+      console.log('👁️ Creating Odoo core views...');
+      
+      // CORE: Views that mirror int tables (only for existing tables)
+      if (hasSalesOrders) {
+        console.log('  ✅ Creating core_odoo_sales_orders view');
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_odoo_sales_orders AS 
+          SELECT * FROM ${sql(schema)}.int_odoo_sales_orders
+        `;
+      }
+      
+      if (hasInvoices) {
+        console.log('  ✅ Creating core_odoo_invoices view');
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_odoo_invoices AS
+          SELECT * FROM ${sql(schema)}.int_odoo_invoices  
+        `;
+      }
+      
+      if (hasCustomers) {
+        console.log('  ✅ Creating core_odoo_customers view');
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_odoo_customers AS
+          SELECT * FROM ${sql(schema)}.int_odoo_customers
+        `;
+      }
+      
+      if (hasProducts) {
+        console.log('  ✅ Creating core_odoo_products view');
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_odoo_products AS
+          SELECT * FROM ${sql(schema)}.int_odoo_products
+        `;
+      }
+      
+      const createdLayers = [];
+      if (hasSalesOrders) createdLayers.push('sales_orders');
+      if (hasInvoices) createdLayers.push('invoices');
+      if (hasCustomers) createdLayers.push('customers');
+      if (hasProducts) createdLayers.push('products');
+      
+      console.log(`✅ Odoo transformation pipeline completed (raw → stg → int → core) for: ${createdLayers.join(', ')}`);
+      
+    } catch (error) {
+      console.error('❌ Odoo transformation pipeline failed:', error);
       throw error;
     }
   }

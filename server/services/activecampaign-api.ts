@@ -43,6 +43,19 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
   async refreshToken(refreshToken: string): Promise<any> {
     throw new Error('ActiveCampaign uses API key authentication, not OAuth refresh tokens');
   }
+
+  /**
+   * Test API access - required by base class
+   */
+  async testApiAccess(apiUrl: string, apiKey: string): Promise<boolean> {
+    try {
+      const authResult = await this.authenticate(apiUrl, apiKey);
+      return authResult.success;
+    } catch (error) {
+      console.error('Failed to test ActiveCampaign API access:', error);
+      return false;
+    }
+  }
   
   /**
    * Authenticate with ActiveCampaign using API URL and API Key
@@ -259,9 +272,24 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
   }
 
   /**
-   * Discover available tables for ActiveCampaign
+   * Discover available tables for ActiveCampaign - required by base class
    */
-  async discoverTables(apiUrl: string, apiKey: string): Promise<{ 
+  async discoverTables(apiUrl: string, apiKey?: string): Promise<any[]> {
+    // If apiKey is not provided as second argument, this is being called from base class
+    // For ActiveCampaign, we need both apiUrl and apiKey, so this is a compatibility wrapper
+    if (!apiKey) {
+      console.warn('ActiveCampaign discoverTables requires apiKey parameter');
+      return [];
+    }
+    
+    const result = await this.discoverActiveCampaignTables(apiUrl, apiKey);
+    return result.success ? (result.tables?.core || []).concat(result.tables?.optional || []) : [];
+  }
+
+  /**
+   * Discover available tables for ActiveCampaign (internal implementation)
+   */
+  async discoverActiveCampaignTables(apiUrl: string, apiKey: string): Promise<{ 
     success: boolean; 
     tables?: any; 
     error?: string; 
@@ -355,7 +383,10 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
       }
 
       const schema = `analytics_company_${companyId}`;
-      await this.createAnalyticsSchema(schema);
+      
+      // Create analytics schema (same pattern as other services)
+      const sql = this.getSqlConnection();
+      await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
 
       let recordsSynced = 0;
       const tablesCreated = [];
@@ -422,8 +453,17 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
         }
       }
 
-      // Create transformations for existing tables
-      await this.createTransformations(schema, tablesCreated);
+      // Run automatic dbt-style transformations
+      console.log('🔄 Running dbt-style transformations...');
+      try {
+        const sql = await this.getSqlConnection();
+        await this.runTransformations(companyId, sql);
+        await sql.end();
+        console.log('✅ Transformations completed successfully');
+      } catch (transformError) {
+        console.error('❌ Transformation failed:', transformError);
+        // Continue with sync even if transformations fail
+      }
 
       console.log(`✅ ActiveCampaign sync completed: ${recordsSynced} records, ${tablesCreated.length} tables`);
       
@@ -445,21 +485,85 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
   }
 
   /**
-   * Create dbt-style transformations for ActiveCampaign data
+   * Get SQL connection for direct database access
    */
-  private async createTransformations(schema: string, tablesCreated: string[]): Promise<void> {
-    const sql = this.getSqlConnection();
+  private async getSqlConnection() {
+    const postgres = (await import('postgres')).default;
+    const databaseUrl = process.env.DATABASE_URL;
+    
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL not configured');
+    }
+    
+    return postgres(databaseUrl);
+  }
+
+  /**
+   * Run dbt-style transformations for ActiveCampaign data (raw → stg → int → core)
+   */
+  async runTransformations(companyId: number, sql: any): Promise<void> {
+    const schema = `analytics_company_${companyId}`;
     
     try {
-      console.log('🔄 Creating ActiveCampaign transformations...');
+      // Ensure main schema exists
+      await sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`;
+      
+      console.log('🔍 Checking which ActiveCampaign RAW tables exist...');
+      
+      // Check which RAW tables exist
+      const existingTables = await sql`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = ${schema} 
+        AND table_name LIKE 'raw_activecampaign_%'
+      `;
+      
+      const tableNames = existingTables.map((row: any) => row.table_name);
+      const hasContacts = tableNames.includes('raw_activecampaign_contacts');
+      const hasCampaigns = tableNames.includes('raw_activecampaign_campaigns');
+      const hasLists = tableNames.includes('raw_activecampaign_lists');
+      const hasAutomations = tableNames.includes('raw_activecampaign_automations');
+      const hasTags = tableNames.includes('raw_activecampaign_tags');
+      
+      console.log('📊 Found RAW tables:', {
+        contacts: hasContacts,
+        campaigns: hasCampaigns,
+        lists: hasLists,
+        automations: hasAutomations,
+        tags: hasTags
+      });
+      
+      if (!hasContacts && !hasCampaigns && !hasLists && !hasAutomations && !hasTags) {
+        console.log('⚠️ No ActiveCampaign RAW tables found, skipping transformations');
+        return;
+      }
+      
+      console.log('🧹 Cleaning up existing ActiveCampaign transformation objects...');
+      
+      // Drop views first (they depend on tables)
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_contacts`;
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_email_campaigns`;
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_email_lists`;
+      await sql`DROP VIEW IF EXISTS ${sql(schema)}.core_automations`;
+      
+      // Drop tables in reverse dependency order
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_activecampaign_contacts`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_activecampaign_campaigns`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_activecampaign_lists`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.int_activecampaign_automations`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_activecampaign_contacts`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_activecampaign_campaigns`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_activecampaign_lists`;
+      await sql`DROP TABLE IF EXISTS ${sql(schema)}.stg_activecampaign_automations`;
+      
+      console.log('📋 Creating ActiveCampaign staging tables (stg)...');
 
       // Only create transformations for tables that exist
-      for (const table of tablesCreated) {
-        switch (table) {
-          case 'contacts':
-            // STG layer - standardize raw contact data
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.stg_activecampaign_contacts AS
+      if (hasContacts) {
+        console.log('  ✅ Creating transformations for contacts');
+        // STG layer - standardize raw contact data
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_activecampaign_contacts AS
               SELECT 
                 (data->>'id')::bigint as contact_id,
                 data->>'email' as email,
@@ -471,13 +575,13 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                 data->'fieldValues' as custom_fields,
                 data->'listids' as list_memberships,
                 data->'tags' as tags,
-                _loaded_at
+                loaded_at as _loaded_at
               FROM ${sql(schema)}.raw_activecampaign_contacts;
-            `;
+        `;
 
-            // INT layer - business logic
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.int_activecampaign_contacts AS
+        // INT layer - business logic
+        await sql`
+          CREATE TABLE ${sql(schema)}.int_activecampaign_contacts AS
               SELECT *,
                 CASE 
                   WHEN email LIKE '%@%' THEN 'valid'
@@ -488,11 +592,11 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                   ELSE 'inactive' 
                 END as engagement_status
               FROM ${sql(schema)}.stg_activecampaign_contacts;
-            `;
+        `;
 
-            // CORE layer - final business entities
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.core_contacts AS
+        // CORE layer - final business entities
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_contacts AS
               SELECT 
                 contact_id,
                 email,
@@ -507,14 +611,15 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                 _loaded_at
               FROM ${sql(schema)}.int_activecampaign_contacts
               WHERE email_status = 'valid';
-            `;
-            break;
+        `;
+      }
 
-          case 'campaigns':
-            // STG layer
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.stg_activecampaign_campaigns AS
-              SELECT 
+      if (hasCampaigns) {
+        console.log('  ✅ Creating transformations for campaigns');
+        // STG layer
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_activecampaign_campaigns AS
+          SELECT 
                 (data->>'id')::bigint as campaign_id,
                 data->>'name' as campaign_name,
                 data->>'subject' as subject_line,
@@ -527,13 +632,13 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                 (data->>'clicks')::int as total_clicks,
                 (data->>'uniqueclicks')::int as unique_clicks,
                 (data->>'sent')::int as total_sent,
-                _loaded_at
+                loaded_at as _loaded_at
               FROM ${sql(schema)}.raw_activecampaign_campaigns;
-            `;
+        `;
 
-            // INT layer with calculated metrics
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.int_activecampaign_campaigns AS
+        // INT layer with calculated metrics
+        await sql`
+          CREATE TABLE ${sql(schema)}.int_activecampaign_campaigns AS
               SELECT *,
                 CASE WHEN total_sent > 0 THEN 
                   ROUND((unique_opens::decimal / total_sent) * 100, 2)
@@ -544,11 +649,11 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                   ELSE 0
                 END as click_through_rate_percent
               FROM ${sql(schema)}.stg_activecampaign_campaigns;
-            `;
+        `;
 
-            // CORE layer
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.core_email_campaigns AS
+        // CORE layer
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_email_campaigns AS
               SELECT 
                 campaign_id,
                 campaign_name,
@@ -565,26 +670,27 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                 _loaded_at
               FROM ${sql(schema)}.int_activecampaign_campaigns
               WHERE status = 'sent';
-            `;
-            break;
+        `;
+      }
 
-          case 'lists':
-            // STG layer
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.stg_activecampaign_lists AS
-              SELECT 
+      if (hasLists) {
+        console.log('  ✅ Creating transformations for lists');
+        // STG layer
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_activecampaign_lists AS
+          SELECT 
                 (data->>'id')::bigint as list_id,
                 data->>'name' as list_name,
                 data->>'description' as description,
                 (data->>'subscriber_count')::int as subscriber_count,
                 (data->>'cdate')::timestamp as created_at,
-                _loaded_at
+                loaded_at as _loaded_at
               FROM ${sql(schema)}.raw_activecampaign_lists;
-            `;
+        `;
 
-            // CORE layer (simple for lists)
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.core_email_lists AS
+        // CORE layer (simple for lists)
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_email_lists AS
               SELECT 
                 list_id,
                 list_name,
@@ -594,26 +700,27 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                 'activecampaign' as source_system,
                 _loaded_at
               FROM ${sql(schema)}.stg_activecampaign_lists;
-            `;
-            break;
+        `;
+      }
 
-          case 'automations':
-            // STG layer
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.stg_activecampaign_automations AS
-              SELECT 
+      if (hasAutomations) {
+        console.log('  ✅ Creating transformations for automations');
+        // STG layer
+        await sql`
+          CREATE TABLE ${sql(schema)}.stg_activecampaign_automations AS
+          SELECT 
                 (data->>'id')::bigint as automation_id,
                 data->>'name' as automation_name,
                 data->>'status' as status,
                 (data->>'cdate')::timestamp as created_at,
                 (data->>'mdate')::timestamp as modified_at,
-                _loaded_at
+                loaded_at as _loaded_at
               FROM ${sql(schema)}.raw_activecampaign_automations;
-            `;
+        `;
 
-            // CORE layer
-            await sql`
-              CREATE OR REPLACE VIEW ${sql(schema)}.core_automations AS
+        // CORE layer
+        await sql`
+          CREATE VIEW ${sql(schema)}.core_automations AS
               SELECT 
                 automation_id,
                 automation_name,
@@ -623,16 +730,58 @@ export class ActiveCampaignApiService extends OAuthServiceBase {
                 'activecampaign' as source_system,
                 _loaded_at
               FROM ${sql(schema)}.stg_activecampaign_automations;
-            `;
-            break;
-        }
+        `;
       }
 
-      console.log('✅ ActiveCampaign transformations created successfully');
+      const createdLayers = [];
+      if (hasContacts) createdLayers.push('contacts');
+      if (hasCampaigns) createdLayers.push('campaigns');
+      if (hasLists) createdLayers.push('lists');
+      if (hasAutomations) createdLayers.push('automations');
+      if (hasTags) createdLayers.push('tags');
+
+      console.log(`✅ ActiveCampaign transformation pipeline completed (raw → stg → int → core) for: ${createdLayers.join(', ')}`);
       
     } catch (error) {
-      console.error('❌ Error creating ActiveCampaign transformations:', error);
-      // Don't throw - transformations are not critical for basic functionality
+      console.error('❌ ActiveCampaign transformation pipeline failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync data to schema using stored API credentials - required by base class
+   */
+  async syncDataToSchema(companyId: number): Promise<{ success: boolean; recordsSynced: number; tablesCreated: string[]; error?: string; }> {
+    try {
+      // Get stored ActiveCampaign configuration from database
+      const storage = (await import('../storage.js')).storage;
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const activeCampaignSource = dataSources.find(ds => ds.type === 'activecampaign');
+      
+      if (!activeCampaignSource || !activeCampaignSource.config) {
+        throw new Error('No ActiveCampaign configuration found for this company');
+      }
+
+      const config = typeof activeCampaignSource.config === 'string' 
+        ? JSON.parse(activeCampaignSource.config) 
+        : activeCampaignSource.config;
+      
+      const { apiUrl, apiKey } = config;
+      
+      if (!apiUrl || !apiKey) {
+        throw new Error('Invalid ActiveCampaign configuration');
+      }
+
+      // Use the existing syncData method
+      return await this.syncData(companyId, apiUrl, apiKey, 'standard');
+    } catch (error) {
+      console.error('❌ ActiveCampaign syncDataToSchema failed:', error);
+      return {
+        success: false,
+        recordsSynced: 0,
+        tablesCreated: [],
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 }

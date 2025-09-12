@@ -682,111 +682,42 @@ export default function Setup() {
     
     setSetupTypeDialogOpen(false);
     
-    // For Jira and HubSpot, OAuth is already complete - proceed with chosen setup type
-    if (currentToolForSetup === 'jira') {
+    // Mark connected tools as completed (but don't auto-sync)
+    if (['jira', 'hubspot', 'odoo', 'zoho', 'activecampaign'].includes(currentToolForSetup)) {
+      // Mark tool as connected after setup type selection
+      setCompletedLogins(prev => [...prev, currentToolForSetup]);
+      
       if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
-        setCompletedLogins(prev => [...prev, 'jira']);
-        triggerJiraSync('standard');
-        
         toast({
-          title: "Jira Standard Setup Complete",
-          description: "Syncing data with standard tables...",
+          title: `${availableTools.find(t => t.id === currentToolForSetup)?.name} Connected`,
+          description: "Configuration complete. Click 'Start Data Sync' to begin importing data.",
         });
       } else {
         // Custom setup - show table selection
-        setCurrentToolForCustom('jira');
-        discoverJiraTables();
+        setCurrentToolForCustom(currentToolForSetup);
+        
+        // Discover tables for custom setup
+        if (currentToolForSetup === 'jira') {
+          discoverJiraTables();
+        } else if (currentToolForSetup === 'hubspot') {
+          discoverHubSpotTables();
+        } else if (currentToolForSetup === 'odoo') {
+          discoverOdooTables();
+        } else if (currentToolForSetup === 'zoho') {
+          discoverZohoTables();
+        } else if (currentToolForSetup === 'activecampaign') {
+          discoverActiveCampaignTables();
+        }
+        
         setCustomTableDialogOpen(true);
         
         toast({
           title: "Table Discovery in Progress",
-          description: "Finding available Jira tables for selection...",
-        });
-      }
-    } else if (currentToolForSetup === 'hubspot') {
-      if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
-        setCompletedLogins(prev => [...prev, 'hubspot']);
-        triggerHubSpotSync('standard');
-        
-        toast({
-          title: "HubSpot Standard Setup Complete",
-          description: "Syncing data with standard tables...",
-        });
-      } else {
-        // Custom setup - show table selection
-        setCurrentToolForCustom('hubspot');
-        discoverHubSpotTables();
-        setCustomTableDialogOpen(true);
-        
-        toast({
-          title: "Table Discovery in Progress",
-          description: "Finding available HubSpot tables for selection...",
-        });
-      }
-    } else if (currentToolForSetup === 'odoo') {
-      if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
-        setCompletedLogins(prev => [...prev, 'odoo']);
-        triggerOdooSync('standard');
-        
-        toast({
-          title: "Odoo Standard Setup Complete",
-          description: "Syncing data with standard tables...",
-        });
-      } else {
-        // Custom setup - show table selection
-        setCurrentToolForCustom('odoo');
-        discoverOdooTables();
-        setCustomTableDialogOpen(true);
-        
-        toast({
-          title: "Table Discovery in Progress",
-          description: "Finding available Odoo tables for selection...",
-        });
-      }
-    } else if (currentToolForSetup === 'zoho') {
-      if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
-        triggerZohoSync('standard');
-        
-        toast({
-          title: "Zoho Standard Setup Complete",
-          description: "Syncing data with standard tables...",
-        });
-      } else {
-        // Custom setup - show table selection
-        setCurrentToolForCustom('zoho');
-        discoverZohoTables();
-        setCustomTableDialogOpen(true);
-        
-        toast({
-          title: "Table Discovery in Progress",
-          description: "Finding available Zoho tables for selection...",
-        });
-      }
-    } else if (currentToolForSetup === 'activecampaign') {
-      if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
-        triggerActiveCampaignSync('standard');
-        
-        toast({
-          title: "ActiveCampaign Standard Setup Complete",
-          description: "Syncing data with standard tables...",
-        });
-      } else {
-        // Custom setup - show table selection
-        setCurrentToolForCustom('activecampaign');
-        discoverActiveCampaignTables();
-        setCustomTableDialogOpen(true);
-        
-        toast({
-          title: "Table Discovery in Progress",
-          description: "Finding available ActiveCampaign tables for selection...",
+          description: `Finding available ${availableTools.find(t => t.id === currentToolForSetup)?.name} tables for selection...`,
         });
       }
     } else {
+      // For tools that need credentials first
       setCurrentToolForCredentials(currentToolForSetup);
       setCredentialDialogOpen(true);
     }
@@ -1661,15 +1592,28 @@ export default function Setup() {
         const finalProgress = (completedSyncs + 1) / selectedTools.length * 100;
         setSyncProgress(finalProgress);
 
-        // Call the actual sync API (different endpoints for different tools)
+        // Call the actual sync API (real endpoints for all tools)
         try {
           let syncEndpoint;
-          if (tool === 'odoo') {
-            // Use OAuth-based Odoo sync endpoint
-            syncEndpoint = `/api/auth/odoo/sync/${companyId}`;
-          } else {
-            // Use generic connector sync endpoint for other tools
-            syncEndpoint = `/api/connectors/${companyId}/${tool}/sync`;
+          switch (tool) {
+            case 'hubspot':
+              syncEndpoint = `/api/auth/hubspot/sync/${companyId}`;
+              break;
+            case 'jira':
+              syncEndpoint = `/api/auth/jira/sync/${companyId}`;
+              break;
+            case 'activecampaign':
+              syncEndpoint = `/api/auth/activecampaign/sync/${companyId}`;
+              break;
+            case 'zoho':
+              syncEndpoint = `/api/auth/zoho/sync/${companyId}`;
+              break;
+            case 'odoo':
+              syncEndpoint = `/api/auth/odoo/sync/${companyId}`;
+              break;
+            default:
+              // For any other tools, use the generic endpoint pattern
+              syncEndpoint = `/api/auth/${tool}/sync/${companyId}`;
           }
           
           const syncResponse = await fetch(syncEndpoint, {
@@ -3151,9 +3095,9 @@ export default function Setup() {
                   <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
                     <li>Click on your <strong>profile picture</strong> in the top right corner</li>
                     <li>Select <strong>"My Profile"</strong></li>
-                    <li>Click the <strong>"Preferences"</strong> tab</li>
-                    <li>Scroll down to the <strong>"API Keys"</strong> section</li>
-                    <li>Click <strong>"Generate New API Key"</strong></li>
+                    <li>Click the <strong>"Account Security"</strong> tab</li>
+                    <li>Find the <strong>"API Keys"</strong> section</li>
+                    <li>Click <strong>"New API Key"</strong> or <strong>"Generate New API Key"</strong></li>
                     <li>Fill in the API key details:
                       <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
                         <li><strong>Name:</strong> Saulto Analytics</li>

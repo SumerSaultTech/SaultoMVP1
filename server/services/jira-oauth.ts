@@ -51,7 +51,8 @@ export class JiraOAuthService extends OAuthServiceBase {
       redirect_uri: this.config.redirectUri,
       scope: scopes.join(' '),
       state,
-      audience: 'api.atlassian.com'
+      audience: 'api.atlassian.com',
+      prompt: 'consent'
     });
 
     return `https://auth.atlassian.com/authorize?${params.toString()}`;
@@ -155,36 +156,66 @@ export class JiraOAuthService extends OAuthServiceBase {
    */
   async refreshToken(refreshToken: string): Promise<TokenResponse> {
     try {
-      const refreshParams = new URLSearchParams({
+      console.log(`🔄 [JIRA] Starting token refresh process`);
+      console.log(`🔄 - Refresh Token: ${refreshToken ? `${refreshToken.substring(0, 20)}...` : 'MISSING'}`);
+      console.log(`🔄 - Client ID: ${this.config.clientId ? 'SET' : 'MISSING'}`);
+      console.log(`🔄 - Client Secret: ${this.config.clientSecret ? 'SET' : 'MISSING'}`);
+
+      // Atlassian requires JSON format for refresh token requests
+      const refreshParams = {
         grant_type: 'refresh_token',
         client_id: this.config.clientId,
         client_secret: this.config.clientSecret,
         refresh_token: refreshToken,
-      });
+      };
+
+      console.log(`🔄 [JIRA] Making refresh request to Atlassian...`);
 
       const response = await fetch('https://auth.atlassian.com/oauth/token', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',  // Atlassian requires JSON, not URL-encoded
           'Accept': 'application/json',
         },
-        body: refreshParams.toString(),
+        body: JSON.stringify(refreshParams),  // Send as JSON
       });
 
+      console.log(`🔄 [JIRA] Refresh response status: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`❌ [JIRA] Token refresh failed: ${response.status} ${response.statusText}`, errorBody);
+        
+        // Parse error for better debugging
+        try {
+          const errorJson = JSON.parse(errorBody);
+          console.error(`❌ [JIRA] Error details:`, errorJson);
+          
+          if (errorJson.error === 'invalid_grant' || errorJson.error === 'unauthorized_client') {
+            console.error(`❌ [JIRA] Refresh token is invalid or expired - re-authentication required`);
+          }
+        } catch (e) {
+          console.error(`❌ [JIRA] Could not parse error response`);
+        }
+        
         throw new Error(`Token refresh failed: ${response.statusText}`);
       }
 
       const tokenData = await response.json();
+      
+      console.log(`✅ [JIRA] Token refresh successful!`);
+      console.log(`✅ - New Access Token: ${tokenData.access_token ? `${tokenData.access_token.substring(0, 20)}...` : 'MISSING'}`);
+      console.log(`✅ - New Refresh Token: ${tokenData.refresh_token ? `${tokenData.refresh_token.substring(0, 20)}...` : 'NOT PROVIDED (ROTATING)'}`);
+      console.log(`✅ - Expires In: ${tokenData.expires_in || 3600} seconds`);
 
       return {
         access_token: tokenData.access_token,
-        refresh_token: tokenData.refresh_token || refreshToken,
+        refresh_token: tokenData.refresh_token || refreshToken, // Use new token if provided, fallback to current
         expires_in: tokenData.expires_in || 3600,
         scope: tokenData.scope || '',
       };
     } catch (error) {
-      console.error('Failed to refresh token:', error);
+      console.error('❌ [JIRA] Failed to refresh token:', error);
       throw error;
     }
   }
@@ -193,30 +224,40 @@ export class JiraOAuthService extends OAuthServiceBase {
    * Test API access with token
    */
   async testApiAccess(accessToken: string, cloudId?: string): Promise<boolean> {
-    // If cloudId not provided, try to get it from stored config
-    if (!cloudId) {
-      // For testing purposes, just check if we can access the user endpoint
-      try {
-        const response = await fetch('https://api.atlassian.com/me', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Accept': 'application/json',
-          },
-        });
-        return response.ok;
-      } catch {
-        return false;
-      }
-    }
     try {
-      const response = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/myself`, {
+      // Use the User Identity API which works with your current scopes
+      const response = await fetch('https://api.atlassian.com/me', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
         },
       });
 
-      return response.ok;
+      if (!response.ok) {
+        console.log(`🔍 User Identity API test failed: ${response.status} ${response.statusText}`);
+        return false;
+      }
+
+      // If we have cloudId, also test basic Jira API access with a simple endpoint
+      if (cloudId) {
+        try {
+          const jiraResponse = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/serverInfo`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/json',
+            },
+          });
+          
+          if (!jiraResponse.ok) {
+            console.log(`🔍 Jira API test failed: ${jiraResponse.status} ${jiraResponse.statusText}`);
+            // Don't fail the entire test if Jira API fails, User Identity API worked
+          }
+        } catch (error) {
+          console.log('🔍 Jira API test error (continuing anyway):', error.message);
+        }
+      }
+
+      return true;
     } catch (error) {
       console.error('Failed to test API access:', error);
       return false;
