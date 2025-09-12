@@ -264,11 +264,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: new Date()
       };
 
-      console.log(`💾 [JIRA] Storing OAuth tokens for company ${stateData.companyId}:`);
-      console.log(`💾 - Access Token: ${tokens.access_token ? `${tokens.access_token.substring(0, 20)}...` : 'MISSING'}`);
-      console.log(`💾 - Refresh Token: ${tokens.refresh_token ? `${tokens.refresh_token.substring(0, 20)}...` : 'MISSING'}`);
-      console.log(`💾 - Expires In: ${tokens.expires_in} seconds`);
-
       // Store in your dataSources table or create a new oauth_connections table
       await storage.createDataSource({
         companyId: stateData.companyId,
@@ -285,8 +280,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         isActive: true
       });
-
-      console.log(`✅ [JIRA] OAuth tokens successfully stored for company ${stateData.companyId}`);
 
       // Redirect to frontend setup page with OAuth parameters
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';

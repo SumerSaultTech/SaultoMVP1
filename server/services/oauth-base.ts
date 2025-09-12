@@ -37,7 +37,6 @@ export abstract class OAuthServiceBase {
       maxRetries: 3
     };
 
-    console.log(`🔧 ${serviceType.toUpperCase()} OAuth Base initialized`);
   }
 
   /**
@@ -112,12 +111,7 @@ export abstract class OAuthServiceBase {
 
         try {
           // Refresh the access token
-          console.log(`🔄 ${serviceType} attempting token refresh...`);
           const newTokens = await this.refreshToken(tokens.refreshToken);
-          
-          console.log(`🔄 ${serviceType} token refresh returned:`);
-          console.log(`🔄 - Access Token: ${newTokens.access_token ? 'RECEIVED' : 'MISSING'}`);
-          console.log(`🔄 - Refresh Token: ${newTokens.refresh_token ? 'RECEIVED (ROTATING)' : 'NOT PROVIDED'}`);
           
           // For rotating refresh tokens (like Atlassian), always use the new refresh token if provided
           const updatedRefreshToken = newTokens.refresh_token || tokens.refreshToken;
@@ -131,7 +125,6 @@ export abstract class OAuthServiceBase {
           });
 
           console.log(`✅ ${serviceType} access token refreshed successfully`);
-          console.log(`✅ - Using refresh token: ${updatedRefreshToken === newTokens.refresh_token ? 'NEW (ROTATED)' : 'EXISTING'}`);
 
           // Retry the API call with the new access token
           return await this.withRateLimit(() => apiCall(newTokens.access_token));
@@ -203,12 +196,6 @@ export abstract class OAuthServiceBase {
       scope: config.scope
     };
 
-    console.log(`🔍 [${serviceType.toUpperCase()}] Retrieved stored tokens for company ${companyId}:`);
-    console.log(`🔍 - Access Token: ${tokens.accessToken ? `${tokens.accessToken.substring(0, 20)}...` : 'MISSING'}`);
-    console.log(`🔍 - Refresh Token: ${tokens.refreshToken ? `${tokens.refreshToken.substring(0, 20)}...` : 'MISSING'}`);
-    console.log(`🔍 - Expires At: ${tokens.expiresAt || 'MISSING'}`);
-    console.log(`🔍 - Scope: ${tokens.scope || 'MISSING'}`);
-
     return tokens;
   }
 
@@ -218,11 +205,6 @@ export abstract class OAuthServiceBase {
   async updateStoredTokens(companyId: number, tokens: Partial<OAuthTokens>): Promise<void> {
     const storage = (await import('../storage.js')).storage;
     const serviceType = this.getServiceType();
-    
-    console.log(`🔄 [${serviceType.toUpperCase()}] Updating stored tokens for company ${companyId}:`);
-    console.log(`🔄 - New Access Token: ${tokens.accessToken ? `${tokens.accessToken.substring(0, 20)}...` : 'NOT PROVIDED'}`);
-    console.log(`🔄 - New Refresh Token: ${tokens.refreshToken ? `${tokens.refreshToken.substring(0, 20)}...` : 'NOT PROVIDED'}`);
-    console.log(`🔄 - New Expires At: ${tokens.expiresAt || 'NOT PROVIDED'}`);
     
     const dataSources = await storage.getDataSourcesByCompany(companyId);
     const serviceSource = dataSources.find(ds => ds.type === serviceType);
@@ -238,10 +220,6 @@ export abstract class OAuthServiceBase {
       ? JSON.parse(serviceSource.config) 
       : serviceSource.config || {};
 
-    console.log(`🔄 [${serviceType.toUpperCase()}] Existing config before update:`);
-    console.log(`🔄 - Existing Access Token: ${existingConfig.accessToken ? `${existingConfig.accessToken.substring(0, 20)}...` : 'MISSING'}`);
-    console.log(`🔄 - Existing Refresh Token: ${existingConfig.refreshToken ? `${existingConfig.refreshToken.substring(0, 20)}...` : 'MISSING'}`);
-
     const updatedConfig = {
       ...existingConfig,
       accessToken: tokens.accessToken || existingConfig.accessToken,
@@ -250,15 +228,9 @@ export abstract class OAuthServiceBase {
       scope: tokens.scope || existingConfig.scope
     };
 
-    console.log(`✅ [${serviceType.toUpperCase()}] Final config after merge:`);
-    console.log(`✅ - Final Access Token: ${updatedConfig.accessToken ? `${updatedConfig.accessToken.substring(0, 20)}...` : 'MISSING'}`);
-    console.log(`✅ - Final Refresh Token: ${updatedConfig.refreshToken ? `${updatedConfig.refreshToken.substring(0, 20)}...` : 'MISSING'}`);
-
     await storage.updateDataSource(serviceSource.id, {
       config: updatedConfig,
     });
-
-    console.log(`✅ [${serviceType.toUpperCase()}] Tokens successfully updated in database for company ${companyId}`);
   }
 
   /**

@@ -21,8 +21,6 @@ export class JiraOAuthService extends OAuthServiceBase {
   
   constructor() {
     super();
-    console.log('🔍 JIRA_OAUTH_CLIENT_ID:', process.env.JIRA_OAUTH_CLIENT_ID ? 'SET' : 'NOT SET');
-    console.log('🔍 JIRA_OAUTH_CLIENT_SECRET:', process.env.JIRA_OAUTH_CLIENT_SECRET ? 'SET' : 'NOT SET');
   }
 
   /**
@@ -156,11 +154,6 @@ export class JiraOAuthService extends OAuthServiceBase {
    */
   async refreshToken(refreshToken: string): Promise<TokenResponse> {
     try {
-      console.log(`🔄 [JIRA] Starting token refresh process`);
-      console.log(`🔄 - Refresh Token: ${refreshToken ? `${refreshToken.substring(0, 20)}...` : 'MISSING'}`);
-      console.log(`🔄 - Client ID: ${this.config.clientId ? 'SET' : 'MISSING'}`);
-      console.log(`🔄 - Client Secret: ${this.config.clientSecret ? 'SET' : 'MISSING'}`);
-
       // Atlassian requires JSON format for refresh token requests
       const refreshParams = {
         grant_type: 'refresh_token',
@@ -168,8 +161,6 @@ export class JiraOAuthService extends OAuthServiceBase {
         client_secret: this.config.clientSecret,
         refresh_token: refreshToken,
       };
-
-      console.log(`🔄 [JIRA] Making refresh request to Atlassian...`);
 
       const response = await fetch('https://auth.atlassian.com/oauth/token', {
         method: 'POST',
@@ -179,8 +170,6 @@ export class JiraOAuthService extends OAuthServiceBase {
         },
         body: JSON.stringify(refreshParams),  // Send as JSON
       });
-
-      console.log(`🔄 [JIRA] Refresh response status: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -202,11 +191,6 @@ export class JiraOAuthService extends OAuthServiceBase {
       }
 
       const tokenData = await response.json();
-      
-      console.log(`✅ [JIRA] Token refresh successful!`);
-      console.log(`✅ - New Access Token: ${tokenData.access_token ? `${tokenData.access_token.substring(0, 20)}...` : 'MISSING'}`);
-      console.log(`✅ - New Refresh Token: ${tokenData.refresh_token ? `${tokenData.refresh_token.substring(0, 20)}...` : 'NOT PROVIDED (ROTATING)'}`);
-      console.log(`✅ - Expires In: ${tokenData.expires_in || 3600} seconds`);
 
       return {
         access_token: tokenData.access_token,

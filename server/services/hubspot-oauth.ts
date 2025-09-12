@@ -21,8 +21,6 @@ export class HubSpotOAuthService extends OAuthServiceBase {
   
   constructor() {
     super();
-    console.log('🔍 HUBSPOT_OAUTH_CLIENT_ID:', process.env.HUBSPOT_OAUTH_CLIENT_ID ? 'SET' : 'NOT SET');
-    console.log('🔍 HUBSPOT_OAUTH_CLIENT_SECRET:', process.env.HUBSPOT_OAUTH_CLIENT_SECRET ? 'SET' : 'NOT SET');
   }
 
   /**
