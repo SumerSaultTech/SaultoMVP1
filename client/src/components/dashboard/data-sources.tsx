@@ -14,6 +14,7 @@ export default function DataSources() {
       case "salesforce": return "🌩️";
       case "hubspot": return "🟠";
       case "quickbooks": return "🟢";
+      case "zoho": return "🔷";
       default: return "📊";
     }
   };
@@ -23,6 +24,7 @@ export default function DataSources() {
       case "salesforce": return "bg-blue-500";
       case "hubspot": return "bg-orange-500";
       case "quickbooks": return "bg-green-600";
+      case "zoho": return "bg-green-700";
       default: return "bg-gray-500";
     }
   };

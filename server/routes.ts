@@ -8,6 +8,7 @@ import { openaiService } from "./services/openai";
 import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
 import { jiraOAuthService } from "./services/jira-oauth";
+import { zohoOAuthService } from "./services/zoho-oauth";
 import { schemaLayerManager } from "./services/schema-layer-manager";
 import { spawn } from 'child_process';
 import multer from 'multer';
@@ -388,6 +389,199 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false,
         error: "Failed to sync Jira data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // =====================
+  // ZOHO OAUTH ENDPOINTS
+  // =====================
+
+  app.get("/api/auth/zoho/authorize", async (req, res) => {
+    try {
+      const { companyId, userId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = zohoOAuthService.getAuthorizationUrl(
+        parseInt(companyId as string), 
+        userId ? parseInt(userId as string) : undefined
+      );
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Zoho OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/zoho/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = zohoOAuthService.parseState(state as string);
+      
+      // Exchange code for tokens
+      const tokens = await zohoOAuthService.exchangeCodeForTokens(code as string, state as string);
+      
+      // Get user info
+      let userInfo = null;
+      try {
+        userInfo = await zohoOAuthService.getUserInfo(tokens.access_token);
+      } catch (error: any) {
+        console.log('Could not get user info, continuing without it:', error.message);
+      }
+      
+      // Get organization info
+      let orgInfo = null;
+      try {
+        orgInfo = await zohoOAuthService.getOrganizationInfo(tokens.access_token);
+      } catch (error: any) {
+        console.log('Could not get org info, continuing without it:', error.message);
+      }
+
+      // Store the OAuth tokens and connection info in the database
+      await storage.createDataSource({
+        companyId: stateData.companyId,
+        name: `Zoho (${userInfo?.display_name || 'Connected'})`,
+        type: 'zoho',
+        config: {
+          oauth: true,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          userInfo,
+          orgInfo,
+          apiDomain: tokens.api_domain,
+          datacenter: process.env.ZOHO_DATACENTER || 'com'
+        },
+        isActive: true
+      });
+
+      // Redirect to frontend setup page
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?code=${code}&state=${state}`);
+
+    } catch (error) {
+      console.error('Zoho OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent((error as Error).message)}`);
+    }
+  });
+
+  // Zoho table discovery endpoint
+  app.get("/api/auth/zoho/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Zoho table discovery for company: ${companyId}`);
+      
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSources(parseInt(companyId));
+      const zohoSource = dataSources.find(ds => ds.type === 'zoho');
+      
+      if (!zohoSource) {
+        console.log(`❌ No Zoho connection found for company ${companyId}`);
+        return res.status(404).json({ error: "No Zoho connection found for this company" });
+      }
+      
+      const config = zohoSource.config as any || {};
+      const accessToken = config.accessToken;
+      
+      if (!accessToken) {
+        return res.status(400).json({ error: "No valid access token found" });
+      }
+      
+      // Discover tables and their fields
+      console.log(`🔍 Discovering Zoho modules...`);
+      const tables = await zohoOAuthService.discoverZohoTables(accessToken);
+      console.log(`✅ Found ${tables.length} tables`);
+      
+      res.json({ tables, datacenter: config.datacenter });
+    } catch (error) {
+      console.error('Error discovering Zoho tables:', error);
+      res.status(500).json({ error: 'Failed to discover Zoho tables' });
+    }
+  });
+
+  app.get("/api/auth/zoho/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Check if company has active Zoho connection
+      const dataSources = await storage.getDataSources(companyId);
+      const zohoConnection = dataSources.find(ds => ds.type === 'zoho' && ds.isActive);
+
+      if (!zohoConnection) {
+        return res.json({ connected: false });
+      }
+
+      // Get OAuth info from config
+      const config = zohoConnection.config as any || {};
+      
+      if (!config.oauth) {
+        return res.json({ connected: false, method: 'api_key' });
+      }
+
+      // Check if token is still valid
+      const expiresAt = new Date(config.expiresAt);
+      const isExpired = expiresAt <= new Date();
+
+      res.json({ 
+        connected: true,
+        method: 'oauth',
+        userInfo: config.userInfo,
+        orgInfo: config.orgInfo,
+        expired: isExpired,
+        expiresAt: config.expiresAt,
+        datacenter: config.datacenter
+      });
+
+    } catch (error) {
+      console.error('Zoho OAuth status error:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Zoho sync endpoint
+  app.post("/api/auth/zoho/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based Zoho sync for company ${companyId}`);
+      
+      // Use the Zoho OAuth service to sync data
+      const result = await zohoOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth Zoho sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated.length} tables`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.log(`❌ OAuth Zoho sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          message: result.error || 'Sync failed',
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth Zoho sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync Zoho data via OAuth",
         method: 'oauth'
       });
     }
@@ -3871,7 +4065,24 @@ CRITICAL REQUIREMENTS:
       
       try {
         const analyticsSchema = `analytics_company_${companyId}`;
-        const mockTables = tables || ['issues', 'users', 'sprints']; // Default mock tables
+        
+        // Connector-specific table mapping
+        const getConnectorTables = (connectorType: string): string[] => {
+          switch (connectorType.toLowerCase()) {
+            case 'jira':
+              return ['issues', 'users', 'sprints'];
+            case 'zoho':
+              return ['deals', 'contacts', 'invoices'];
+            case 'salesforce':
+              return ['accounts', 'contacts', 'opportunities'];
+            case 'hubspot':
+              return ['companies', 'contacts', 'deals'];
+            default:
+              return ['records']; // Generic fallback
+          }
+        };
+        
+        const mockTables = tables || getConnectorTables(connectorType);
         
         console.log(`🔨 Creating schema layers for ${connectorType}...`);
         

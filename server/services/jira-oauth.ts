@@ -40,6 +40,7 @@ export class JiraOAuthService {
     const stateData = {
       companyId,
       userId,
+      service: 'jira',
       timestamp: Date.now(),
       nonce: Math.random().toString(36).substring(2, 15)
     };
@@ -49,7 +50,7 @@ export class JiraOAuthService {
   /**
    * Parse state to get company and user info
    */
-  parseState(state: string): { companyId: number; userId?: number; timestamp: number; nonce: string } {
+  parseState(state: string): { companyId: number; userId?: number; service: string; timestamp: number; nonce: string } {
     try {
       const decoded = Buffer.from(state, 'base64').toString();
       return JSON.parse(decoded);

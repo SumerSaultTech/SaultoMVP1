@@ -73,6 +73,17 @@ const availableTools = [
     customCost: 25
   },
   {
+    id: "zoho",
+    name: "Zoho CRM",
+    icon: Users,
+    logo: "https://logo.clearbit.com/zoho.com",
+    description: "Available data: Deals, Contacts, Accounts, Leads, Invoices",
+    category: "CRM",
+    color: "#1f4e79",
+    standardTables: ["deal", "contact", "account", "lead", "invoice"],
+    customCost: 35
+  },
+  {
     id: "mailchimp",
     name: "Mailchimp",
     icon: Mail,
@@ -145,6 +156,7 @@ const standardTables = {
   harvest: ["time_entry", "project", "client", "invoice"],
   hubspot: ["contact", "deal", "company", "ticket"],
   jira: ["issue", "project", "user", "sprint", "worklog"],
+  zoho: ["deal", "contact", "account", "lead", "invoice"],
   mailchimp: ["campaign", "list", "subscriber", "report"],
   monday: ["board", "item", "update", "user"],
   netsuite: ["transaction", "customer", "item", "vendor"],
@@ -218,6 +230,21 @@ const availableTablesForCustom = {
     { name: "version", label: "Versions", included: false, cost: 20 },
     { name: "workflow", label: "Workflows", included: false, cost: 25 },
     { name: "worklog", label: "Worklogs", included: true, cost: 0 },
+  ],
+  zoho: [
+    { name: "deal", label: "Deals", included: true, cost: 0 },
+    { name: "contact", label: "Contacts", included: true, cost: 0 },
+    { name: "account", label: "Accounts", included: true, cost: 0 },
+    { name: "lead", label: "Leads", included: true, cost: 0 },
+    { name: "invoice", label: "Invoices", included: true, cost: 0 },
+    { name: "task", label: "Tasks", included: false, cost: 20 },
+    { name: "event", label: "Events", included: false, cost: 20 },
+    { name: "call", label: "Calls", included: false, cost: 25 },
+    { name: "note", label: "Notes", included: false, cost: 15 },
+    { name: "product", label: "Products", included: false, cost: 25 },
+    { name: "quote", label: "Quotes", included: false, cost: 30 },
+    { name: "campaign", label: "Campaigns", included: false, cost: 25 },
+    { name: "ticket", label: "Support Tickets", included: false, cost: 30 },
   ],
   mailchimp: [
     { name: "campaign", label: "Campaigns", included: true, cost: 0 },
@@ -324,18 +351,35 @@ export default function Setup() {
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
+    const service = urlParams.get('service');
 
-    // Check if we're returning from Jira OAuth (backend already processed tokens)
+    // Check if we're returning from OAuth (backend already processed tokens)
     if (code && state && !error) {
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      // OAuth completed successfully - now show setup type selection
-      setCurrentToolForSetup('jira');
+      // Extract service type from state parameter
+      let toolName = 'jira'; // default
+      let toolDisplayName = 'Jira'; // default
+      try {
+        const decodedState = JSON.parse(atob(state));
+        if (decodedState.service === 'zoho') {
+          toolName = 'zoho';
+          toolDisplayName = 'Zoho CRM';
+        } else if (decodedState.service === 'jira') {
+          toolName = 'jira'; 
+          toolDisplayName = 'Jira';
+        }
+      } catch (error) {
+        console.error('Failed to decode state parameter:', error);
+        // Use default values (jira)
+      }
+      
+      setCurrentToolForSetup(toolName);
       setSetupTypeDialogOpen(true);
       
       toast({
-        title: "Jira Connected Successfully!",
+        title: `${toolDisplayName} Connected Successfully!`,
         description: "Connection established. Please choose how you'd like to set up your tables.",
       });
     } else if (error) {
@@ -531,16 +575,15 @@ export default function Setup() {
     
     setSetupTypeDialogOpen(false);
     
-    // For Jira, OAuth is already complete - proceed with chosen setup type
+    // For OAuth tools (Jira/Zoho), OAuth is already complete - just mark as connected, no auto-sync
     if (currentToolForSetup === 'jira') {
       if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
+        // Standard setup - mark as connected, user will manually sync later
         setCompletedLogins(prev => [...prev, 'jira']);
-        triggerJiraSync('standard');
         
         toast({
-          title: "Jira Standard Setup Complete",
-          description: "Syncing data with standard tables...",
+          title: "Jira Connection Established",
+          description: "Connection successful! Use 'Start Data Sync' to sync your data when ready.",
         });
       } else {
         // Custom setup - show table selection
@@ -551,6 +594,26 @@ export default function Setup() {
         toast({
           title: "Table Discovery in Progress",
           description: "Finding available Jira tables for selection...",
+        });
+      }
+    } else if (currentToolForSetup === 'zoho') {
+      if (setupType === 'standard') {
+        // Standard setup - mark as connected, user will manually sync later
+        setCompletedLogins(prev => [...prev, 'zoho']);
+        
+        toast({
+          title: "Zoho CRM Connection Established",
+          description: "Connection successful! Use 'Start Data Sync' to sync your data when ready.",
+        });
+      } else {
+        // Custom setup - show table selection
+        setCurrentToolForCustom('zoho');
+        discoverZohoTables();
+        setCustomTableDialogOpen(true);
+        
+        toast({
+          title: "Table Discovery in Progress",
+          description: "Finding available Zoho tables for selection...",
         });
       }
     } else {
@@ -602,6 +665,47 @@ export default function Setup() {
     }
   };
 
+  // Initiate Zoho OAuth2 flow
+  const initiateZohoOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`🔄 Starting Zoho OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/zoho/authorize?companyId=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start Zoho OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start Zoho OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
 
   // Trigger Jira data sync after OAuth completion
   const triggerJiraSync = async (setupType: 'standard' | 'custom') => {
@@ -643,6 +747,98 @@ export default function Setup() {
       toast({
         title: "Sync Failed",
         description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger Zoho data sync after OAuth completion
+  const triggerZohoSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering Zoho sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/zoho/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Zoho sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Discover Zoho tables for custom setup
+  const discoverZohoTables = async () => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for table discovery');
+        return;
+      }
+
+      console.log(`🔍 Discovering Zoho tables for company ${selectedCompany.id}`);
+
+      const response = await fetch(`/api/auth/zoho/discover-tables/${selectedCompany.id}`);
+      
+      if (!response.ok) {
+        throw new Error(`Table discovery failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.tables && result.tables.length > 0) {
+        // Convert discovered tables to the format expected by the table selection dialog
+        const formattedTables = result.tables.map((table: any) => ({
+          name: table.name,
+          label: table.label || table.name,
+          included: ['deal', 'contact', 'account', 'lead', 'invoice'].includes(table.name.toLowerCase()),
+          cost: ['deal', 'contact', 'account', 'lead', 'invoice'].includes(table.name.toLowerCase()) ? 0 : 25
+        }));
+        
+        setToolConfig(prev => ({
+          ...prev,
+          zoho: formattedTables
+        }));
+        
+        console.log(`✅ Discovered ${result.tables.length} Zoho tables`);
+      } else {
+        throw new Error('No tables discovered');
+      }
+    } catch (error) {
+      console.error('Zoho table discovery failed:', error);
+      toast({
+        title: "Table Discovery Failed",
+        description: "Could not discover available tables. Using default configuration.",
         variant: "destructive",
       });
     }
@@ -1435,7 +1631,15 @@ export default function Setup() {
                       </Badge>
                     ) : (
                       <Button
-                        onClick={() => toolId === 'jira' ? initiateJiraOAuth() : openSetupTypeDialog(toolId)}
+                        onClick={() => {
+                          if (toolId === 'jira') {
+                            initiateJiraOAuth();
+                          } else if (toolId === 'zoho') {
+                            initiateZohoOAuth();
+                          } else {
+                            openSetupTypeDialog(toolId);
+                          }
+                        }}
                         disabled={isLoggingIn}
                         className="bg-saulto-600 hover:bg-saulto-700 text-white"
                       >
