@@ -27,6 +27,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Visit `/api/health` - Real-time status of all services (Node.js, connectors)
 - `curl http://localhost:5002/health` - Check connector Python service
 
+### Service Orchestration Scripts
+- `scripts/start_all_services.sh` - Production multi-service startup with retry logic
+- `scripts/start_replit.sh` - Replit-optimized startup with port conflict resolution
+- Automatic Python virtual environment setup and dependency installation
+- Service health monitoring with automatic recovery
+- Clean shutdown handling with proper cleanup
+
 ## Architecture
 
 This is a **Business Metrics Dashboard** - a sophisticated multi-service business intelligence platform with AI-powered insights, real-time KPI tracking, and PostgreSQL analytics integration.
@@ -96,6 +103,12 @@ Uses **Drizzle ORM** with complete TypeScript type safety for application data, 
 4. **Data Access**: All database operations go through `server/storage.ts` interface
 5. **Multi-Tenant Isolation**: Company-scoped queries built into storage layer
 
+### Drizzle Configuration
+- **PostgreSQL Dialect**: Automatic URL validation from environment
+- **Schema File**: `./shared/schema.ts` as single source of truth
+- **Push Strategy**: Direct schema sync without migration files
+- **Type Safety**: Full TypeScript integration with auto-generated types
+
 ## Service Architecture
 
 ### Node.js Services (`server/services/`)
@@ -111,6 +124,11 @@ The application includes **11 specialized services**:
 
 **Data Pipeline Services**:
 - `python-connector-service.ts` - Bridge to Python connector system (port 5002)
+
+**OAuth & Authentication Services**:
+- `jira-oauth.ts` - Complete Jira OAuth2 flow with automatic token refresh
+- Multi-tenant OAuth support with company/user context
+- 40+ Jira entity types integration (issues, projects, sprints, workflows)
 
 ### Service Communication Patterns
 - **HTTP-Based**: All services communicate via REST APIs
@@ -280,13 +298,18 @@ When adding new time period functionality:
 # Database (PostgreSQL for both application and analytics data)
 DATABASE_URL=postgresql://username:password@localhost:5432/database
 
-# AI Services  
-OPENAI_API_KEY=sk-...
-AZURE_OPENAI_KEY=your-azure-key
+# AI Services (Azure OpenAI preferred over OpenAI)
+AZURE_OPENAI_KEY=your-azure-openai-key
 AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
+OPENAI_API_KEY=sk-...  # Fallback if Azure unavailable
+
+# OAuth Integration  
+JIRA_OAUTH_CLIENT_ID=your_jira_client_id
+JIRA_OAUTH_CLIENT_SECRET=your_jira_client_secret
+APP_URL=http://localhost:5000  # For OAuth redirect URIs
 
 # Application
-SESSION_SECRET=your-secret-key
+SESSION_SECRET=your-session-secret-key
 WORKSPACE_ID=your-workspace-id
 ```
 
@@ -354,3 +377,23 @@ The application supports comprehensive file uploads through multer:
 - **Allowed Extensions**: txt, pdf, png, jpg, jpeg, gif, doc, docx, xls, xlsx, ppt, pptx, csv, json, zip, py, js, html, css, c, cpp, h, java, rb, php, xml, md
 - **File Processing**: Text files read and included in AI chat context, binary files referenced by name only
 - **Security**: Extension validation and file size limits enforced
+
+## Advanced Configuration
+
+### TypeScript Configuration
+- **Path Mapping**: `@/*` → `./client/src/*`, `@shared/*` → `./shared/*`
+- **Strict Mode**: Full TypeScript strict checking enabled
+- **Module Resolution**: Bundler mode for Vite compatibility
+- **Test Exclusions**: `**/*.test.ts` files excluded from compilation
+
+### Tailwind CSS Configuration
+- **Custom Brand Colors**: Saulto HSL variables for primary colors
+- **Extended Fonts**: Inter, Poppins, Lexend, JetBrains Mono
+- **Typography Plugin**: Extended prose styles
+- **shadcn/ui Integration**: Custom color system with CSS variables
+
+### Vite Configuration  
+- **Replit Optimizations**: Special plugins for Replit environment
+- **Asset Mapping**: Custom `@assets` path resolution
+- **Build Output**: Optimized production builds to `dist/`
+- **Development Server**: Fast HMR with TypeScript support
