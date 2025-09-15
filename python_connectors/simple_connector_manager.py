@@ -11,6 +11,7 @@ import psycopg2
 from .simple_base_connector import SimpleBaseConnector, SyncResult
 from .simple_salesforce_connector import SimpleSalesforceConnector
 from .simple_jira_connector import SimpleJiraConnector
+from .simple_odoo_connector import SimpleOdooConnector
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ class SimpleConnectorManager:
     CONNECTOR_REGISTRY: Dict[str, Type[SimpleBaseConnector]] = {
         "salesforce": SimpleSalesforceConnector,
         "jira": SimpleJiraConnector,
+        "odoo": SimpleOdooConnector,
     }
     
     def __init__(self):

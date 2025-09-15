@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CredentialDialog } from "@/components/ui/credential-dialog";
-import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle } from "lucide-react";
+import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
@@ -73,6 +73,17 @@ const availableTools = [
     customCost: 25
   },
   {
+    id: "odoo",
+    name: "Odoo ERP",
+    icon: Building2,
+    logo: "https://logo.clearbit.com/odoo.com",
+    description: "Available data: Sales, Invoices, Customers, Inventory",
+    category: "ERP",
+    color: "#714B67",
+    standardTables: ["sale_order", "account_move", "res_partner", "product_product"],
+    customCost: 35
+  },
+  {
     id: "mailchimp",
     name: "Mailchimp",
     icon: Mail,
@@ -127,6 +138,28 @@ const availableTools = [
     standardTables: ["opportunity", "account", "contact", "lead"],
     customCost: 30
   },
+  {
+    id: "zoho",
+    name: "Zoho CRM",
+    icon: Users,
+    logo: "https://logo.clearbit.com/zoho.com",
+    description: "Available data: Leads, Contacts, Accounts, Deals",
+    category: "CRM",
+    color: "#e42527",
+    standardTables: ["lead", "contact", "account", "deal"],
+    customCost: 30
+  },
+  {
+    id: "activecampaign",
+    name: "ActiveCampaign",
+    icon: Mail,
+    logo: "https://logo.clearbit.com/activecampaign.com",
+    description: "Available data: Contacts, Lists, Campaigns, Automations",
+    category: "Email Marketing",
+    color: "#356ae6",
+    standardTables: ["contact", "list", "campaign", "automation"],
+    customCost: 25
+  },
 ];
 
 // Tool categories
@@ -148,8 +181,11 @@ const standardTables = {
   mailchimp: ["campaign", "list", "subscriber", "report"],
   monday: ["board", "item", "update", "user"],
   netsuite: ["transaction", "customer", "item", "vendor"],
+  odoo: ["sales_orders", "invoices", "customers", "products"],
   quickbooks: ["invoice", "customer", "item", "payment"],
-  salesforce: ["opportunity", "account", "contact", "lead"]
+  salesforce: ["opportunity", "account", "contact", "lead"],
+  zoho: ["lead", "contact", "account", "deal"],
+  activecampaign: ["contact", "list", "campaign", "automation"]
 };
 
 // Available tables for custom setup with pricing
@@ -270,6 +306,17 @@ const availableTablesForCustom = {
     { name: "event", label: "Events", included: false, cost: 20 },
     { name: "product", label: "Products", included: false, cost: 30 },
   ],
+  zoho: [
+    { name: "lead", label: "Leads", included: true, cost: 0 },
+    { name: "contact", label: "Contacts", included: true, cost: 0 },
+    { name: "account", label: "Accounts", included: true, cost: 0 },
+    { name: "deal", label: "Deals", included: true, cost: 0 },
+    { name: "call", label: "Calls", included: false, cost: 25 },
+    { name: "event", label: "Events", included: false, cost: 20 },
+    { name: "task", label: "Tasks", included: false, cost: 20 },
+    { name: "note", label: "Notes", included: false, cost: 15 },
+    { name: "campaign", label: "Campaigns", included: false, cost: 30 },
+  ],
 };
 
 const industries = [
@@ -324,9 +371,57 @@ export default function Setup() {
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const error = urlParams.get('error');
+    const hubspotConnected = urlParams.get('hubspot');
+    const odooConnected = urlParams.get('odoo');
+    const zohoConnected = urlParams.get('zoho');
 
+    // Check if we're returning from HubSpot OAuth (backend redirect)
+    if (hubspotConnected === 'connected') {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // OAuth completed successfully - now show setup type selection
+      setCurrentToolForSetup('hubspot');
+      setSetupTypeDialogOpen(true);
+      
+      toast({
+        title: "HubSpot Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
+      });
+    }
+    // Check if we're returning from Odoo OAuth (backend redirect)
+    else if (odooConnected === 'connected') {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // OAuth completed successfully - now show setup type selection
+      setCurrentToolForSetup('odoo');
+      setSetupTypeDialogOpen(true);
+      
+      toast({
+        title: "Odoo Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
+      });
+    }
+    // Check if we're returning from Zoho OAuth (backend redirect)
+    else if (zohoConnected === 'connected') {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // OAuth completed successfully - now show setup type selection
+      setCurrentToolForSetup('zoho');
+      setSetupTypeDialogOpen(true);
+      
+      // Mark Zoho as completed (connected)
+      setCompletedLogins(prev => [...prev, 'zoho']);
+      
+      toast({
+        title: "Zoho CRM Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
+      });
+    }
     // Check if we're returning from Jira OAuth (backend already processed tokens)
-    if (code && state && !error) {
+    else if (code && state && !error) {
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
       
@@ -386,6 +481,18 @@ export default function Setup() {
   
   // Contact dialog state
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  
+  // Odoo setup dialog state
+  const [odooSetupDialogOpen, setOdooSetupDialogOpen] = useState(false);
+  const [odooInstanceUrl, setOdooInstanceUrl] = useState("");
+  const [odooDatabase, setOdooDatabase] = useState("");
+  const [odooUsername, setOdooUsername] = useState("");
+  const [odooApiKey, setOdooApiKey] = useState("");
+
+  // ActiveCampaign setup dialog state
+  const [activeCampaignSetupDialogOpen, setActiveCampaignSetupDialogOpen] = useState(false);
+  const [activeCampaignApiUrl, setActiveCampaignApiUrl] = useState("");
+  const [activeCampaignApiKey, setActiveCampaignApiKey] = useState("");
 
   const { toast } = useToast();
 
@@ -518,6 +625,50 @@ export default function Setup() {
     }
   };
 
+  // Discover HubSpot tables dynamically using API
+  const discoverHubSpotTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering HubSpot tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/hubspot/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to discover tables');
+      }
+      
+      const data = await response.json();
+      // Flatten the categorized tables into a single array
+      const allTables = [
+        ...(data.tables.core || []),
+        ...(data.tables.engagement || []),
+        ...(data.tables.other || [])
+      ];
+      setDiscoveredTables(allTables);
+      
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${allTables.length} available HubSpot tables for syncing.`,
+      });
+      
+    } catch (error) {
+      console.error('Error discovering HubSpot tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover HubSpot tables. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
   // Start Jira OAuth flow immediately when Connect is clicked
 
   // Handle setup type selection and proceed to credentials
@@ -531,29 +682,42 @@ export default function Setup() {
     
     setSetupTypeDialogOpen(false);
     
-    // For Jira, OAuth is already complete - proceed with chosen setup type
-    if (currentToolForSetup === 'jira') {
+    // Mark connected tools as completed (but don't auto-sync)
+    if (['jira', 'hubspot', 'odoo', 'zoho', 'activecampaign'].includes(currentToolForSetup)) {
+      // Mark tool as connected after setup type selection
+      setCompletedLogins(prev => [...prev, currentToolForSetup]);
+      
       if (setupType === 'standard') {
-        // Standard setup - auto-sync with predefined tables
-        setCompletedLogins(prev => [...prev, 'jira']);
-        triggerJiraSync('standard');
-        
         toast({
-          title: "Jira Standard Setup Complete",
-          description: "Syncing data with standard tables...",
+          title: `${availableTools.find(t => t.id === currentToolForSetup)?.name} Connected`,
+          description: "Configuration complete. Click 'Start Data Sync' to begin importing data.",
         });
       } else {
         // Custom setup - show table selection
-        setCurrentToolForCustom('jira');
-        discoverJiraTables();
+        setCurrentToolForCustom(currentToolForSetup);
+        
+        // Discover tables for custom setup
+        if (currentToolForSetup === 'jira') {
+          discoverJiraTables();
+        } else if (currentToolForSetup === 'hubspot') {
+          discoverHubSpotTables();
+        } else if (currentToolForSetup === 'odoo') {
+          discoverOdooTables();
+        } else if (currentToolForSetup === 'zoho') {
+          discoverZohoTables();
+        } else if (currentToolForSetup === 'activecampaign') {
+          discoverActiveCampaignTables();
+        }
+        
         setCustomTableDialogOpen(true);
         
         toast({
           title: "Table Discovery in Progress",
-          description: "Finding available Jira tables for selection...",
+          description: `Finding available ${availableTools.find(t => t.id === currentToolForSetup)?.name} tables for selection...`,
         });
       }
     } else {
+      // For tools that need credentials first
       setCurrentToolForCredentials(currentToolForSetup);
       setCredentialDialogOpen(true);
     }
@@ -602,6 +766,46 @@ export default function Setup() {
     }
   };
 
+  // Initiate HubSpot OAuth flow
+  const initiateHubSpotOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`🔄 Starting HubSpot OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/hubspot/authorize?companyId=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start HubSpot OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start HubSpot OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Trigger Jira data sync after OAuth completion
   const triggerJiraSync = async (setupType: 'standard' | 'custom') => {
@@ -643,6 +847,608 @@ export default function Setup() {
       toast({
         title: "Sync Failed",
         description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger HubSpot data sync after OAuth completion
+  const triggerHubSpotSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering HubSpot sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/hubspot/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('HubSpot sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Discover Odoo tables dynamically using API
+  const discoverOdooTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering Odoo tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/odoo/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.tables) {
+        // Flatten categorized tables into a single array
+        const allTables = [
+          ...data.tables.core || [],
+          ...data.tables.financial || [],
+          ...data.tables.operational || [],
+          ...data.tables.other || []
+        ];
+        
+        setDiscoveredTables(allTables);
+      } else {
+        throw new Error('Invalid response format');
+      }
+
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${data.tables?.totalTables || 0} available Odoo tables for syncing.`,
+      });
+      
+    } catch (error) {
+      console.error('Error discovering Odoo tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover Odoo tables. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  // Discover available Zoho tables for custom setup
+  const discoverZohoTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering Zoho tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/zoho/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.tables) {
+        // Flatten categorized tables into a single array
+        const allTables = [
+          ...data.tables.core || [],
+          ...data.tables.financial || [],
+          ...data.tables.operational || [],
+          ...data.tables.other || []
+        ];
+        
+        setDiscoveredTables(allTables);
+      } else {
+        throw new Error('Invalid response format');
+      }
+
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${data.tables?.totalTables || 0} available Zoho tables for syncing.`,
+      });
+      
+    } catch (error) {
+      console.error('Error discovering Zoho tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover Zoho tables. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  // Initiate Odoo OAuth flow - requires setup first
+  const initiateOdooOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Setup Required",
+          description: "Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Invalid Company",
+          description: "Invalid company selection. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`🔄 Starting Odoo setup for company ${selectedCompany.id}`);
+      
+      // For Odoo, we need to collect OAuth credentials from the customer
+      setCurrentToolForSetup('odoo');
+      setOdooSetupDialogOpen(true);
+    } catch (error) {
+      console.error('Failed to start Odoo setup:', error);
+      toast({
+        title: "Setup Error",
+        description: "Failed to start Odoo setup. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const initiateZohoOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`🔄 Starting Zoho OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/zoho/authorize?company_id=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start Zoho OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start Zoho OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle Odoo setup form submission
+  const handleOdooSetupSubmit = async () => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        throw new Error('No company selected');
+      }
+
+      // Validate inputs
+      if (!odooInstanceUrl || !odooDatabase || !odooUsername || !odooApiKey) {
+        toast({
+          title: "Missing Information",
+          description: "Please fill in all required fields.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Debug logging before sending
+      console.log('🔍 Sending Odoo setup data:', {
+        companyId: selectedCompany.id,
+        odooInstanceUrl: odooInstanceUrl?.length ? `SET (${odooInstanceUrl.length} chars)` : 'EMPTY',
+        odooDatabase: odooDatabase?.length ? `SET (${odooDatabase.length} chars)` : 'EMPTY',
+        odooUsername: odooUsername?.length ? `SET (${odooUsername.length} chars)` : 'EMPTY',
+        odooApiKey: odooApiKey?.length ? `SET (${odooApiKey.length} chars)` : 'EMPTY'
+      });
+
+      // Save Odoo credentials to backend
+      const response = await fetch('/api/auth/odoo/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyId: selectedCompany.id,
+          odooInstanceUrl,
+          odooDatabase,
+          odooUsername,
+          odooApiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Setup failed');
+      }
+
+      const result = await response.json();
+      
+      // Close setup dialog
+      setOdooSetupDialogOpen(false);
+      
+      // Clear form
+      setOdooInstanceUrl("");
+      setOdooDatabase("");
+      setOdooUsername("");
+      setOdooApiKey("");
+
+      // Add odoo to completed logins (same pattern as OAuth flows)
+      setCompletedLogins([...completedLogins, "odoo"]);
+      
+      // Show success message
+      toast({
+        title: "Odoo Connected!",
+        description: "Your Odoo ERP has been successfully connected to Saulto Analytics.",
+        variant: "default",
+      });
+      
+    } catch (error) {
+      console.error('Odoo setup failed:', error);
+      toast({
+        title: "Setup Failed",
+        description: error.message || "Failed to save Odoo configuration. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle ActiveCampaign setup form submission
+  const handleActiveCampaignSetupSubmit = async () => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        throw new Error('No company selected');
+      }
+
+      // Validate inputs
+      if (!activeCampaignApiUrl || !activeCampaignApiKey) {
+        toast({
+          title: "Missing Information",
+          description: "Please fill in all required fields.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Debug logging before sending
+      console.log('🔍 Sending ActiveCampaign setup data:', {
+        companyId: selectedCompany.id,
+        activeCampaignApiUrl: activeCampaignApiUrl?.length ? `SET (${activeCampaignApiUrl.length} chars)` : 'EMPTY',
+        activeCampaignApiKey: activeCampaignApiKey?.length ? `SET (${activeCampaignApiKey.length} chars)` : 'EMPTY'
+      });
+
+      // Save ActiveCampaign credentials to backend
+      const response = await fetch('/api/auth/activecampaign/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyId: selectedCompany.id,
+          activeCampaignApiUrl,
+          activeCampaignApiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Setup failed');
+      }
+
+      const result = await response.json();
+      
+      // Close setup dialog
+      setActiveCampaignSetupDialogOpen(false);
+      
+      // Clear form
+      setActiveCampaignApiUrl("");
+      setActiveCampaignApiKey("");
+
+      // Add ActiveCampaign to completed logins (same pattern as other integrations)
+      setCompletedLogins([...completedLogins, "activecampaign"]);
+      
+      // Show success message
+      toast({
+        title: "ActiveCampaign Connected!",
+        description: "Your ActiveCampaign account has been successfully connected to Saulto Analytics.",
+        variant: "default",
+      });
+      
+    } catch (error) {
+      console.error('ActiveCampaign setup failed:', error);
+      toast({
+        title: "Setup Failed",
+        description: error.message || "Failed to save ActiveCampaign configuration. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger Zoho data sync after OAuth completion
+  const triggerZohoSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering Zoho sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/zoho/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Zoho sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger Odoo data sync after OAuth completion
+  const triggerOdooSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering Odoo sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/odoo/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Successful!",
+          description: `Successfully synced ${result.recordsSynced} records from Odoo.`,
+        });
+        
+        // Mark as completed
+        setCompletedLogins(prev => [...prev, 'odoo']);
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Odoo sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger ActiveCampaign data sync after setup completion
+  const triggerActiveCampaignSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering ActiveCampaign sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the API key-based sync endpoint
+      const response = await fetch(`/api/auth/activecampaign/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+      } else {
+        throw new Error(result.message || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('ActiveCampaign sync failed:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Data sync failed but connection is established. You can retry from the integrations page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Discover available ActiveCampaign tables for custom setup
+  const discoverActiveCampaignTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering ActiveCampaign tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/activecampaign/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.tables) {
+        // Flatten categorized tables into a single array
+        const allTables = [
+          ...data.tables.core || [],
+          ...data.tables.optional || [],
+        ];
+        
+        setDiscoveredTables(allTables);
+      } else {
+        throw new Error('Invalid response format');
+      }
+
+      toast({
+        title: "Tables Discovered",
+        description: `Found ${data.tables?.totalTables || 0} available ActiveCampaign tables for syncing.`,
+      });
+      
+    } catch (error) {
+      console.error('Error discovering ActiveCampaign tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover ActiveCampaign tables. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  // Initiate ActiveCampaign setup - show credentials dialog
+  const initiateActiveCampaignSetup = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Setup Required",
+          description: "Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Invalid Company",
+          description: "Invalid company selection. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log(`🔄 Starting ActiveCampaign setup for company ${selectedCompany.id}`);
+      
+      // Show the credentials dialog
+      setCurrentToolForSetup('activecampaign');
+      setActiveCampaignSetupDialogOpen(true);
+    } catch (error) {
+      console.error('Failed to start ActiveCampaign setup:', error);
+      toast({
+        title: "Setup Error",
+        description: "Failed to start ActiveCampaign setup. Please try again.",
         variant: "destructive",
       });
     }
@@ -786,9 +1592,31 @@ export default function Setup() {
         const finalProgress = (completedSyncs + 1) / selectedTools.length * 100;
         setSyncProgress(finalProgress);
 
-        // Call the actual Python connector sync API (but don't show duplicate toasts)
+        // Call the actual sync API (real endpoints for all tools)
         try {
-          const syncResponse = await fetch(`/api/connectors/${companyId}/${tool}/sync`, {
+          let syncEndpoint;
+          switch (tool) {
+            case 'hubspot':
+              syncEndpoint = `/api/auth/hubspot/sync/${companyId}`;
+              break;
+            case 'jira':
+              syncEndpoint = `/api/auth/jira/sync/${companyId}`;
+              break;
+            case 'activecampaign':
+              syncEndpoint = `/api/auth/activecampaign/sync/${companyId}`;
+              break;
+            case 'zoho':
+              syncEndpoint = `/api/auth/zoho/sync/${companyId}`;
+              break;
+            case 'odoo':
+              syncEndpoint = `/api/auth/odoo/sync/${companyId}`;
+              break;
+            default:
+              // For any other tools, use the generic endpoint pattern
+              syncEndpoint = `/api/auth/${tool}/sync/${companyId}`;
+          }
+          
+          const syncResponse = await fetch(syncEndpoint, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -1435,7 +2263,21 @@ export default function Setup() {
                       </Badge>
                     ) : (
                       <Button
-                        onClick={() => toolId === 'jira' ? initiateJiraOAuth() : openSetupTypeDialog(toolId)}
+                        onClick={() => {
+                          if (toolId === 'jira') {
+                            initiateJiraOAuth();
+                          } else if (toolId === 'hubspot') {
+                            initiateHubSpotOAuth();
+                          } else if (toolId === 'odoo') {
+                            initiateOdooOAuth();
+                          } else if (toolId === 'zoho') {
+                            initiateZohoOAuth();
+                          } else if (toolId === 'activecampaign') {
+                            initiateActiveCampaignSetup();
+                          } else {
+                            openSetupTypeDialog(toolId);
+                          }
+                        }}
                         disabled={isLoggingIn}
                         className="bg-saulto-600 hover:bg-saulto-700 text-white"
                       >
@@ -1951,12 +2793,12 @@ export default function Setup() {
               {loadingTables ? (
                 <div className="flex items-center justify-center p-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-saulto-600"></div>
-                  <span className="ml-3 text-gray-600">Discovering Jira tables...</span>
+                  <span className="ml-3 text-gray-600">Discovering {currentToolForCustom === 'jira' ? 'Jira' : currentToolForCustom === 'hubspot' ? 'HubSpot' : currentToolForCustom === 'odoo' ? 'Odoo' : 'available'} tables...</span>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {(currentToolForCustom === 'jira' ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
-                    // Handle both discovered tables (Jira) and static tables (other tools)
+                  {((currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot' || currentToolForCustom === 'odoo') ? discoveredTables : availableTablesForCustom[currentToolForCustom as keyof typeof availableTablesForCustom] || []).map((table) => {
+                    // Handle both discovered tables (Jira/HubSpot/Odoo) and static tables (other tools)
                     const tableName = table.name;
                     const tableLabel = table.label;
                     const tableFields = table.fields || [];
@@ -2029,11 +2871,11 @@ export default function Setup() {
                     );
                   })}
                   
-                  {currentToolForCustom === 'jira' && discoveredTables.length === 0 && !loadingTables && (
+                  {(currentToolForCustom === 'jira' || currentToolForCustom === 'hubspot' || currentToolForCustom === 'odoo') && discoveredTables.length === 0 && !loadingTables && (
                     <div className="text-center p-8 text-gray-500">
                       <Database className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p className="font-medium">No tables discovered</p>
-                      <p className="text-sm mt-1">Please ensure Jira is properly connected and try again.</p>
+                      <p className="text-sm mt-1">Please ensure {currentToolForCustom === 'jira' ? 'Jira' : currentToolForCustom === 'hubspot' ? 'HubSpot' : 'Odoo'} is properly connected and try again.</p>
                     </div>
                   )}
                 </div>
@@ -2049,8 +2891,14 @@ export default function Setup() {
                     if (currentToolForCustom) {
                       setCompletedLogins(prev => [...prev, currentToolForCustom]);
                       
-                      // Trigger sync with selected custom tables
-                      triggerJiraSync('custom');
+                      // Trigger sync with selected custom tables based on tool type
+                      if (currentToolForCustom === 'jira') {
+                        triggerJiraSync('custom');
+                      } else if (currentToolForCustom === 'hubspot') {
+                        triggerHubSpotSync('custom');
+                      } else if (currentToolForCustom === 'odoo') {
+                        triggerOdooSync('custom');
+                      }
                       
                       toast({
                         title: "Custom Setup Complete",
@@ -2195,6 +3043,246 @@ export default function Setup() {
                 Send Email
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Odoo Setup Dialog */}
+      <Dialog open={odooSetupDialogOpen} onOpenChange={setOdooSetupDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-purple-600 rounded flex items-center justify-center">
+                <span className="text-white text-xs font-bold">O</span>
+              </div>
+              Set Up Odoo Integration
+            </DialogTitle>
+            <DialogDescription>
+              Configure your Odoo ERP integration to sync sales, inventory, and customer data.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Step 1: Instance URL */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">1</div>
+                <h3 className="font-medium">Enter Your Odoo Instance URL</h3>
+              </div>
+              <div className="ml-8 space-y-2">
+                <Label htmlFor="odooInstanceUrl">Odoo Instance URL</Label>
+                <Input
+                  id="odooInstanceUrl"
+                  placeholder="https://yourcompany.odoo.com"
+                  value={odooInstanceUrl}
+                  onChange={(e) => setOdooInstanceUrl(e.target.value)}
+                />
+                <p className="text-sm text-gray-600">
+                  This is your Odoo instance URL (e.g., https://yourcompany.odoo.com)
+                </p>
+              </div>
+            </div>
+
+            {/* Step 2: Generate API Key */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">2</div>
+                <h3 className="font-medium">Generate API Key in Odoo</h3>
+              </div>
+              <div className="ml-8 space-y-3">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900 font-medium mb-2">In your Odoo instance:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
+                    <li>Click on your <strong>profile picture</strong> in the top right corner</li>
+                    <li>Select <strong>"My Profile"</strong></li>
+                    <li>Click the <strong>"Account Security"</strong> tab</li>
+                    <li>Find the <strong>"API Keys"</strong> section</li>
+                    <li>Click <strong>"New API Key"</strong> or <strong>"Generate New API Key"</strong></li>
+                    <li>Fill in the API key details:
+                      <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                        <li><strong>Name:</strong> Saulto Analytics</li>
+                        <li><strong>Validity:</strong> Select <strong>"Persistent Key"</strong> ⚠️</li>
+                      </ul>
+                    </li>
+                    <li>Click <strong>"Generate key"</strong></li>
+                    <li><strong>Copy the API key immediately</strong> (you won't see it again!)</li>
+                  </ol>
+                  <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded">
+                    <p className="text-xs text-red-900 font-medium">⚠️ IMPORTANT:</p>
+                    <ul className="text-xs text-red-800 mt-1 list-disc list-inside">
+                      <li>Must select <strong>"Persistent Key"</strong> for continuous access</li>
+                      <li>API key is only shown once - copy it immediately!</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Enter Connection Details */}
+
+            {/* Step 3: Enter Connection Details */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">3</div>
+                <h3 className="font-medium">Enter Connection Details</h3>
+              </div>
+              <div className="ml-8 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="odooDatabase">Database Name</Label>
+                  <Input
+                    id="odooDatabase"
+                    placeholder="Your Odoo database name"
+                    value={odooDatabase}
+                    onChange={(e) => setOdooDatabase(e.target.value)}
+                  />
+                  <p className="text-sm text-gray-600">
+                    Usually visible in your Odoo URL or ask your Odoo administrator
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="odooUsername">Username</Label>
+                  <Input
+                    id="odooUsername"
+                    placeholder="Your Odoo username (usually email)"
+                    value={odooUsername}
+                    onChange={(e) => setOdooUsername(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="odooApiKey">API Key</Label>
+                  <Input
+                    id="odooApiKey"
+                    type="password"
+                    placeholder="Your Odoo API Key"
+                    value={odooApiKey}
+                    onChange={(e) => setOdooApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm text-gray-700">
+                    <strong>Security Note:</strong> Your OAuth credentials are securely stored and encrypted. 
+                    They are only used to authenticate with your Odoo instance.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOdooSetupDialogOpen(false);
+                setOdooInstanceUrl("");
+                setOdooDatabase("");
+                setOdooUsername("");
+                setOdooApiKey("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleOdooSetupSubmit}
+              disabled={!odooInstanceUrl.trim() || !odooDatabase.trim() || !odooUsername.trim() || !odooApiKey.trim()}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              Connect to Odoo
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ActiveCampaign Setup Dialog */}
+      <Dialog open={activeCampaignSetupDialogOpen} onOpenChange={setActiveCampaignSetupDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
+                <Mail className="h-3 w-3 text-white" />
+              </div>
+              Connect to ActiveCampaign
+            </DialogTitle>
+            <DialogDescription>
+              Enter your ActiveCampaign API credentials to connect your email marketing data to Saulto Analytics.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Step 1: Find Your API Credentials */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">1</div>
+                <h3 className="font-medium">Find Your ActiveCampaign API Credentials</h3>
+              </div>
+              <div className="ml-8 space-y-3">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900 font-medium mb-2">In your ActiveCampaign account:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
+                    <li>Click on <strong>"Settings"</strong> (gear icon) in the left menu</li>
+                    <li>Click on <strong>"Developer"</strong> in the Account Settings</li>
+                    <li>Copy your <strong>API URL</strong> (e.g., https://yourcompany.api-us1.com)</li>
+                    <li>Copy your <strong>API Key</strong></li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Enter Connection Details */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-medium">2</div>
+                <h3 className="font-medium">Enter Connection Details</h3>
+              </div>
+              <div className="ml-8 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="activeCampaignApiUrl">API URL</Label>
+                  <Input
+                    id="activeCampaignApiUrl"
+                    type="url"
+                    placeholder="https://yourcompany.api-us1.com"
+                    value={activeCampaignApiUrl}
+                    onChange={(e) => setActiveCampaignApiUrl(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="activeCampaignApiKey">API Key</Label>
+                  <Input
+                    id="activeCampaignApiKey"
+                    type="password"
+                    placeholder="Your ActiveCampaign API Key"
+                    value={activeCampaignApiKey}
+                    onChange={(e) => setActiveCampaignApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">Note:</span> Your API credentials are encrypted and stored securely. 
+                    Saulto Analytics will use these credentials to sync your email marketing data including contacts, 
+                    campaigns, lists, and automations.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between pt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setActiveCampaignSetupDialogOpen(false);
+                setActiveCampaignApiUrl("");
+                setActiveCampaignApiKey("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleActiveCampaignSetupSubmit}
+              disabled={!activeCampaignApiUrl.trim() || !activeCampaignApiKey.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Connect to ActiveCampaign
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -95,9 +95,9 @@ class SchemaLayerManagerService {
    */
   private async verifyRawLayer(config: SchemaLayerConfig): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check that raw tables exist in analytics schema (tables are named {connector}_{table})
+      // Check that raw tables exist in analytics schema (tables are named raw_{connector}_{table})
       for (const table of config.tables) {
-        const rawTableName = `${config.connectorType}_${table}`;
+        const rawTableName = `raw_${config.connectorType}_${table}`;
         const exists = await storage.checkTableExists(config.analyticsSchema, rawTableName);
         
         if (!exists) {

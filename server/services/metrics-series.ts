@@ -1,5 +1,5 @@
 import { PostgresAnalyticsService } from './postgres-analytics.js';
-import { MetricsTimeSeriesETL } from './metrics-time-series-etl.js';
+// import { MetricsTimeSeriesETL } from './metrics-time-series-etl.js';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subDays, format } from 'date-fns';
 
 export interface MetricsSeriesQuery {
@@ -28,10 +28,10 @@ export interface ProgressMetrics {
 }
 
 export class MetricsSeriesService {
-  private etl: MetricsTimeSeriesETL;
+  // private etl: MetricsTimeSeriesETL;
 
   constructor(private postgres: PostgresAnalyticsService) {
-    this.etl = new MetricsTimeSeriesETL(postgres);
+    // this.etl = new MetricsTimeSeriesETL(postgres);
   }
 
   async getMetricsSeries(query: MetricsSeriesQuery): Promise<{
@@ -57,19 +57,23 @@ export class MetricsSeriesService {
   }
 
   private async ensureETLData(companyId: number, periodType: string) {
-    const status = await this.etl.checkETLStatus(companyId, periodType);
+    // ETL functionality temporarily disabled - returning immediately
+    console.log(`ETL check skipped for company ${companyId} period ${periodType}`);
+    return;
     
-    if (!status.hasData) {
-      console.log(`No ETL data found for company ${companyId} period ${periodType}, running ETL...`);
-      await this.etl.runETLJob({ companyId, periodType: periodType as any, forceRefresh: true });
-    } else {
-      // Check if data is older than 1 hour and refresh if needed
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      if (!status.lastUpdated || status.lastUpdated < oneHourAgo) {
-        console.log(`ETL data stale for company ${companyId} period ${periodType}, refreshing...`);
-        await this.etl.runETLJob({ companyId, periodType: periodType as any, forceRefresh: true });
-      }
-    }
+    // const status = await this.etl.checkETLStatus(companyId, periodType);
+    // 
+    // if (!status.hasData) {
+    //   console.log(`No ETL data found for company ${companyId} period ${periodType}, running ETL...`);
+    //   await this.etl.runETLJob({ companyId, periodType: periodType as any, forceRefresh: true });
+    // } else {
+    //   // Check if data is older than 1 hour and refresh if needed
+    //   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    //   if (!status.lastUpdated || status.lastUpdated < oneHourAgo) {
+    //     console.log(`ETL data stale for company ${companyId} period ${periodType}, refreshing...`);
+    //     await this.etl.runETLJob({ companyId, periodType: periodType as any, forceRefresh: true });
+    //   }
+    // }
   }
 
   private calculateDateRanges(periodType: 'weekly' | 'monthly' | 'quarterly' | 'yearly') {
@@ -312,7 +316,9 @@ export class MetricsSeriesService {
 
   // Helper method to get available metrics for a company
   async getAvailableMetrics(companyId: number): Promise<any[]> {
-    return this.etl.getAvailableMetrics(companyId);
+    // ETL temporarily disabled - return empty array
+    return [];
+    // return this.etl.getAvailableMetrics(companyId);
   }
 
   // Helper method to validate query
@@ -340,17 +346,23 @@ export class MetricsSeriesService {
 
   // Helper method to run ETL for a company
   async runETLJob(companyId: number, periodType: 'weekly' | 'monthly' | 'quarterly' | 'yearly', forceRefresh = false) {
-    return this.etl.runETLJob({ companyId, periodType, forceRefresh });
+    // ETL temporarily disabled
+    return { success: false, message: 'ETL service temporarily disabled' };
+    // return this.etl.runETLJob({ companyId, periodType, forceRefresh });
   }
 
   // Helper method to check ETL status
   async getETLStatus(companyId: number, periodType: string) {
-    return this.etl.checkETLStatus(companyId, periodType);
+    // ETL temporarily disabled
+    return { hasData: false };
+    // return this.etl.checkETLStatus(companyId, periodType);
   }
 
   // Helper method to validate time series data (for debugging)
   async validateTimeSeriesData(companyId: number, periodType: string, limit = 10) {
-    return this.etl.validateTimeSeriesData(companyId, periodType, limit);
+    // ETL temporarily disabled
+    return { valid: false, error: 'ETL service temporarily disabled' };
+    // return this.etl.validateTimeSeriesData(companyId, periodType, limit);
   }
 
   // Query real metrics data from database
