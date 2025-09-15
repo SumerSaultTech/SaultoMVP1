@@ -249,11 +249,7 @@ export type DataSource = typeof dataSources.$inferSelect;
 export type InsertSqlModel = z.infer<typeof insertSqlModelSchema>;
 export type SqlModel = typeof sqlModels.$inferSelect;
 
-export type InsertMetric = z.infer<typeof insertMetricSchema>;
-export type Metric = typeof metrics.$inferSelect;
-
-export type InsertMetricHistory = z.infer<typeof insertMetricHistorySchema>;
-export type MetricHistory = typeof metricHistory.$inferSelect;
+// Note: Metric and MetricHistory types are defined below for tenant-specific tables
 
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
@@ -328,11 +324,14 @@ export type Goal = {
 
 export type MetricHistory = {
   id: number;
-  companyId: number;
   metricId: number;
-  value: string;
-  recordedAt?: Date;
-  period: string;
+  date: string;
+  actualValue?: number;
+  goalValue?: number;
+  numerator?: number;
+  denominator?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 // Schema validation for new tables
@@ -351,9 +350,7 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
-// Types for Goals and Metric Registry
-export type Goal = typeof goals.$inferSelect;
-export type InsertGoal = z.infer<typeof insertGoalSchema>;
+// Note: Goal type is already defined above. Removed duplicate definition.
 // MetricRegistry types removed - consolidated into Metric types
 
 // Types for new RBAC and audit tables
