@@ -5,7 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Building2, Plus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface Company {
@@ -20,6 +31,8 @@ export default function CompanySelection() {
   const { toast } = useToast();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
 
   const { data: companies, isLoading } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
@@ -75,8 +88,46 @@ export default function CompanySelection() {
     },
   });
 
+  const deleteCompanyMutation = useMutation({
+    mutationFn: async (companyId: number) => {
+      return await apiRequest(`/api/companies/${companyId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      setDeleteConfirmation("");
+      setCompanyToDelete(null);
+      toast({
+        title: "Success",
+        description: "Company deleted successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to delete company",
+        variant: "destructive",
+      });
+    },
+  });
+
   const selectCompany = (company: Company) => {
     selectCompanyMutation.mutate(company.id);
+  };
+
+  const handleDeleteClick = (company: Company) => {
+    setCompanyToDelete(company);
+    setDeleteConfirmation("");
+  };
+
+  const confirmDelete = () => {
+    if (companyToDelete && deleteConfirmation === "DELETE") {
+      deleteCompanyMutation.mutate(companyToDelete.id);
+    }
+  };
+
+  const cancelDelete = () => {
+    setCompanyToDelete(null);
+    setDeleteConfirmation("");
   };
 
   const handleCreateCompany = () => {
@@ -123,7 +174,7 @@ export default function CompanySelection() {
         <div className="max-h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
           <div className="space-y-2 p-4">
             {companies?.map((company) => (
-              <Card key={company.id} className="cursor-pointer hover:shadow-lg transition-shadow">
+              <Card key={company.id} className="hover:shadow-lg transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -137,13 +188,67 @@ export default function CompanySelection() {
                         </p>
                       </div>
                     </div>
-                    <Button 
-                      onClick={() => selectCompany(company)}
-                      size="sm"
-                      disabled={!company.isActive}
-                    >
-                      {company.isActive ? "Select" : "Inactive"}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        onClick={() => selectCompany(company)}
+                        size="sm"
+                        disabled={!company.isActive}
+                      >
+                        {company.isActive ? "Select" : "Inactive"}
+                      </Button>
+                      <AlertDialog open={companyToDelete?.id === company.id} onOpenChange={(open) => !open && cancelDelete()}>
+                        <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeleteClick(company)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Company</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                              <div className="space-y-3">
+                                <div>
+                                  Are you sure you want to delete "{company.name}"? This action cannot be undone and will permanently remove:
+                                </div>
+                                <ul className="list-disc list-inside text-sm space-y-1 text-gray-600">
+                                  <li>All company data and metrics</li>
+                                  <li>Analytics schemas and historical data</li>
+                                  <li>User access and configurations</li>
+                                  <li>Connected data sources</li>
+                                </ul>
+                                <div className="mt-4">
+                                  <Label htmlFor="deleteConfirm" className="text-sm font-medium">
+                                    Type "DELETE" to confirm:
+                                  </Label>
+                                  <Input
+                                    id="deleteConfirm"
+                                    value={deleteConfirmation}
+                                    onChange={(e) => setDeleteConfirmation(e.target.value)}
+                                    placeholder="DELETE"
+                                    className="mt-2"
+                                  />
+                                </div>
+                              </div>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel onClick={cancelDelete}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={confirmDelete}
+                              disabled={deleteConfirmation !== "DELETE" || deleteCompanyMutation.isPending}
+                              className="bg-red-600 hover:bg-red-700 disabled:bg-gray-300"
+                            >
+                              {deleteCompanyMutation.isPending ? "Deleting..." : "Delete Company"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

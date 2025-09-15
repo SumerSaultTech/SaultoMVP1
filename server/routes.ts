@@ -1503,6 +1503,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error(`⚠️ Analytics schema creation failed for company ${newCompany.id}:`, schemaResult.error);
       } else {
         console.log(`✅ Analytics schema created successfully for ${name}`);
+
+        // Analytics schema setup completed - metric tables are created with schema
       }
       
       res.json({
@@ -2154,48 +2156,55 @@ The Saulto Analytics Team
       const metric = await storage.createKpiMetric(validatedData);
       console.log("Successfully saved metric:", metric.name);
 
-      // Also save to metric registry if metricConfig is provided
-      if (dataWithCompanyId.metricConfig) {
-        try {
-          console.log("💾 Saving metric to registry:", dataWithCompanyId.metricConfig);
-          await storage.saveMetricToRegistry(companyId, {
-            metric_key: dataWithCompanyId.metricConfig.metric_key,
-            label: dataWithCompanyId.metricConfig.label,
-            source_table: dataWithCompanyId.metricConfig.source_fact || dataWithCompanyId.metricConfig.source_table,
-            expr_sql: dataWithCompanyId.metricConfig.expr_sql,
-            filters: dataWithCompanyId.metricConfig.filters || dataWithCompanyId.filterConfig,
-            unit: dataWithCompanyId.metricConfig.unit,
-            date_column: dataWithCompanyId.metricConfig.date_column || 'created_at',
-            description: dataWithCompanyId.metricConfig.description || dataWithCompanyId.description,
-            tags: dataWithCompanyId.metricConfig.tags || []
-          });
-          console.log("✅ Metric saved to registry successfully");
-        } catch (registryError) {
-          console.error("⚠️ Failed to save to metric registry:", registryError);
-          // Don't fail the whole request if registry save fails
-        }
-      }
+      // Metric saved to main metrics table - no additional registry needed
 
-      // Refresh time series data since a new metric was created
+      // Immediately populate metric_history with daily actual vs goal data
       if (companyId) {
         try {
-          console.log(`🔄 Refreshing time series data for company ${companyId} after metric creation`);
-          const etlService = new MetricsTimeSeriesETL(postgresAnalyticsService);
-          
-          // Refresh monthly data (most commonly used in dashboard)
-          const monthlyRefresh = await etlService.runETLJob({
-            companyId: companyId,
-            periodType: 'monthly',
-            forceRefresh: true
-          });
-          
-          if (monthlyRefresh.success) {
-            console.log(`✅ Monthly time series data refreshed for company ${companyId}`);
-          } else {
-            console.log(`⚠️ Failed to refresh monthly time series: ${monthlyRefresh.message}`);
+          console.log(`🔄 Populating metric_history for company ${companyId} after metric creation`);
+
+          // Calculate daily goal from yearly goal
+          const yearlyGoal = parseFloat(validatedData.yearlyGoal || '0');
+          const dailyGoal = yearlyGoal / 365;
+
+          // Calculate actual value for today (will be 0 for new metrics)
+          let actualValue = 0;
+          try {
+            const actualQuery = `
+              SELECT COALESCE((${validatedData.exprSql}), 0) as actual_value
+              FROM ${validatedData.sourceTable} f
+              WHERE DATE(f.${validatedData.dateColumn || 'created_at'}) = CURRENT_DATE
+            `;
+            const actualResult = await postgresAnalyticsService.executeQuery(actualQuery, companyId);
+            if (actualResult.success && actualResult.data && actualResult.data.length > 0) {
+              actualValue = Number(actualResult.data[0].actual_value) || 0;
+            }
+          } catch (actualError) {
+            console.log(`⚠️ Could not calculate actual value, using 0`);
+            actualValue = 0;
           }
+
+          // Insert into metric_history
+          const insertQuery = `
+            INSERT INTO analytics_company_${companyId}.metric_history
+            (company_id, metric_id, date, actual_value, goal_value, period)
+            VALUES (${companyId}, ${metric.id}, CURRENT_DATE, ${actualValue}, ${dailyGoal}, 'daily')
+            ON CONFLICT (metric_id, date) DO UPDATE SET
+              actual_value = EXCLUDED.actual_value,
+              goal_value = EXCLUDED.goal_value,
+              recorded_at = NOW()
+          `;
+
+          const insertResult = await postgresAnalyticsService.executeQuery(insertQuery, companyId);
+
+          if (insertResult.success) {
+            console.log(`✅ Metric history populated: actual=${actualValue}, goal=${dailyGoal.toFixed(2)}`);
+          } else {
+            console.log(`⚠️ Failed to populate metric history: ${insertResult.error || 'Unknown error'}`);
+          }
+
         } catch (etlError) {
-          console.error(`⚠️ ETL refresh error after metric creation:`, etlError);
+          console.error(`⚠️ Metric history population error after metric creation:`, etlError);
           // Don't fail the response if ETL fails
         }
       }
@@ -2404,126 +2413,7 @@ The Saulto Analytics Team
   });
 
   // Populate Metric Registry with Jira metrics (for testing/setup)
-  app.post("/api/company/metric-registry/populate", async (req, res) => {
-    try {
-      const companyId = getValidatedCompanyId(req);
-      
-      console.log(`🔄 Populating metric registry for company ${companyId}...`);
-      
-      // Ensure analytics schema exists
-      const dbStorage = storage as any;
-      await dbStorage.ensureAnalyticsSchema(companyId);
-      
-      // Setup metric registry tables
-      await dbStorage.setupCompanyMetricRegistry(companyId);
-      
-      // Define Jira metrics for line charts
-      const jiraMetrics = [
-        {
-          metric_key: 'jira_story_points_completed',
-          label: 'Story Points Completed',
-          source_table: 'core_jira_issues', 
-          expr_sql: 'SUM(COALESCE(f.story_points, 0))',
-          date_column: 'resolved_at',
-          unit: 'count',
-          description: 'Total story points completed per time period',
-          tags: ['jira', 'productivity']
-        },
-        {
-          metric_key: 'jira_issues_resolved',
-          label: 'Issues Resolved',
-          source_table: 'core_jira_issues',
-          expr_sql: 'COUNT(*)',
-          date_column: 'resolved_at', 
-          unit: 'count',
-          description: 'Number of issues resolved per time period',
-          tags: ['jira', 'productivity']
-        },
-        {
-          metric_key: 'jira_avg_cycle_time',
-          label: 'Avg Cycle Time (Days)',
-          source_table: 'core_jira_issues',
-          expr_sql: 'AVG(EXTRACT(DAY FROM (f.resolved_at - f.created_at)))',
-          date_column: 'resolved_at',
-          unit: 'days',
-          description: 'Average cycle time from creation to resolution',
-          tags: ['jira', 'performance']
-        }
-      ];
-      
-      const results = [];
-      for (const metric of jiraMetrics) {
-        try {
-          console.log(`Adding metric: ${metric.label}`);
-          
-          await storage.saveMetricToRegistry(companyId, {
-            metric_key: metric.metric_key,
-            label: metric.label,
-            source_table: metric.source_table,
-            expr_sql: metric.expr_sql,
-            filters: null,
-            unit: metric.unit,
-            date_column: metric.date_column,
-            description: metric.description,
-            tags: metric.tags
-          });
-          
-          results.push({ metric_key: metric.metric_key, status: 'success' });
-          console.log(`✅ Added ${metric.label}`);
-        } catch (error) {
-          console.error(`❌ Failed to add ${metric.label}:`, error);
-          results.push({ metric_key: metric.metric_key, status: 'error', error: error.message });
-        }
-      }
-      
-      // Verify populated registry
-      const populatedRegistry = await storage.getCompanyMetricRegistry(companyId);
-      console.log(`✅ Registry now contains ${populatedRegistry.length} metrics`);
-      
-      res.json({
-        success: true,
-        message: `Populated ${results.filter(r => r.status === 'success').length} metrics`,
-        companyId,
-        results,
-        registryCount: populatedRegistry.length
-      });
-      
-    } catch (error) {
-      console.error("❌ Error populating metric registry:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Failed to populate metric registry",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Get Metric Registry for a company
-  app.get("/api/company/metric-registry", async (req, res) => {
-    try {
-      const companyId = req.session?.selectedCompany?.id;
-      if (!companyId) {
-        return res.status(400).json({ message: "No company selected. Please select a company first." });
-      }
-
-      const metrics = await storage.getCompanyMetricRegistry(companyId);
-      console.log(`📊 Retrieved ${metrics.length} metrics from registry for company ${companyId}`);
-      
-      res.json({
-        success: true,
-        companyId,
-        metrics,
-        count: metrics.length
-      });
-      
-    } catch (error) {
-      console.error("❌ Error retrieving metric registry:", error);
-      res.status(500).json({ 
-        message: "Failed to retrieve metric registry",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
+  // Metric registry endpoints removed - functionality consolidated into main metrics table
 
   app.patch("/api/kpi-metrics/:id", async (req, res) => {
     try {
@@ -2587,8 +2477,14 @@ The Saulto Analytics Team
   app.delete("/api/kpi-metrics/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const deleted = await storage.deleteKpiMetric(id);
-      
+      const companyId = req.session?.selectedCompany?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ message: "No company selected. Please select a company first." });
+      }
+
+      const deleted = await storage.deleteKpiMetric(id, companyId);
+
       if (!deleted) {
         res.status(404).json({ message: "Metric not found" });
         return;
@@ -4334,7 +4230,29 @@ CRITICAL REQUIREMENTS:
 
         // Store the created company
         companiesArray.push(newCompany);
-        
+
+        // Setup analytics schema and metric registry for admin-created company
+        try {
+          console.log(`🏗️ Creating analytics schema for admin company: ${name} (ID: ${newCompany.id})`);
+          const schemaResult = await storage.ensureAnalyticsSchema(newCompany.id);
+
+          if (schemaResult.success) {
+            console.log(`🏗️ Setting up metric registry for admin company ${newCompany.id}`);
+            const registryResult = await storage.setupCompanyMetricRegistry(newCompany.id);
+
+            if (!registryResult.success) {
+              console.error(`⚠️ Admin company metric registry setup failed: ${registryResult.error}`);
+            } else {
+              console.log(`✅ Admin company metric registry tables created successfully`);
+            }
+          } else {
+            console.error(`⚠️ Admin company analytics schema creation failed: ${schemaResult.error}`);
+          }
+        } catch (setupError) {
+          console.error('❌ Admin company setup error:', setupError);
+          // Continue despite setup errors - don't fail the company creation
+        }
+
         console.log("Stored new company. Total companies:", companiesArray.length);
         console.log("All companies:", companiesArray);
         res.json(newCompany);

@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { RefreshCw, Calendar, Info, Database, Table, Columns } from "lucide-react";
 import MetricProgressChart from "./metric-progress-chart";
 import NorthStarMetrics from "./north-star-metrics";
-import type { KpiMetric } from "@/../../shared/schema";
+import type { Metric } from "@/../../shared/schema";
 import { formatActualValue } from "@/lib/format-utils";
 
 interface MetricsOverviewProps {

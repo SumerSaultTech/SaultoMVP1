@@ -13,7 +13,7 @@ import { Plus, FileText, Edit, Trash2, Share2, Calendar, User, Eye, ExternalLink
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import type { MetricReport, KpiMetric } from "@/../../shared/schema";
+import type { MetricReport, Metric } from "@/../../shared/schema";
 
 interface ReportFormData {
   title: string;
@@ -341,7 +341,7 @@ View full report: ${getShareUrl(report)}`;
                     <label className="text-sm font-medium">Select Metrics *</label>
                     <div className="border rounded-lg p-3 max-h-48 overflow-y-auto">
                       <div className="space-y-2">
-                        {metrics.map((metric: KpiMetric) => (
+                        {metrics.map((metric: Metric) => (
                           <label key={metric.id} className="flex items-center space-x-2 cursor-pointer">
                             <input
                               type="checkbox"

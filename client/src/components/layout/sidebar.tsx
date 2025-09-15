@@ -79,20 +79,16 @@ export default function Sidebar() {
         <div className="flex items-center justify-between">
           {!isCollapsed ? (
             <Link href={getNavPath("/")}>
-              <a className="cursor-pointer hover:opacity-80 transition-opacity">
-                <img 
-                  src="/assets/logo.png" 
-                  alt="Logo" 
-                  className="w-48 h-20 object-contain max-w-full"
-                />
-              </a>
+              <img
+                src="/assets/logo.png"
+                alt="Logo"
+                className="w-48 h-20 object-contain max-w-full cursor-pointer hover:opacity-80 transition-opacity"
+              />
             </Link>
           ) : (
             <div className="flex-1 flex justify-center">
               <Link href={getNavPath("/")}>
-                <a className="cursor-pointer hover:opacity-80 transition-opacity">
-                  <BarChart3 className="w-6 h-6 text-saulto-600" />
-                </a>
+                <BarChart3 className="w-6 h-6 text-saulto-600 cursor-pointer hover:opacity-80 transition-opacity" />
               </Link>
             </div>
           )}
@@ -114,13 +110,13 @@ export default function Sidebar() {
           const navPath = getNavPath(item.path);
           return (
             <Link key={item.path} href={navPath}>
-              <a 
+              <div
                 className={`sidebar-nav-item ${isActive(item.path) ? "active" : ""} ${isCollapsed ? 'justify-center px-2' : ''}`}
                 title={isCollapsed ? item.label : undefined}
               >
                 <Icon className="w-5 h-5" />
                 {!isCollapsed && <span>{item.label}</span>}
-              </a>
+              </div>
             </Link>
           );
         })}

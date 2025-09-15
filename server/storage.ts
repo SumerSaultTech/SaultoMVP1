@@ -2,13 +2,11 @@ import {
   companies,
   dataSources,
   sqlModels,
-  metrics,
   chatMessages,
   pipelineActivities,
   setupStatus,
   users,
   metricReports,
-  goals,
   type Company,
   type InsertCompany,
   type DataSource,
@@ -129,10 +127,10 @@ export interface IStorage {
 
   // Metric Registry (company-specific)
   setupCompanyMetricRegistry(companyId: number): Promise<{ success: boolean; error?: string }>;
-  getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]>;
-  getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined>;
-  createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry>;
-  updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined>;
+  getCompanyMetricRegistry(companyId: number): Promise<Metric[]>;
+  getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<Metric | undefined>;
+  createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetric): Promise<Metric>;
+  updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetric>): Promise<Metric | undefined>;
   deleteCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<boolean>;
   
   // Company-Specific Goals (analytics schema)
@@ -179,6 +177,7 @@ export class MemStorage implements IStorage {
     // Initialize with default setup status
     this.setupStatus = {
       id: 1,
+      companyId: 1,
       warehouseConnected: false,
       dataSourcesConfigured: false,
       modelsDeployed: 0,
@@ -206,17 +205,21 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentId++;
-    const user: User = { 
-      ...insertUser, 
+    const user: User = {
+      ...insertUser,
       id,
-      companyId: insertUser.companyId || null,
-      role: insertUser.role || "user",
-      firstName: insertUser.firstName || null,
-      lastName: insertUser.lastName || null,
-      email: insertUser.email || null,
-      status: insertUser.status || "active",
-      createdAt: insertUser.createdAt || new Date().toISOString(),
-      updatedAt: insertUser.updatedAt || new Date().toISOString(),
+      companyId: null,
+      role: "user",
+      firstName: null,
+      lastName: null,
+      email: null,
+      status: "active",
+      permissions: [],
+      mfaEnabled: false,
+      mfaSecret: null,
+      lastLoginAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.users.set(id, user);
     return user;
@@ -521,22 +524,22 @@ export class MemStorage implements IStorage {
     return { success: true };
   }
 
-  async getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]> {
+  async getCompanyMetricRegistry(companyId: number): Promise<Metric[]> {
     console.warn(`MemStorage.getCompanyMetricRegistry called for company ${companyId} - returning empty array`);
     return [];
   }
 
-  async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined> {
+  async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<Metric | undefined> {
     console.warn(`MemStorage.getCompanyMetricRegistryEntry called for company ${companyId} - returning undefined`);
     return undefined;
   }
 
-  async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry> {
+  async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetric): Promise<Metric> {
     console.warn(`MemStorage.createCompanyMetricRegistryEntry called for company ${companyId} - returning mock entry`);
-    return { ...entry, createdAt: new Date(), updatedAt: new Date() } as MetricRegistry;
+    return { ...entry, id: 1, companyId, createdAt: new Date(), updatedAt: new Date() } as Metric;
   }
 
-  async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined> {
+  async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetric>): Promise<Metric | undefined> {
     console.warn(`MemStorage.updateCompanyMetricRegistryEntry called for company ${companyId} - returning undefined`);
     return undefined;
   }
@@ -682,6 +685,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompany(companyId: number): Promise<{ success: boolean; error?: string }> {
     try {
+      // Updated with metric_reports and goals deletion fix
       console.log(`🗑️ Deleting company with ID: ${companyId}`);
       
       // First, delete the analytics schema
@@ -691,14 +695,67 @@ export class DatabaseStorage implements IStorage {
         // Continue with company deletion even if schema deletion fails
       }
       
-      // Delete the company from the companies table
-      const result = await this.db.delete(companies).where(eq(companies.id, companyId)).returning();
+      // Delete all related records that reference this company using raw SQL for bigint compatibility
+      console.log(`🗑️ Deleting related records for company ${companyId}...`);
+
+      const companyIdBigInt = BigInt(companyId);
+
+      // Delete data sources
+      await this.sql`DELETE FROM data_sources WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted data sources for company ${companyId}`);
+
+      // Delete metrics
+      await this.sql`DELETE FROM metrics WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted metrics for company ${companyId}`);
+
+      // Delete kpi_metrics (legacy table)
+      await this.sql`DELETE FROM kpi_metrics WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted kpi_metrics for company ${companyId}`);
+
+      // Delete metric history
+      await this.sql`DELETE FROM metric_history WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted metric history for company ${companyId}`);
+
+      // Delete chat messages
+      await this.sql`DELETE FROM chat_messages WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted chat messages for company ${companyId}`);
+
+      // Delete SQL models
+      await this.sql`DELETE FROM sql_models WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted SQL models for company ${companyId}`);
+
+      // Delete pipeline activities
+      await this.sql`DELETE FROM pipeline_activities WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted pipeline activities for company ${companyId}`);
+
+      // Delete setup status
+      await this.sql`DELETE FROM setup_status WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted setup status for company ${companyId}`);
+
+      // Delete users associated with this company
+      await this.sql`DELETE FROM users WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted users for company ${companyId}`);
+
+      // Delete metric reports
+      await this.sql`DELETE FROM metric_reports WHERE company_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted metric reports for company ${companyId}`);
+
+      // Delete goals (uses tenant_id to reference companies)
+      await this.sql`DELETE FROM goals WHERE tenant_id = ${companyIdBigInt}`;
+      console.log(`✅ Deleted goals for company ${companyId}`);
+
+      // Finally, delete the company from the companies table using raw SQL for bigint compatibility
+      const result = await this.sql`
+        DELETE FROM companies
+        WHERE id = ${companyIdBigInt}
+        RETURNING id, name
+      `;
       
       if (result.length === 0) {
         return { success: false, error: 'Company not found' };
       }
       
-      console.log(`✅ Company deleted successfully: ${result[0].name} (ID: ${companyId})`);
+      console.log(`✅ Company deleted successfully: ${result[0]?.name || 'Unknown'} (ID: ${companyId})`);
       return { success: true };
       
     } catch (error) {
@@ -954,18 +1011,8 @@ export class DatabaseStorage implements IStorage {
       
       return result as Metric[];
     } catch (error) {
-      console.error(`Error fetching metrics from ${`analytics_company_${companyId}`}:`, error);
-      // Fallback to old table if new schema doesn't exist yet
-      try {
-        const result = await this.db.select()
-          .from(kpiMetrics)
-          .where(eq(kpiMetrics.companyId, companyId))
-          .orderBy(kpiMetrics.priority, kpiMetrics.id);
-        return result as any; // Type compatibility
-      } catch (fallbackError) {
-        console.error('Fallback to old kpi_metrics also failed:', fallbackError);
-        throw error;
-      }
+      console.error(`Error fetching metrics from analytics_company_${companyId}:`, error);
+      throw new Error(`Metrics table not found for company ${companyId}. Analytics schema not properly initialized. Please run metric registry setup.`);
     }
   }
   async getKpiMetric(id: number): Promise<KpiMetric | undefined> { return this.throwError(); }
@@ -1129,14 +1176,29 @@ export class DatabaseStorage implements IStorage {
       throw error;
     }
   }
-  async deleteKpiMetric(id: number): Promise<boolean> {
+  async deleteKpiMetric(id: number, companyId?: number): Promise<boolean> {
     try {
-      const result = await this.db
-        .delete(kpiMetrics)
-        .where(eq(kpiMetrics.id, id))
-        .returning();
-      
-      return result.length > 0;
+      if (!companyId) {
+        throw new Error('Company ID is required for metric deletion');
+      }
+
+      const schemaName = `analytics_company_${companyId}`;
+      console.log(`🔄 Deleting metric from schema ${schemaName}`);
+
+      const deleteQuery = `
+        DELETE FROM ${schemaName}.metrics
+        WHERE id = $1
+        RETURNING id
+      `;
+
+      const result = await this.sql.unsafe(deleteQuery, [id]);
+
+      if (result.length > 0) {
+        console.log(`✅ Deleted metric from ${schemaName}`);
+        return true;
+      }
+
+      return false;
     } catch (error) {
       console.error('Error deleting KPI metric:', error);
       throw error;
@@ -1314,10 +1376,8 @@ export class DatabaseStorage implements IStorage {
       console.log(`🗑️ Deleting analytics schema: ${tenantBuilder.schema}`);
       
       // Drop the analytics schema and all its contents (CASCADE removes all tables/views/functions)
-      const dropSchemaQuery = `DROP SCHEMA IF EXISTS ${tenantBuilder.schema} CASCADE`;
-      
-      // Use the database connection directly
-      const result = await this.db.execute(sql.raw(dropSchemaQuery));
+      // Use the same pattern as cleanupOrphanedAnalyticsSchemas
+      await this.sql`DROP SCHEMA IF EXISTS ${this.sql.unsafe(tenantBuilder.schema)} CASCADE`;
       
       console.log(`✅ Analytics schema deleted: ${tenantBuilder.schema}`);
       return { success: true };
@@ -1601,7 +1661,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Company-specific Metric Registry (using tenant-scoped queries)
-  async getCompanyMetricRegistry(companyId: number): Promise<MetricRegistry[]> {
+  async getCompanyMetricRegistry(companyId: number): Promise<Metric[]> {
     try {
       const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       return await getTenantMetricRegistry(tenantBuilder);
@@ -1611,7 +1671,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<MetricRegistry | undefined> {
+  async getCompanyMetricRegistryEntry(companyId: number, metricKey: string): Promise<Metric | undefined> {
     try {
       const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       const tableName = getTenantTable(tenantBuilder, 'metric_registry');
@@ -1641,7 +1701,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetricRegistry): Promise<MetricRegistry> {
+  async createCompanyMetricRegistryEntry(companyId: number, entry: InsertMetric): Promise<Metric> {
     try {
       const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       const tableName = getTenantTable(tenantBuilder, 'metric_registry');
@@ -1670,7 +1730,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetricRegistry>): Promise<MetricRegistry | undefined> {
+  async updateCompanyMetricRegistryEntry(companyId: number, metricKey: string, updates: Partial<InsertMetric>): Promise<Metric | undefined> {
     try {
       const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
       const tableName = getTenantTable(tenantBuilder, 'metric_registry');
@@ -1750,26 +1810,44 @@ export class DatabaseStorage implements IStorage {
   async setupCompanyMetricRegistry(companyId: number): Promise<{ success: boolean; error?: string }> {
     try {
       const fs = await import('fs/promises');
-      
+
+      // Get schema info
+      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+      const schemaName = tenantBuilder.schema;
+
+      // Verify schema exists before proceeding
+      console.log(`🔍 Verifying schema exists: ${schemaName}`);
+      const schemaCheck = await this.sql.unsafe(`
+        SELECT schema_name
+        FROM information_schema.schemata
+        WHERE schema_name = $1
+      `, [schemaName]);
+
+      if (schemaCheck.length === 0) {
+        throw new Error(`Schema ${schemaName} does not exist. Schema creation may have failed.`);
+      }
+
+      console.log(`✅ Schema verified: ${schemaName}`);
+
       // Read the company metric registry template
       const templateSql = await fs.readFile('./migrations/create_company_metric_registry.sql', 'utf8');
-      
-      // Replace placeholders with actual company values  
-      const tenantBuilder = createTenantScopedSQL(this.sql, companyId);
+
+      // Replace placeholders with actual company values
       const companySql = templateSql
-        .replace(/{COMPANY_SCHEMA}/g, tenantBuilder.schema)
+        .replace(/{COMPANY_SCHEMA}/g, schemaName)
         .replace(/{COMPANY_ID}/g, companyId.toString());
-      
+
       // Execute the SQL to create company-specific metric registry tables
-      await this.db.execute(sql.raw(companySql));
-      
-      console.log(`✅ Metric registry setup completed for company ${companyId} in schema ${tenantBuilder.schema}`);
-      
+      console.log(`🏗️ Creating metric registry tables in ${schemaName}...`);
+      await this.sql.unsafe(companySql);
+
+      console.log(`✅ Metric registry setup completed for company ${companyId} in schema ${schemaName}`);
+
       return { success: true };
     } catch (error) {
       console.error(`❌ Failed to setup metric registry for company ${companyId}:`, error);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }

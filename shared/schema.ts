@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, numeric, bigint } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, numeric, bigint, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -85,7 +85,7 @@ export const dataSources = pgTable("data_sources", {
 
 export const sqlModels = pgTable("sql_models", {
   id: serial("id").primaryKey(),
-  companyId: integer("company_id").references(() => companies.id).notNull(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
   name: text("name").notNull().unique(),
   layer: text("layer").notNull(), // 'stg', 'int', 'core'
   sqlContent: text("sql_content").notNull(),
@@ -94,63 +94,10 @@ export const sqlModels = pgTable("sql_models", {
   dependencies: text("dependencies").array().default([]),
 });
 
-export const metrics = pgTable("metrics", {
-  // Core Identity
-  id: serial("id").primaryKey(),
-  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
-  metricKey: text("metric_key").notNull(), // for ETL reference, auto-generated from name
-  name: text("name").notNull(),
-  description: text("description"),
-  
-  // Calculation Logic (from metricRegistry)
-  sourceTable: text("source_table").notNull(), // e.g., "analytics_company_123.core_jira_issues"
-  exprSql: text("expr_sql").notNull(), // SQL expression for calculation
-  filters: jsonb("filters"), // JSON filter tree
-  dateColumn: text("date_column").notNull().default("created_at"), // date column for time-based queries
-  
-  // Display & Goals (from kpiMetrics)
-  category: text("category").notNull().default("revenue"), // revenue, growth, retention, efficiency
-  format: text("format").default("currency"), // currency, percentage, number
-  unit: text("unit").default("count"), // measurement unit
-  yearlyGoal: text("yearly_goal"),
-  quarterlyGoals: jsonb("quarterly_goals"), // {Q1: value, Q2: value, Q3: value, Q4: value}
-  monthlyGoals: jsonb("monthly_goals"), // {Jan: value, Feb: value, ...}
-  goalType: text("goal_type").default("yearly"), // yearly, quarterly, monthly
-  isIncreasing: boolean("is_increasing").default(true), // whether higher values are better
-  isNorthStar: boolean("is_north_star").default(false), // whether this is a North Star metric
-  
-  // Calculated Fields Configuration
-  useCalculatedField: boolean("use_calculated_field").default(false),
-  calculationType: text("calculation_type"), // time_difference, conditional_count, conditional_sum
-  dateFromColumn: text("date_from_column"),
-  dateToColumn: text("date_to_column"),
-  timeUnit: text("time_unit"), // days, hours, weeks
-  conditionalField: text("conditional_field"),
-  conditionalOperator: text("conditional_operator"),
-  conditionalValue: text("conditional_value"),
-  convertToNumber: boolean("convert_to_number").default(false),
-  handleNulls: boolean("handle_nulls").default(true),
-  
-  // Metadata
-  tags: jsonb("tags").$type<string[]>(), // array of tags
-  priority: integer("priority").default(1), // 1-12 for ordering
-  isActive: boolean("is_active").default(true),
-  lastCalculatedAt: timestamp("last_calculated_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  // Composite unique constraint: metricKey is unique per company
-  companyMetricKey: unique().on(table.companyId, table.metricKey),
-}));
+// Metrics table removed - now tenant-specific in analytics_company_{id}.metrics
+// Keep type definition for reference
 
-export const metricHistory = pgTable("metric_history", {
-  id: serial("id").primaryKey(),
-  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
-  metricId: integer("metric_id").references(() => metrics.id),
-  value: text("value").notNull(),
-  recordedAt: timestamp("recorded_at").defaultNow(),
-  period: text("period").notNull(), // daily, weekly, monthly, quarterly
-});
+// Metric history table removed - now tenant-specific in analytics_company_{id}.metric_history
 
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
@@ -208,24 +155,45 @@ export const insertSqlModelSchema = createInsertSchema(sqlModels).omit({
   deployedAt: true,
 });
 
-export const insertMetricSchema = createInsertSchema(metrics).omit({
-  id: true,
-  lastCalculatedAt: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial({
-  companyId: true,
-}).extend({
+// Custom validation schemas for tenant-specific tables
+export const insertMetricSchema = z.object({
   companyId: z.number().optional(),
+  metricKey: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  sourceTable: z.string(),
+  exprSql: z.string(),
+  filters: z.any().optional(),
+  dateColumn: z.string().default("created_at"),
+  category: z.string().default("revenue"),
+  format: z.string().default("currency").optional(),
+  unit: z.string().default("count").optional(),
+  yearlyGoal: z.string().optional(),
+  quarterlyGoals: z.any().optional(),
+  monthlyGoals: z.any().optional(),
+  goalType: z.string().default("yearly").optional(),
+  isIncreasing: z.boolean().default(true).optional(),
+  isNorthStar: z.boolean().default(false).optional(),
+  useCalculatedField: z.boolean().default(false).optional(),
+  calculationType: z.string().optional(),
+  dateFromColumn: z.string().optional(),
+  dateToColumn: z.string().optional(),
+  timeUnit: z.string().optional(),
+  conditionalField: z.string().optional(),
+  conditionalOperator: z.string().optional(),
+  conditionalValue: z.string().optional(),
+  convertToNumber: z.boolean().default(false).optional(),
+  handleNulls: z.boolean().default(true).optional(),
+  tags: z.array(z.string()).optional(),
+  priority: z.number().default(1).optional(),
+  isActive: z.boolean().default(true).optional(),
 });
 
-export const insertMetricHistorySchema = createInsertSchema(metricHistory).omit({
-  id: true,
-  recordedAt: true,
-}).partial({
-  companyId: true,
-}).extend({
+export const insertMetricHistorySchema = z.object({
   companyId: z.number().optional(),
+  metricId: z.number(),
+  value: z.string(),
+  period: z.string(),
 });
 
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
@@ -307,26 +275,65 @@ export const insertUserSchema = createInsertSchema(users).pick({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
 // Metric Registry and Goals Tables
-export const goals = pgTable("goals", {
-  id: serial("id").primaryKey(),
-  tenantId: bigint("tenant_id", { mode: "number" }).references(() => companies.id).notNull(),
-  metricKey: text("metric_key").notNull(),
-  granularity: text("granularity").notNull(), // 'month', 'quarter', 'year'
-  periodStart: text("period_start").notNull(), // date string
-  target: numeric("target").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+// Goals table removed - now tenant-specific in analytics_company_{id}.goals
 
 // metricRegistry table removed - consolidated into metrics table
 
-export const insertGoalSchema = createInsertSchema(goals).omit({
-  id: true,
-  createdAt: true,
-}).extend({
-  tenantId: z.number().optional(),
-});
+// Type definitions for tenant-specific tables (for reference)
+export type Metric = {
+  id: number;
+  companyId: number;
+  metricKey: string;
+  name: string;
+  description?: string;
+  sourceTable: string;
+  exprSql: string;
+  filters?: any;
+  dateColumn: string;
+  category: string;
+  format?: string;
+  unit?: string;
+  yearlyGoal?: string;
+  quarterlyGoals?: any;
+  monthlyGoals?: any;
+  goalType?: string;
+  isIncreasing?: boolean;
+  isNorthStar?: boolean;
+  useCalculatedField?: boolean;
+  calculationType?: string;
+  dateFromColumn?: string;
+  dateToColumn?: string;
+  timeUnit?: string;
+  conditionalField?: string;
+  conditionalOperator?: string;
+  conditionalValue?: string;
+  convertToNumber?: boolean;
+  handleNulls?: boolean;
+  tags?: string[];
+  priority?: number;
+  isActive?: boolean;
+  lastCalculatedAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
-// insertMetricRegistrySchema removed - consolidated into insertMetricSchema
+export type Goal = {
+  id: number;
+  metricKey: string;
+  granularity: string;
+  periodStart: string;
+  target: number;
+  createdAt?: Date;
+};
+
+export type MetricHistory = {
+  id: number;
+  companyId: number;
+  metricId: number;
+  value: string;
+  recordedAt?: Date;
+  period: string;
+};
 
 // Schema validation for new tables
 export const insertPermissionSchema = createInsertSchema(permissions).omit({

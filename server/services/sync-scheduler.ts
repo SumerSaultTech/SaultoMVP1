@@ -245,17 +245,17 @@ class SyncScheduler {
    * Only runs daily period to avoid interfering with quarterly/yearly accumulation
    */
   private async runDailyETLForCompany(companyId: number): Promise<void> {
-    // Only run daily ETL to avoid interference with quarterly/yearly running sums
-    // Quarterly and yearly ETL should be run separately when needed
-    const result = await this.etlService.runETLJob({
-      companyId: companyId,
-      periodType: 'daily',
-      forceRefresh: true
-    });
-    
+    // Use the new simplified daily metric_history ETL function
+    const postgres = new PostgresAnalyticsService();
+
+    const query = `SELECT populate_daily_metric_history(${companyId}, CURRENT_DATE) as result`;
+    const result = await postgres.executeQuery(query, companyId);
+
     if (!result.success) {
-      throw new Error(`Daily ETL failed: ${result.message}`);
+      throw new Error(`Daily metric history ETL failed: ${result.error || 'Unknown error'}`);
     }
+
+    console.log(`📊 Daily ETL result for company ${companyId}: ${result.data?.[0]?.result || 'Success'}`);
   }
 
   /**
