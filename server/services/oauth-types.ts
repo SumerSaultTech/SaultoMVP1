@@ -112,8 +112,14 @@ export const SERVICE_CONFIGS = {
   },
   activecampaign: {
     authorizationUrl: '', // Not used - API key authentication
-    tokenUrl: '', // Not used - API key authentication  
+    tokenUrl: '', // Not used - API key authentication
     apiBaseUrl: '', // Dynamic - user provides their API URL
     rateLimit: { requestsPerSecond: 5, maxRetries: 3 }
+  },
+  mailchimp: {
+    authorizationUrl: 'https://login.mailchimp.com/oauth2/authorize',
+    tokenUrl: 'https://login.mailchimp.com/oauth2/token',
+    apiBaseUrl: '', // Dynamic - determined from metadata endpoint after OAuth
+    rateLimit: { requestsPerSecond: 10, maxRetries: 3 }
   }
 } as const;
