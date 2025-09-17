@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CredentialDialog } from "@/components/ui/credential-dialog";
-import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle, Building2 } from "lucide-react";
+import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle, Building2, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
@@ -488,11 +488,13 @@ export default function Setup() {
   const [odooDatabase, setOdooDatabase] = useState("");
   const [odooUsername, setOdooUsername] = useState("");
   const [odooApiKey, setOdooApiKey] = useState("");
+  const [showOdooApiKey, setShowOdooApiKey] = useState(false);
 
   // ActiveCampaign setup dialog state
   const [activeCampaignSetupDialogOpen, setActiveCampaignSetupDialogOpen] = useState(false);
   const [activeCampaignApiUrl, setActiveCampaignApiUrl] = useState("");
   const [activeCampaignApiKey, setActiveCampaignApiKey] = useState("");
+  const [showActiveCampaignApiKey, setShowActiveCampaignApiKey] = useState(false);
 
   const { toast } = useToast();
 
@@ -1136,6 +1138,7 @@ export default function Setup() {
       setOdooDatabase("");
       setOdooUsername("");
       setOdooApiKey("");
+      setShowOdooApiKey(false);
 
       // Add odoo to completed logins (same pattern as OAuth flows)
       setCompletedLogins([...completedLogins, "odoo"]);
@@ -1208,6 +1211,7 @@ export default function Setup() {
       // Clear form
       setActiveCampaignApiUrl("");
       setActiveCampaignApiKey("");
+      setShowActiveCampaignApiKey(false);
 
       // Add ActiveCampaign to completed logins (same pattern as other integrations)
       setCompletedLogins([...completedLogins, "activecampaign"]);
@@ -3150,13 +3154,24 @@ export default function Setup() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="odooApiKey">API Key</Label>
-                  <Input
-                    id="odooApiKey"
-                    type="password"
-                    placeholder="Your Odoo API Key"
-                    value={odooApiKey}
-                    onChange={(e) => setOdooApiKey(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="odooApiKey"
+                      type={showOdooApiKey ? "text" : "password"}
+                      placeholder="Your Odoo API Key"
+                      value={odooApiKey}
+                      onChange={(e) => setOdooApiKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOdooApiKey(!showOdooApiKey)}
+                      className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none"
+                      aria-label={showOdooApiKey ? "Hide API key" : "Show API key"}
+                    >
+                      {showOdooApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-sm text-gray-700">
@@ -3177,6 +3192,7 @@ export default function Setup() {
                 setOdooDatabase("");
                 setOdooUsername("");
                 setOdooApiKey("");
+                setShowOdooApiKey(false);
               }}
             >
               Cancel
@@ -3246,13 +3262,24 @@ export default function Setup() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="activeCampaignApiKey">API Key</Label>
-                  <Input
-                    id="activeCampaignApiKey"
-                    type="password"
-                    placeholder="Your ActiveCampaign API Key"
-                    value={activeCampaignApiKey}
-                    onChange={(e) => setActiveCampaignApiKey(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="activeCampaignApiKey"
+                      type={showActiveCampaignApiKey ? "text" : "password"}
+                      placeholder="Your ActiveCampaign API Key"
+                      value={activeCampaignApiKey}
+                      onChange={(e) => setActiveCampaignApiKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowActiveCampaignApiKey(!showActiveCampaignApiKey)}
+                      className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none"
+                      aria-label={showActiveCampaignApiKey ? "Hide API key" : "Show API key"}
+                    >
+                      {showActiveCampaignApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-sm text-gray-700">
@@ -3272,6 +3299,7 @@ export default function Setup() {
                 setActiveCampaignSetupDialogOpen(false);
                 setActiveCampaignApiUrl("");
                 setActiveCampaignApiKey("");
+                setShowActiveCampaignApiKey(false);
               }}
             >
               Cancel

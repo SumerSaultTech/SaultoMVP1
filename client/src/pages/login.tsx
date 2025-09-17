@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Database, Lock, User, AlertCircle } from "lucide-react";
+import { Database, Lock, User, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function Login() {
@@ -14,6 +14,7 @@ export default function Login() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +27,7 @@ export default function Login() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           username: credentials.username,
           password: credentials.password,
@@ -33,6 +35,7 @@ export default function Login() {
       });
 
       const data = await response.json();
+      console.log("Login response:", { status: response.status, ok: response.ok, data });
 
       if (!response.ok) {
         setError(data.message || "Login failed");
@@ -119,13 +122,21 @@ export default function Login() {
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
                     value={credentials.password}
                     onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
-                    className="pl-10"
+                    className="pl-10 pr-10"
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -133,6 +144,15 @@ export default function Login() {
                 {isLoading ? "Signing In..." : "Sign In"}
               </Button>
             </form>
+
+            <div className="mt-6 text-center">
+              <a
+                href="/forgot-password"
+                className="text-sm text-primary hover:underline"
+              >
+                Forgot your password?
+              </a>
+            </div>
 
           </CardContent>
         </Card>

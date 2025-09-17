@@ -35,6 +35,10 @@ import { MetricsTimeSeriesETL } from "./services/metrics-time-series-etl";
 // Force server reload to initialize sync scheduler
 import { mfaService } from "./services/mfa-service";
 import { MetricsSeriesService } from "./services/metrics-series.js";
+import { sessionManagementService, createSessionMiddleware } from "./services/session-management";
+import { accountSecurityService } from "./services/account-security";
+import { emailService } from "./services/email-service";
+import bcrypt from "bcryptjs";
 
 
 // File upload configuration
@@ -124,10 +128,17 @@ const companiesArray: any[] = [
 ];
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
   // Initialize services
   const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
-  
+
+  // Initialize security services with database connection
+  (sessionManagementService as any).db = storage.db;
+  (accountSecurityService as any).db = storage.db;
+
+  // Add session security middleware
+  app.use(createSessionMiddleware(sessionManagementService));
+
   // Ensure sync scheduler is started
   console.log('🔧 Initializing sync scheduler...');
   // Force the module to execute by referencing the syncScheduler
@@ -147,9 +158,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }));
 
-  // Add tenant validation middleware for multi-tenant security
-  app.use('/api', validateTenantAccess);
+  // Add tenant validation middleware for multi-tenant security (except admin routes)
+  app.use('/api', (req, res, next) => {
+    console.log(`🔍 Checking route: ${req.path} for tenant validation bypass`);
+
+    // Skip tenant validation for these routes
+    if (req.path.startsWith('/admin') ||
+        req.path.includes('/admin/') ||
+        req.path.startsWith('/auth') ||
+        req.path.startsWith('/health') ||
+        req.path.startsWith('/test-post') ||
+        req.path.startsWith('/companies')) {
+      console.log(`🔧 Bypassing tenant validation for route: ${req.path}`);
+      return next();
+    }
+
+    console.log(`📋 Applying tenant validation to: ${req.path}`);
+    return validateTenantAccess(req, res, next);
+  });
   
+  // Simple test endpoint to verify browser requests work
+  app.post("/api/test-post", (req, res) => {
+    console.log("🧪 Test POST request received:", {
+      body: req.body,
+      headers: req.headers,
+      sessionId: req.sessionID
+    });
+    res.json({ success: true, message: "Test POST endpoint working", receivedBody: req.body });
+  });
+
+  // Debug endpoint to get last login error
+  app.get("/api/debug/last-error", (req, res) => {
+    res.json(global.lastLoginError || { message: "No recent login errors" });
+  });
+
   // Health check endpoint with service status
   app.get("/api/health", async (req, res) => {
     const health = {
@@ -1337,30 +1379,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Authentication
   app.post("/api/auth/login", async (req, res) => {
-    console.log("🔑 Login attempt started:", { username: req.body.username, hasPassword: !!req.body.password });
+    let user; // Declare outside try block for catch block access
+    console.log("🔑 Login attempt started:", {
+      username: req.body.username,
+      hasPassword: !!req.body.password,
+      userAgent: req.get('User-Agent'),
+      origin: req.get('Origin'),
+      sessionId: req.sessionID
+    });
     try {
       const { username, password } = req.body;
-      
+
       if (!username || !password) {
         return res.status(400).json({ message: "Username and password are required" });
       }
 
       // Get user by username
-      const user = await storage.getUserByUsername(username);
-      
+      user = await storage.getUserByUsername(username);
+
       if (!user) {
+        // Don't leak information about whether user exists
         return res.status(401).json({ message: "Invalid username or password" });
       }
 
-      // For now, we'll do a simple password check (in production, use bcrypt)
-      if (user.password !== password) {
-        return res.status(401).json({ message: "Invalid username or password" });
+      // Check if account is locked
+      const lockStatus = await accountSecurityService.isAccountLocked(user.id);
+      if (lockStatus.locked) {
+        const remainingMinutes = Math.ceil((lockStatus.remainingTime || 0) / (1000 * 60));
+        return res.status(423).json({
+          message: `Account is locked due to too many failed login attempts. Please try again in ${remainingMinutes} minutes.`,
+          accountLocked: true,
+          remainingTime: remainingMinutes
+        });
       }
 
-      // Check if user has admin permissions (replaces simple email check)
+      // Verify password with bcrypt
+      const passwordValid = await bcrypt.compare(password, user.password);
+
+      if (!passwordValid) {
+        // Record failed login attempt
+        const attemptResult = await accountSecurityService.recordFailedLogin(user.id);
+
+        if (attemptResult.shouldLock) {
+          return res.status(423).json({
+            message: "Account has been locked due to too many failed login attempts. Please try again in 30 minutes.",
+            accountLocked: true
+          });
+        }
+
+        return res.status(401).json({
+          message: "Invalid username or password",
+          attemptsRemaining: attemptResult.attemptsRemaining
+        });
+      }
+
+      // Check if password change is required
+      if (user.mustChangePassword) {
+        return res.status(200).json({
+          success: false,
+          requiresPasswordChange: true,
+          message: "You must change your password before continuing"
+        });
+      }
+
+      // Record successful login
+      console.log('🔄 Recording successful login...');
+      await accountSecurityService.recordSuccessfulLogin(user.id);
+
+      // Create session in database
+      console.log('🔄 Creating session in database...');
+      await sessionManagementService.createSession({
+        userId: user.id,
+        sessionId: req.sessionID,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      // Check if user has admin permissions
+      console.log('🔄 Getting user permissions...');
       const userPermissions = await rbacService.getUserPermissions(user.id);
       const isAdmin = userPermissions.includes(PERMISSIONS.ADMIN_PANEL);
-      
+
       // Set user in session
       req.session!.user = {
         id: user.id,
@@ -1372,12 +1471,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         permissions: userPermissions
       };
 
-      // Update last login time
-      await storage.updateUser(user.id, { lastLoginAt: new Date() });
-
       // Check if MFA is enabled for this user
       const mfaEnabled = await mfaService.isMFAEnabled(user.id);
-      
+
       // For admin users, ALWAYS clear any existing company selection - they must choose
       // For regular users, set their company automatically for tenant isolation
       if (isAdmin) {
@@ -1399,10 +1495,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await rbacService.logAction({
         userId: user.id,
         action: 'auth.login',
-        details: { 
-          isAdmin, 
+        details: {
+          isAdmin,
           mfaEnabled,
-          userAgent: req.get('User-Agent')
+          userAgent: req.get('User-Agent'),
+          ipAddress: req.ip,
+          sessionId: req.sessionID
         },
         req,
       });
@@ -1425,22 +1523,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
     } catch (error) {
-      console.error('❌ Login error:', error);
-      res.status(500).json({ message: "Login failed" });
+      const errorDetails = {
+        message: error.message,
+        stack: error.stack,
+        username: req.body.username,
+        userFound: !!user,
+        userId: user?.id,
+        sessionId: req.sessionID,
+        userAgent: req.get('User-Agent'),
+        origin: req.get('Origin')
+      };
+      console.error('❌ Login error details:', errorDetails);
+
+      // Store error in global for debugging
+      global.lastLoginError = errorDetails;
+
+      res.status(500).json({
+        message: "Login failed",
+        error: error.message,
+        debugId: Date.now()
+      });
     }
   });
 
   app.post("/api/auth/logout", async (req, res) => {
     const userId = (req.session as any)?.user?.id;
     const selectedCompany = (req.session as any)?.selectedCompany;
-    
+    const sessionId = req.sessionID;
+
     // Log logout action if we have user info
     if (userId) {
       try {
         await rbacService.logAction({
           userId,
           action: 'auth.logout',
-          details: { 
+          details: {
             hadCompanySelected: !!selectedCompany,
             companyName: selectedCompany?.name
           },
@@ -1450,7 +1567,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Failed to log logout action:', error);
       }
     }
-    
+
+    // Clean up session in database
+    if (sessionId) {
+      try {
+        await sessionManagementService.destroySession(sessionId);
+      } catch (error) {
+        console.error('Failed to clean up session in database:', error);
+      }
+    }
+
     req.session?.destroy((err) => {
       if (err) {
         console.error('❌ Logout error:', err);
@@ -1461,7 +1587,745 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  
+  // Password Reset Endpoints
+  app.post("/api/auth/password-reset/request", async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Find user by email
+      const user = await storage.getUserByEmail(email);
+
+      if (!user) {
+        // Don't reveal whether email exists or not for security
+        return res.json({
+          success: true,
+          message: "If an account with that email exists, you will receive a password reset link."
+        });
+      }
+
+      // Generate reset token
+      const { token } = await accountSecurityService.generatePasswordResetToken(user.id);
+
+      // Send password reset email
+      const resetLink = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${token}`;
+
+      const emailSent = await emailService.sendPasswordResetEmail(email, {
+        firstName: user.firstName || user.username,
+        resetLink,
+        expirationTime: '30 minutes' // Match token expiration time
+      });
+
+      if (!emailSent && emailService.isEnabled()) {
+        console.error(`❌ Failed to send password reset email to ${email}`);
+        // Don't reveal failure to user for security
+      }
+
+      // Log token for development/debugging (remove in production)
+      if (!emailService.isEnabled()) {
+        console.log(`🔑 Password reset token for ${email}: ${token}`);
+        console.log(`🔗 Reset link: ${resetLink}`);
+      }
+
+      // Log password reset request
+      await rbacService.logAction({
+        userId: user.id,
+        action: 'auth.password_reset_request',
+        details: { email },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "If an account with that email exists, you will receive a password reset link."
+      });
+
+    } catch (error) {
+      console.error('❌ Password reset request error:', error);
+      res.status(500).json({ message: "Failed to process password reset request" });
+    }
+  });
+
+  app.post("/api/auth/password-reset/verify", async (req, res) => {
+    try {
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({ message: "Reset token is required" });
+      }
+
+      const verification = await accountSecurityService.verifyPasswordResetToken(token);
+
+      if (!verification.valid) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired reset token"
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Token is valid"
+      });
+
+    } catch (error) {
+      console.error('❌ Password reset verify error:', error);
+      res.status(500).json({ message: "Failed to verify reset token" });
+    }
+  });
+
+  app.post("/api/auth/password-reset/complete", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+
+      const result = await accountSecurityService.resetPasswordWithToken({
+        token,
+        newPassword
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Password reset failed",
+          errors: result.errors
+        });
+      }
+
+      // Get user info for logging
+      const verification = await accountSecurityService.verifyPasswordResetToken(token);
+      if (verification.valid && verification.userId) {
+        await rbacService.logAction({
+          userId: verification.userId,
+          action: 'auth.password_reset_complete',
+          details: { resetViaToken: true },
+          req,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Password has been reset successfully. You can now log in with your new password."
+      });
+
+    } catch (error) {
+      console.error('❌ Password reset complete error:', error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Change password (for logged in users)
+  app.post("/api/auth/password-change", async (req, res) => {
+    try {
+      const userId = (req.session as any)?.user?.id;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current password and new password are required" });
+      }
+
+      const result = await accountSecurityService.changePassword({
+        userId,
+        newPassword,
+        currentPassword
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Password change failed",
+          errors: result.errors
+        });
+      }
+
+      // Destroy all other sessions for security
+      await sessionManagementService.destroyAllUserSessions(userId, req.sessionID);
+
+      // Log password change
+      await rbacService.logAction({
+        userId,
+        action: 'auth.password_change',
+        details: {
+          destroyedOtherSessions: true,
+          userInitiated: true
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "Password changed successfully. Other sessions have been logged out for security."
+      });
+
+    } catch (error) {
+      console.error('❌ Password change error:', error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  // Admin Security Management Endpoints
+  // Get user security status (admin only)
+  app.get("/api/admin/users/:userId/security", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const status = await accountSecurityService.getSecurityStatus(userId);
+
+      res.json({
+        success: true,
+        data: status
+      });
+
+    } catch (error) {
+      console.error('❌ Admin get user security status error:', error);
+      res.status(500).json({ message: "Failed to get user security status" });
+    }
+  });
+
+  // Unlock user account (admin only)
+  app.post("/api/admin/users/:userId/unlock", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      await accountSecurityService.unlockAccount(userId, adminId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.unlock_account',
+        resource: `user:${userId}`,
+        details: { targetUserId: userId },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "Account unlocked successfully"
+      });
+
+    } catch (error) {
+      console.error('❌ Admin unlock account error:', error);
+      res.status(500).json({ message: "Failed to unlock account" });
+    }
+  });
+
+  // Force password change for user (admin only)
+  app.post("/api/admin/users/:userId/force-password-change", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+      const { reason } = req.body;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      await accountSecurityService.requirePasswordChange(userId, reason);
+
+      // Destroy all user sessions to force re-authentication
+      await sessionManagementService.destroyAllUserSessions(userId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.force_password_change',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          reason: reason || 'Admin initiated'
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "User will be required to change password on next login"
+      });
+
+    } catch (error) {
+      console.error('❌ Admin force password change error:', error);
+      res.status(500).json({ message: "Failed to force password change" });
+    }
+  });
+
+  // Reset user password (admin only)
+  app.post("/api/admin/users/:userId/reset-password", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+      const { newPassword, temporaryPassword } = req.body;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      if (!newPassword) {
+        return res.status(400).json({ message: "New password is required" });
+      }
+
+      const result = await accountSecurityService.changePassword({
+        userId,
+        newPassword,
+        bypassCurrentCheck: true // Admin can reset without current password
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Password reset failed",
+          errors: result.errors
+        });
+      }
+
+      // If this is a temporary password, require change on next login
+      if (temporaryPassword) {
+        await accountSecurityService.requirePasswordChange(userId, 'Temporary password set by admin');
+      }
+
+      // Destroy all user sessions to force re-authentication
+      await sessionManagementService.destroyAllUserSessions(userId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.reset_password',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          temporaryPassword: !!temporaryPassword,
+          destroyedSessions: true
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: `Password reset successfully${temporaryPassword ? '. User will be required to change it on next login.' : '.'}`
+      });
+
+    } catch (error) {
+      console.error('❌ Admin reset password error:', error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Get all active sessions for a user (admin only)
+  app.get("/api/admin/users/:userId/sessions", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const sessions = await sessionManagementService.getUserSessions(userId);
+
+      res.json({
+        success: true,
+        data: sessions.map(session => ({
+          id: session.id,
+          sessionId: session.sessionId,
+          ipAddress: session.ipAddress,
+          userAgent: session.userAgent,
+          createdAt: session.createdAt,
+          lastActivity: session.lastActivity,
+          expiresAt: session.expiresAt
+        }))
+      });
+
+    } catch (error) {
+      console.error('❌ Admin get user sessions error:', error);
+      res.status(500).json({ message: "Failed to get user sessions" });
+    }
+  });
+
+  // Terminate specific user session (admin only)
+  app.delete("/api/admin/users/:userId/sessions/:sessionId", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const sessionId = req.params.sessionId;
+      const adminId = (req.session as any)?.user?.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      await sessionManagementService.destroySession(sessionId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.terminate_session',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          terminatedSessionId: sessionId
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "Session terminated successfully"
+      });
+
+    } catch (error) {
+      console.error('❌ Admin terminate session error:', error);
+      res.status(500).json({ message: "Failed to terminate session" });
+    }
+  });
+
+  // Terminate all user sessions (admin only)
+  app.delete("/api/admin/users/:userId/sessions", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const terminatedCount = await sessionManagementService.destroyAllUserSessions(userId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.terminate_all_sessions',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          terminatedSessionCount: terminatedCount
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: `Terminated ${terminatedCount} sessions`,
+        terminatedCount
+      });
+
+    } catch (error) {
+      console.error('❌ Admin terminate all sessions error:', error);
+      res.status(500).json({ message: "Failed to terminate sessions" });
+    }
+  });
+
+  // Get session statistics (admin only)
+  app.get("/api/admin/sessions/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await sessionManagementService.getSessionStats();
+
+      res.json({
+        success: true,
+        data: stats
+      });
+
+    } catch (error) {
+      console.error('❌ Admin get session stats error:', error);
+      res.status(500).json({ message: "Failed to get session statistics" });
+    }
+  });
+
+  // Create System Admin User (super admin only)
+  app.post("/api/admin/users/create-admin", requireAdmin, async (req, res) => {
+    try {
+      const currentUser = (req.session as any)?.user;
+      const { username, password, firstName, lastName, email, temporaryPassword = false } = req.body;
+
+      // Validate required fields
+      if (!username || !password || !firstName || !lastName || !email) {
+        return res.status(400).json({
+          message: "Username, password, first name, last name, and email are required"
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = accountSecurityService.validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: "Password does not meet requirements",
+          errors: passwordValidation.errors
+        });
+      }
+
+      // Check if username or email already exists
+      try {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({
+            message: "A user with this email already exists"
+          });
+        }
+      } catch (error) {
+        // User doesn't exist, which is what we want
+      }
+
+      // Hash the password with bcrypt
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create admin user (no company association for system admins)
+      const newAdmin = await storage.createUser({
+        username,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        email,
+        role: "admin",
+        status: "active",
+        companyId: null, // System admins don't belong to a specific company
+        mustChangePassword: temporaryPassword, // Force password change if it's temporary
+        passwordChangedAt: new Date(),
+      });
+
+      // If temporary password, require change on first login
+      if (temporaryPassword) {
+        await accountSecurityService.requirePasswordChange(
+          newAdmin.id,
+          'Temporary password set during admin creation'
+        );
+      }
+
+      // Log admin creation action
+      await rbacService.logAction({
+        userId: currentUser.id,
+        action: 'admin.create_admin_user',
+        resource: `user:${newAdmin.id}`,
+        details: {
+          createdUsername: username,
+          createdEmail: email,
+          createdRole: 'admin',
+          temporaryPassword: temporaryPassword
+        },
+        req,
+      });
+
+      // Send welcome email to new admin
+      try {
+        const loginLink = `${process.env.APP_URL || 'http://localhost:5000'}/login`;
+        await emailService.sendUserCreatedEmail(email, {
+          firstName,
+          lastName,
+          email,
+          username,
+          role: 'System Administrator',
+          tempPassword: temporaryPassword ? password : undefined,
+          loginLink
+        });
+        console.log(`📧 Welcome email sent to new admin: ${email}`);
+      } catch (emailError) {
+        console.error(`❌ Failed to send welcome email to ${email}:`, emailError);
+        // Don't fail the user creation if email fails
+      }
+
+      console.log(`👑 New admin user created: ${username} by ${currentUser.username}`);
+
+      // Return user without password
+      const { password: _, ...userResponse } = newAdmin;
+      res.status(201).json({
+        success: true,
+        message: `Admin user ${username} created successfully`,
+        user: userResponse
+      });
+
+    } catch (error) {
+      console.error('❌ Admin user creation failed:', error);
+      res.status(500).json({ message: "Failed to create admin user" });
+    }
+  });
+
+  // Create Regular User (admin only)
+  app.post("/api/admin/users/create", requireAdmin, async (req, res) => {
+    try {
+      const currentUser = (req.session as any)?.user;
+      const { username, password, firstName, lastName, email, role = "user", companyId, temporaryPassword = false } = req.body;
+
+      // Validate required fields
+      if (!username || !password || !firstName || !lastName || !email || !companyId) {
+        return res.status(400).json({
+          message: "Username, password, first name, last name, email, and company are required"
+        });
+      }
+
+      // Validate role
+      const validRoles = ["user", "viewer", "company_admin"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          message: `Invalid role. Must be one of: ${validRoles.join(", ")}`
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = accountSecurityService.validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: "Password does not meet requirements",
+          errors: passwordValidation.errors
+        });
+      }
+
+      // Check if username or email already exists
+      try {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({
+            message: "A user with this email already exists"
+          });
+        }
+      } catch (error) {
+        // User doesn't exist, which is what we want
+      }
+
+      // Hash the password with bcrypt
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create user
+      const newUser = await storage.createUser({
+        username,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        email,
+        role,
+        status: "active",
+        companyId: parseInt(companyId),
+        mustChangePassword: temporaryPassword,
+        passwordChangedAt: new Date(),
+      });
+
+      // If temporary password, require change on first login
+      if (temporaryPassword) {
+        await accountSecurityService.requirePasswordChange(
+          newUser.id,
+          'Temporary password set during user creation'
+        );
+      }
+
+      // Log user creation action
+      await rbacService.logAction({
+        userId: currentUser.id,
+        action: 'admin.create_user',
+        resource: `user:${newUser.id}`,
+        details: {
+          createdUsername: username,
+          createdEmail: email,
+          createdRole: role,
+          companyId: parseInt(companyId),
+          temporaryPassword: temporaryPassword
+        },
+        req,
+      });
+
+      // Get company information for the email
+      const company = await storage.getCompany(parseInt(companyId));
+      const companyName = company?.name || 'Your Company';
+
+      // Send welcome email to new user
+      try {
+        const loginLink = `${process.env.APP_URL || 'http://localhost:5000'}/login`;
+        await emailService.sendUserCreatedEmail(email, {
+          firstName,
+          lastName,
+          email,
+          username,
+          role,
+          companyName,
+          tempPassword: temporaryPassword ? password : undefined,
+          loginLink
+        });
+        console.log(`📧 Welcome email sent to new user: ${email}`);
+      } catch (emailError) {
+        console.error(`❌ Failed to send welcome email to ${email}:`, emailError);
+        // Don't fail the user creation if email fails
+      }
+
+      // Send notification to company admins
+      try {
+        const allUsers = await storage.getUsers();
+        const systemAdmins = allUsers.filter(user => user.role === 'admin');
+        const companyAdmins = allUsers.filter(user =>
+          user.companyId === parseInt(companyId) &&
+          (user.role === 'company_admin' || user.role === 'admin')
+        );
+        const allAdmins = [...systemAdmins, ...companyAdmins];
+
+        const adminEmails = allAdmins
+          .filter(admin => admin.email && admin.id !== newUser.id) // Don't notify self
+          .map(admin => admin.email)
+          .filter((email, index, arr) => arr.indexOf(email) === index); // Remove duplicates
+
+        if (adminEmails.length > 0) {
+          await emailService.sendAdminNotifications(adminEmails, {
+            newUserName: `${firstName} ${lastName}`,
+            newUserEmail: email,
+            newUserRole: role,
+            companyName,
+            createdBy: `${currentUser.firstName || currentUser.username} ${currentUser.lastName || ''}`
+          });
+          console.log(`📧 Admin notifications sent for new user: ${email}`);
+        }
+      } catch (emailError) {
+        console.error(`❌ Failed to send admin notifications for ${email}:`, emailError);
+        // Don't fail the user creation if email fails
+      }
+
+      console.log(`👤 New user created: ${username} (${role}) by ${currentUser.username}`);
+
+      // Return user without password
+      const { password: _, ...userResponse } = newUser;
+      res.status(201).json({
+        success: true,
+        message: `User ${username} created successfully`,
+        user: userResponse
+      });
+
+    } catch (error) {
+      console.error('❌ User creation failed:', error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  // List all users (admin only)
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const { role, companyId, status, page = 1, limit = 50 } = req.query;
+
+      // Note: This would need implementation in storage layer
+      // For now, return a placeholder response
+      res.json({
+        success: true,
+        message: "User listing endpoint - requires storage implementation",
+        filters: { role, companyId, status, page, limit }
+      });
+
+    } catch (error) {
+      console.error('❌ User listing failed:', error);
+      res.status(500).json({ message: "Failed to list users" });
+    }
+  });
+
+
   // Companies
   app.get("/api/companies", async (req, res) => {
     try {
