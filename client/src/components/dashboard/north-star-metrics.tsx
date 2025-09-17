@@ -189,16 +189,30 @@ export default function NorthStarMetrics() {
   const [northStarTimePeriod, setNorthStarTimePeriod] = useState("Monthly View");
 
   // Fetch real Snowflake dashboard metrics
-  const { data: dashboardMetrics, isLoading } = useQuery({
+  const { data: dashboardMetrics, isLoading, error: dashboardError } = useQuery({
     queryKey: ["/api/dashboard/metrics-data", northStarTimePeriod],
     queryFn: async () => {
       const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(northStarTimePeriod)}`);
+      const data = await response.json();
+
+      // Check if response indicates company selection is required
+      if (data.requiresCompanySelection || data.error?.includes('company selected')) {
+        throw new Error('COMPANY_SELECTION_REQUIRED');
+      }
+
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
-      return response.json();
+      return data;
     },
     refetchInterval: 30000,
+    retry: (failureCount, error) => {
+      // Don't retry if it's a company selection error
+      if (error?.message === 'COMPANY_SELECTION_REQUIRED') {
+        return false;
+      }
+      return failureCount < 3;
+    }
   });
 
   // Data source mapping for Snowflake metrics
@@ -352,6 +366,14 @@ export default function NorthStarMetrics() {
       progress: Math.round((currentYTD / goalYTD) * 100)
     };
   };
+
+  // Check for company selection errors
+  const requiresCompanySelection = dashboardError?.message === 'COMPANY_SELECTION_REQUIRED';
+
+  // Don't render anything if company selection is required (main component will handle this)
+  if (requiresCompanySelection) {
+    return null;
+  }
 
   // Don't render anything if no North Star metrics are defined
   if (northStarMetrics.length === 0 && !isLoading) {

@@ -179,25 +179,65 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const [timePeriod, setTimePeriod] = useState("Monthly View");
   
   // Fetch real Snowflake dashboard metrics
-  const { data: dashboardMetrics, isLoading: isDashboardLoading } = useQuery({
+  const { data: dashboardMetrics, isLoading: isDashboardLoading, error: dashboardError } = useQuery({
     queryKey: ["/api/dashboard/metrics-data", timePeriod],
     queryFn: async () => {
       const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(timePeriod)}`);
+      const data = await response.json();
+
+      // Check if response indicates company selection is required
+      if (data.requiresCompanySelection || data.error?.includes('company selected')) {
+        throw new Error('COMPANY_SELECTION_REQUIRED');
+      }
+
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
-      return response.json();
+      return data;
     },
     refetchInterval: 30000, // Refresh every 30 seconds
+    retry: (failureCount, error) => {
+      // Don't retry if it's a company selection error
+      if (error?.message === 'COMPANY_SELECTION_REQUIRED') {
+        return false;
+      }
+      return failureCount < 3;
+    }
   });
 
   // Also fetch configured KPI metrics for additional display
-  const { data: kpiMetrics, isLoading: isKpiLoading } = useQuery({
+  const { data: kpiMetrics, isLoading: isKpiLoading, error: kpiError } = useQuery({
     queryKey: ["/api/kpi-metrics"],
+    queryFn: async () => {
+      const response = await fetch('/api/kpi-metrics');
+      const data = await response.json();
+
+      // Check if response indicates company selection is required
+      if (data.requiresCompanySelection || data.error?.includes('company selected')) {
+        throw new Error('COMPANY_SELECTION_REQUIRED');
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch KPI metrics');
+      }
+      return data;
+    },
+    retry: (failureCount, error) => {
+      // Don't retry if it's a company selection error
+      if (error?.message === 'COMPANY_SELECTION_REQUIRED') {
+        return false;
+      }
+      return failureCount < 3;
+    }
   });
 
   const isLoading = isDashboardLoading || isKpiLoading;
-  
+
+  // Check for company selection errors
+  const requiresCompanySelection =
+    (dashboardError?.message === 'COMPANY_SELECTION_REQUIRED') ||
+    (kpiError?.message === 'COMPANY_SELECTION_REQUIRED');
+
   // Merge real dashboard data with KPI metrics structure
   const metrics = (() => {
     if (!kpiMetrics || !Array.isArray(kpiMetrics) || kpiMetrics.length === 0) {
@@ -556,9 +596,32 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   }, {});
 
   // Calculate overall performance
-  const overallProgress = metrics.length > 0 ? 
-    Math.round(metrics.reduce((sum: number, metric: any) => 
+  const overallProgress = metrics.length > 0 ?
+    Math.round(metrics.reduce((sum: number, metric: any) =>
       sum + parseFloat(metric.goalProgress || "0"), 0) / metrics.length) : 0;
+
+  // Handle company selection required error
+  if (requiresCompanySelection) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <div className="mx-auto max-w-md">
+            <Database className="mx-auto h-12 w-12 text-yellow-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Company Selection Required
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Please select a company to view business metrics. You need to be logged in and have a company selected to access your dashboard data.
+            </p>
+            <Button onClick={() => window.location.href = '/company-selection'} className="bg-primary hover:bg-primary/90">
+              <Database className="h-4 w-4 mr-2" />
+              Select Company
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
