@@ -2986,7 +2986,7 @@ Convert the user request into the appropriate filter structure:
           format: metric.format,
           yearlyGoal: metric.yearlyGoal,
           isIncreasing: metric.isIncreasing,
-          sqlQuery: metric.sqlQuery,
+          sqlQuery: metric.exprSql,
           currentValue: null,
           goalProgress: null,
           changePercent: null,
@@ -2994,14 +2994,14 @@ Convert the user request into the appropriate filter structure:
         };
         
         // Calculate real metric value if SQL query exists
-        if (metric.sqlQuery) {
+        if (metric.exprSql) {
           try {
             const result = await postgresAnalyticsService.calculateMetric(
-              metric.name, 
-              companyId, 
-              timePeriod, 
-              metric.id, 
-              metric.sqlQuery
+              metric.name,
+              companyId,
+              timePeriod,
+              metric.id,
+              metric.exprSql
             );
             
             if (result) {
@@ -3155,9 +3155,85 @@ Annual forecast: ${yearlyProjection.toLocaleString()}. ${progress > 50 ? 'Expect
         return res.status(404).json({ message: "Report not found" });
       }
       
-      // Get report data first
-      const reportDataResponse = await fetch(`http://localhost:${process.env.PORT || 5000}/api/metric-reports/${reportId}/data?timePeriod=${timePeriod}`);
-      const reportData = await reportDataResponse.json();
+      // Get report data directly (avoid internal HTTP call that loses session context)
+      // Get all metrics to build metric lookup
+      const allMetrics = await storage.getKpiMetrics(companyId);
+      const metricsMap = new Map(allMetrics.map(m => [m.id, m]));
+
+      // Calculate data for selected metrics
+      const reportData = {
+        report,
+        timePeriod,
+        generatedAt: new Date().toISOString(),
+        metrics: [],
+        summary: {
+          totalMetrics: 0,
+          calculatedMetrics: 0,
+          failedMetrics: 0,
+        }
+      };
+
+      // Process each selected metric (reuse logic from data endpoint)
+      for (const metricId of (report.selectedMetrics as number[] || [])) {
+        const metric = metricsMap.get(metricId);
+        if (!metric) continue;
+
+        reportData.summary.totalMetrics++;
+
+        let metricData = {
+          id: metric.id,
+          name: metric.name,
+          description: metric.description,
+          category: metric.category,
+          format: metric.format,
+          yearlyGoal: metric.yearlyGoal,
+          isIncreasing: metric.isIncreasing,
+          sqlQuery: metric.exprSql,
+          currentValue: null,
+          goalProgress: null,
+          changePercent: null,
+          status: 'pending' as 'success' | 'error' | 'pending'
+        };
+
+        // Calculate real metric value if SQL query exists
+        if (metric.exprSql) {
+          try {
+            const result = await postgresAnalyticsService.calculateMetric(
+              metric.name,
+              companyId,
+              timePeriod,
+              metric.id,
+              metric.exprSql
+            );
+
+            if (result) {
+              metricData.currentValue = result.currentValue;
+
+              // Calculate goal progress
+              if (metric.yearlyGoal && parseFloat(metric.yearlyGoal) > 0) {
+                const yearlyGoal = parseFloat(metric.yearlyGoal);
+                const currentValue = result.currentValue || 0;
+                metricData.goalProgress = (currentValue / yearlyGoal) * 100;
+              }
+
+              metricData.status = 'success';
+              reportData.summary.calculatedMetrics++;
+            } else {
+              metricData.status = 'error';
+              reportData.summary.failedMetrics++;
+            }
+          } catch (error) {
+            console.error(`Error calculating metric ${metric.name}:`, error);
+            metricData.status = 'error';
+            reportData.summary.failedMetrics++;
+          }
+        } else {
+          metricData.status = 'error';
+          reportData.summary.failedMetrics++;
+        }
+
+        reportData.metrics.push(metricData);
+      }
       
       if (!reportData || !reportData.metrics) {
         return res.status(400).json({ message: "Unable to generate insights - no metric data available" });

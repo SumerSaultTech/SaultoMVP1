@@ -84,8 +84,25 @@ export class PostgresAnalyticsService {
       if (!sqlQuery) {
         sqlQuery = this.getSQLTemplate(metricName, companyId, timePeriod);
       } else {
-        // Replace {companyId} placeholder in custom SQL
-        sqlQuery = sqlQuery.replace(/{companyId}/g, companyId.toString());
+        // If customSQL is just an expression (like "COALESCE(sum(story_points), 0)"),
+        // build a complete query for metric reports
+        if (customSQL && !customSQL.toLowerCase().includes('select')) {
+          // This is just an expression, build a complete query
+          const schemaName = `analytics_company_${companyId}`;
+          const sourceTable = `${schemaName}.core_jira_issues`; // Default for Jira metrics
+          const dateColumn = 'resolved_at'; // Default date column
+
+          // Build complete query for current period
+          sqlQuery = `
+            SELECT ${customSQL} as metric_value
+            FROM ${sourceTable}
+            WHERE DATE(${dateColumn}) >= DATE_TRUNC('month', CURRENT_DATE)
+              AND DATE(${dateColumn}) < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
+          `;
+        } else {
+          // Replace {companyId} placeholder in full custom SQL
+          sqlQuery = sqlQuery.replace(/{companyId}/g, companyId.toString());
+        }
       }
 
       if (!sqlQuery) {
