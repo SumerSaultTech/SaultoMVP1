@@ -22,6 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `python quick_start_connectors.py` - Fast connector service startup
 - `python test_jira_connector.py` - Test Jira connector specifically
 - `python test_python_connectors.py` - Test all Python connectors
+- `python scripts/smoke_mailchimp.py` - Test Mailchimp OAuth integration
 
 ### Service Health & Monitoring
 - Visit `/api/health` - Real-time status of all services (Node.js, connectors)
@@ -303,9 +304,13 @@ AZURE_OPENAI_KEY=your-azure-openai-key
 AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
 OPENAI_API_KEY=sk-...  # Fallback if Azure unavailable
 
-# OAuth Integration  
+# OAuth Integration
 JIRA_OAUTH_CLIENT_ID=your_jira_client_id
 JIRA_OAUTH_CLIENT_SECRET=your_jira_client_secret
+HUBSPOT_OAUTH_CLIENT_ID=your_hubspot_client_id
+HUBSPOT_OAUTH_CLIENT_SECRET=your_hubspot_client_secret
+MAILCHIMP_OAUTH_CLIENT_ID=your_mailchimp_client_id
+MAILCHIMP_OAUTH_CLIENT_SECRET=your_mailchimp_client_secret
 APP_URL=http://localhost:5000  # For OAuth redirect URIs
 
 # Application
