@@ -23,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `python test_jira_connector.py` - Test Jira connector specifically
 - `python test_python_connectors.py` - Test all Python connectors
 - `python scripts/smoke_mailchimp.py` - Test Mailchimp OAuth integration
+- `python scripts/smoke_monday.py` - Test Monday.com OAuth/GraphQL integration
 
 ### Service Health & Monitoring
 - Visit `/api/health` - Real-time status of all services (Node.js, connectors)
@@ -311,6 +312,8 @@ HUBSPOT_OAUTH_CLIENT_ID=your_hubspot_client_id
 HUBSPOT_OAUTH_CLIENT_SECRET=your_hubspot_client_secret
 MAILCHIMP_OAUTH_CLIENT_ID=your_mailchimp_client_id
 MAILCHIMP_OAUTH_CLIENT_SECRET=your_mailchimp_client_secret
+MONDAY_OAUTH_CLIENT_ID=your_monday_client_id
+MONDAY_OAUTH_CLIENT_SECRET=your_monday_client_secret
 APP_URL=http://localhost:5000  # For OAuth redirect URIs
 
 # Application
