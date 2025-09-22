@@ -1573,6 +1573,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: company.name,
         slug: company.slug
       };
+      // Backward compatibility: also set companyId for routes that read req.session.companyId
+      (req.session as any).companyId = company.id;
       
       console.log(`✅ Company selected: ${company.name} (ID: ${company.id})`);
       res.json({ 
@@ -1590,6 +1592,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current session info including selected company
   app.get("/api/session", async (req, res) => {
     try {
+      console.log("Getting session info...");
       res.json({
         selectedCompany: req.session?.selectedCompany || null,
         user: req.session?.user || null
@@ -3851,12 +3854,24 @@ CRITICAL REQUIREMENTS:
   // Pipeline Activities
   app.get("/api/pipeline-activities", async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      console.log("📊 Getting pipeline activities...");
+      // Use standardized helper to validate/get company context
+      let companyId: number | null = null;
+      try {
+        companyId = getValidatedCompanyId(req);
+      } catch (e) {
+        // Fallback to legacy session key if helper throws
+        companyId = (req.session as any)?.companyId || (req.session as any)?.selectedCompany?.id || null;
+      }
+      console.log("Company ID resolved for /api/pipeline-activities:", companyId);
       if (!companyId) {
+        console.warn("No company ID found in session or request context");
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const activities = await storage.getPipelineActivities(companyId, limit);
+      // Prevent caching so clients don't get 304 with stale/empty payloads in dev
+      res.set('Cache-Control', 'no-store');
       res.json(activities);
     } catch (error) {
       res.status(500).json({ message: "Failed to get pipeline activities" });
