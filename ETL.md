@@ -5,14 +5,19 @@ Precompute and store compact, uniform time-series data per tenant so charts rend
 
 ## Key Components (code references)
 - **ETL Service**: `server/services/metrics-time-series-etl.ts`
-  - `populatePeriod(companyId, periodType, startDate, endDate)` executes:
+  - Public method: `runETLJob({ companyId, periodType, forceRefresh })`
+  - Under the hood, it executes:
     - `SELECT populate_company_metrics_time_series(companyId, periodType, startDate, endDate)`
   - The heavy lifting (aggregation/upserts) is implemented in the Postgres function.
 
-- **Scheduler**: `server/services/sync-scheduler.ts`
-  - Checks every minute (`checkInterval = 60000` ms).
-  - Sets 15-minute schedules per connector and runs a daily ETL after successful syncs.
-  - We will extend it to also run time-series ETL on a cadence (e.g., every 15 minutes) per company/period.
+- **Schedulers**:
+  - Connector Scheduler: `server/services/sync-scheduler.ts`
+    - Checks every minute (`checkInterval = 60000` ms).
+    - Sets 15-minute connector sync schedules and, after a successful sync, runs a daily ETL via `populate_daily_metric_history`.
+  - ETL Scheduler (IMPLEMENTED): `server/services/etl-scheduler.ts`
+    - Separate in-process scheduler dedicated to metrics time-series ETL.
+    - Checks every minute and runs time-series ETL jobs every 15 minutes by default, independent of connector syncs.
+    - Uses `MetricsTimeSeriesETL.runETLJob()` with a monthly window (start of month to today). Weekly/quarterly/yearly are supported if configured.
 
 - **API Trigger Endpoints**: `server/routes.ts`
   - `POST /api/company/metrics-series/etl` — triggers ETL for selected company and `period_type`.
@@ -34,13 +39,22 @@ Precompute and store compact, uniform time-series data per tenant so charts rend
 
 ETL is idempotent: re-running upserts/overwrites the same time buckets, so frequent runs are safe.
 
-## Scheduling Strategy
-- Base loop runs every minute in `SyncScheduler`.
-- Each company/connector has a 15-minute schedule by default; on successful sync, a daily ETL is run.
-- Enhancement (to implement): add an ETL schedule independent of connector syncs:
-  - Maintain `scheduledEtls` with `{ companyId, periods: string[], interval: number, lastRunAt, nextRunAt, enabled }`.
-  - On each minute tick, run due ETL jobs for configured periods (e.g., `monthly`).
-  - Default: add `addScheduledEtl(company.id, ['monthly'], 15)` for all companies.
+## Scheduling Strategy (Implemented)
+- Base loop runs every minute in the new `EtlScheduler` (`server/services/etl-scheduler.ts`).
+- Each company is given a 15-minute ETL schedule by default with periods `['monthly']`.
+- For each due job, `runETLJob({ companyId, periodType, forceRefresh: true })` is invoked.
+- Default window per period type:
+  - monthly: `startOfMonth(..)`..`today`
+  - weekly: last 7 days (when enabled)
+  - quarterly: ~3 months back (can refine to `startOfQuarter`..`today`)
+  - yearly: Jan 1 of current year..`today`
+- Connector `SyncScheduler` still runs independently and triggers a separate daily ETL after connector syncs.
+
+## Wiring
+- `server/services/etl-scheduler.ts` is imported in `server/routes.ts` alongside other services:
+  - `import { etlScheduler } from "./services/etl-scheduler";`
+- Inside `registerRoutes()`, we reference the instance to confirm initialization (similar to `syncScheduler`).
+  - This ensures the scheduler starts when the server boots during `npm run dev` or in production.
 
 ## Database Contract
 - Required function: `populate_company_metrics_time_series(bigint, text, date, date)`
@@ -66,15 +80,28 @@ ETL is idempotent: re-running upserts/overwrites the same time buckets, so frequ
 - Optional: write operational logs to `pipeline_activities` for visibility in `/api/pipeline-activities`.
 - Return metrics to status endpoint for UI display (last run time, last success/failure).
 
+### Sample logs
+- `🚀 Starting ETL scheduler...`
+- `✅ ETL scheduler started - checking every minute`
+- `✅ Loaded N scheduled ETL jobs (15-minute cadence)`
+- `🔄 Running scheduled ETL for company 123 (periods: monthly)`
+- `✅ ETL completed for company 123 (monthly) — window 2025-09-01..2025-09-24`
+
 ## Local Dev / Testing
 1. Select a company (session-based) via UI or `POST /api/companies/select`.
 2. Trigger ETL manually: `POST /api/company/metrics-series/etl { period_type: 'monthly', force_refresh: true }`.
 3. Inspect schema: `GET /api/debug/tables/:companyId`.
 4. Load charts: `GET /api/company/metrics-series?period_type=monthly` and verify non-empty data.
 
+## Production considerations
+- Ensure only one instance runs the in-process scheduler:
+  - Option A: Deploy a single Node instance with `ENABLE_SCHEDULER=true`.
+  - Option B: Add leader election (e.g., Postgres advisory lock) if running multiple instances.
+  - Option C: Disable in-process scheduler and use infrastructure cron to hit a secure admin endpoint every 15 minutes.
+
 ## Open Questions / Next Steps
 - Do we precreate analytics tables via migration, or let the function ensure/create them?
 - Which periods are required by default for the scheduler (monthly only, or also weekly)?
 - Do we compute goals in the same ETL or a companion ETL?
-- Add `scheduledEtls` and `addScheduledEtl()` to `SyncScheduler` and wire `populatePeriod(...)` with date windows.
+- Consider exposing a small admin endpoint to view ETL job status and trigger manual runs.
 

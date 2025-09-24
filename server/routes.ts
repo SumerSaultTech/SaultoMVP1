@@ -32,16 +32,15 @@ import { requireAdmin, auditAdminAction } from "./middleware/admin-middleware";
 import { rbacService, PERMISSIONS } from "./services/rbac-service";
 import { syncScheduler } from "./services/sync-scheduler";
 import { MetricsTimeSeriesETL } from "./services/metrics-time-series-etl";
-// Force server reload to initialize sync scheduler
 import { mfaService } from "./services/mfa-service";
 import { MetricsSeriesService } from "./services/metrics-series.js";
-
+import { etlScheduler } from "./services/etl-scheduler";
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
 const ALLOWED_EXTENSIONS = new Set([
-  'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx', 
-  'ppt', 'pptx', 'csv', 'json', 'zip', 'py', 'js', 'html', 'css', 'c', 
+  'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx',
+  'ppt', 'pptx', 'csv', 'json', 'zip', 'py', 'js', 'html', 'css', 'c',
   'cpp', 'h', 'java', 'rb', 'php', 'xml', 'md'
 ]);
 
@@ -133,6 +132,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Force the module to execute by referencing the syncScheduler
   if (syncScheduler) {
     console.log('✅ Sync scheduler loaded and available');
+  }
+  // Ensure ETL scheduler is started
+  console.log('🔧 Initializing ETL scheduler...');
+  if (etlScheduler) {
+    console.log('✅ ETL scheduler loaded and available');
   }
   
   // Configure session middleware
