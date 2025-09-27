@@ -320,6 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           resources,
           accountId: userInfo?.account_id || null
         },
+        status: 'connected',
         isActive: true
       });
 
@@ -2723,11 +2724,57 @@ The Saulto Analytics Team
   // Setup Status
   app.get("/api/setup-status", async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      console.log('🔍 Setup status debug:', {
+        hasSession: !!req.session,
+        selectedCompany: req.session?.selectedCompany,
+        sessionId: req.sessionID,
+        fullSession: req.session
+      });
+
+      const companyId = req.session?.selectedCompany?.id;
       if (!companyId) {
+        console.log('❌ Setup status: No company ID found in session');
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }
-      const status = await storage.getSetupStatus(companyId);
+
+      // Get setup status and dynamically check actual data sources
+      let status = await storage.getSetupStatus(companyId);
+
+      // If no setup status exists, create a default one
+      if (!status) {
+        status = await storage.updateSetupStatus(companyId, {
+          warehouseConnected: false,
+          dataSourcesConfigured: false,
+          modelsDeployed: 0,
+          totalModels: 0,
+        });
+      }
+
+      // Check actual data sources to update status
+      const dataSources = await storage.getDataSources(companyId);
+
+      // Fix any existing data sources that are missing status field
+      for (const dataSource of dataSources) {
+        if (!dataSource.status && dataSource.isActive) {
+          console.log(`🔧 Fixing data source ${dataSource.id} (${dataSource.type}) - setting status to 'connected'`);
+          await storage.updateDataSource(dataSource.id, {
+            status: 'connected'
+          });
+        }
+      }
+
+      // Re-fetch data sources after potential updates
+      const updatedDataSources = await storage.getDataSources(companyId);
+      const connectedSources = updatedDataSources.filter(ds => ds.status === 'connected');
+      const hasConnectedSources = connectedSources.length > 0;
+
+      // Update setup status if data sources are now configured
+      if (hasConnectedSources && !status.dataSourcesConfigured) {
+        status = await storage.updateSetupStatus(companyId, {
+          dataSourcesConfigured: true,
+        });
+      }
+
       res.json(status);
     } catch (error) {
       res.status(500).json({ message: "Failed to get setup status" });
@@ -2735,9 +2782,84 @@ The Saulto Analytics Team
   });
 
   // Data Sources
-  app.get("/api/data-sources", async (req, res) => {
+  app.get("/api/data-sources", validateTenantAccess, async (req, res) => {
     try {
-      const dataSources = await storage.getDataSources();
+      const companyId = getValidatedCompanyId(req);
+      let dataSources = await storage.getDataSources(companyId);
+
+      // Debug: Show what we found in data_sources table
+      console.log(`🔍 Found ${dataSources.length} data sources for company ${companyId}:`, dataSources);
+
+      // Also check for any data_sources records for this company (regardless of status)
+      const dbStorage = storage as any;
+      if (dbStorage.sql) {
+        try {
+          const allDataSources = await dbStorage.sql`
+            SELECT id, name, type, status, company_id, created_at
+            FROM data_sources
+            WHERE company_id = ${companyId}
+          `;
+          console.log(`🔍 All data_sources records for company ${companyId}:`, allDataSources);
+        } catch (e) {
+          console.log('🔍 Failed to query all data sources:', e);
+        }
+      }
+
+      // Migration: Check if there are analytics tables but no connected data_sources records
+      try {
+        const dbStorage = storage as any;
+        if (dbStorage.sql) {
+          const schemaName = `analytics_company_${companyId}`;
+          const jiraTables = await dbStorage.sql`
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = ${schemaName}
+            AND table_name LIKE 'core_jira_%'
+            LIMIT 1
+          `;
+
+          if (jiraTables.length > 0) {
+            // Check if we have existing Jira data sources that are disconnected
+            const disconnectedJiraSources = dataSources.filter(ds => ds.type === 'jira' && ds.status === 'disconnected');
+
+            if (disconnectedJiraSources.length > 0) {
+              console.log('🔧 Found Jira analytics tables with disconnected Jira data source - updating status to connected');
+
+              // Update the first disconnected Jira source to connected
+              const sourceToUpdate = disconnectedJiraSources[0];
+              await dbStorage.sql`
+                UPDATE data_sources
+                SET status = 'connected'
+                WHERE id = ${sourceToUpdate.id}
+              `;
+
+              console.log(`✅ Updated Jira data source ${sourceToUpdate.id} status to connected`);
+
+              // Refresh data sources list
+              dataSources = await storage.getDataSources(companyId);
+            } else if (dataSources.length === 0) {
+              console.log('🔧 Found Jira analytics tables but no data_sources record - creating Jira data source');
+
+              // Create Jira data source record
+              const jiraDataSource = await storage.createDataSource({
+                companyId,
+                name: 'Jira (Migrated)',
+                type: 'jira',
+                status: 'connected',
+                config: { migrated: true, oauth: true },
+              });
+
+              console.log('✅ Created migrated Jira data source:', jiraDataSource.id);
+
+              // Refresh data sources list
+              dataSources = await storage.getDataSources(companyId);
+            }
+          }
+        }
+      } catch (migrationError) {
+        console.log('ℹ️ Migration check failed (this is OK):', migrationError);
+      }
+
       res.json(dataSources);
     } catch (error) {
       res.status(500).json({ message: "Failed to get data sources" });

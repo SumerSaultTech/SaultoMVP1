@@ -148,74 +148,164 @@ const APP_TEMPLATES = [
   },
 ];
 
+// Connected Apps Dialog Component
+interface ConnectedAppsDialogProps {
+  nodes: AppNode[];
+  onAddNode: (app: AppNode) => void;
+}
+
+function ConnectedAppsDialog({ nodes, onAddNode }: ConnectedAppsDialogProps) {
+  const [connectedApps, setConnectedApps] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchConnectedApps = async () => {
+      try {
+        const response = await fetch('/api/data-sources');
+        if (response.ok) {
+          const data = await response.json();
+          const connected = data.filter((ds: any) => ds.status === 'connected');
+          setConnectedApps(connected);
+        }
+      } catch (error) {
+        console.error('Failed to fetch connected apps:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchConnectedApps();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="text-center py-8">
+        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-3"></div>
+        <p className="text-sm text-gray-600">Loading connected apps...</p>
+      </div>
+    );
+  }
+
+  if (connectedApps.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <Settings className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+        <h3 className="font-medium text-gray-900 mb-2">No Connected Apps</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Connect apps in Setup & Config first to add them to your canvas.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => window.location.href = '/setup'}
+        >
+          Go to Setup & Config
+        </Button>
+      </div>
+    );
+  }
+
+  const availableApps = connectedApps
+    .map(ds => {
+      const template = APP_TEMPLATES.find(t => t.id === ds.type);
+      if (!template) return null;
+
+      return {
+        ...template,
+        id: `${template.id}_${ds.id}`, // Unique ID for canvas
+        connectedId: ds.id,
+        status: ds.status
+      };
+    })
+    .filter(Boolean)
+    .filter(app => app && !nodes.some(node => node.id === app.id)); // Don't show already added apps
+
+  return (
+    <div className="space-y-4">
+      <div className="text-center">
+        <h3 className="font-medium text-gray-900 mb-2">Connected Applications</h3>
+        <p className="text-sm text-gray-600">
+          Add your connected apps to the integration canvas
+        </p>
+      </div>
+
+      {availableApps.length === 0 ? (
+        <div className="text-center py-4">
+          <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-primary" />
+          <p className="text-sm text-gray-600">All connected apps are already on your canvas!</p>
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {availableApps.map((app: any) => (
+            <div
+              key={app.id}
+              className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+              onClick={() => onAddNode(app)}
+            >
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white border">
+                  <img
+                    src={app.logo}
+                    alt={`${app.name} logo`}
+                    className="w-6 h-6 object-contain"
+                    onError={(e) => {
+                      const Icon = app.icon;
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{app.name}</p>
+                  <p className="text-xs text-gray-500">{app.category}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Badge className="bg-green-50 text-green-700 border-green-200 text-xs">
+                  Connected
+                </Badge>
+                <Plus className="w-4 h-4 text-gray-400" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function IntegrationsCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   
-  // Load connected apps from localStorage (demo version)
-  const loadConnectedApps = (): AppNode[] => {
+  // Load connected apps from API
+  const loadConnectedApps = async (): Promise<AppNode[]> => {
     try {
-      const storedApps = localStorage.getItem('demo_oauth2_instances');
-      if (!storedApps) return [];
+      const response = await fetch('/api/data-sources');
+      if (response.ok) {
+        const data = await response.json();
+        const connected = data.filter((ds: any) => ds.status === 'connected');
 
-      const oauth2Instances = JSON.parse(storedApps);
-      if (!oauth2Instances || oauth2Instances.length === 0) return [];
-      
-      // Create nodes for OAuth2 instances in a circle layout
-      const canvasWidth = 800;
-      const canvasHeight = 600;
-      const centerX = canvasWidth / 2 - 64;
-      const centerY = canvasHeight / 2 - 40;
-      const radius = Math.min(250, Math.max(150, oauth2Instances.length * 35));
-      
-      return oauth2Instances.map((instance: any, index: number) => {
-        const template = APP_TEMPLATES.find(t => t.id === instance.appType);
-        if (!template) return null;
-        
-        const angle = (index * 2 * Math.PI) / oauth2Instances.length;
-        const x = centerX + Math.cos(angle) * radius;
-        const y = centerY + Math.sin(angle) * radius;
-        
-        return {
-          id: instance.instanceId,
-          name: instance.status === 'active' ? `${instance.instanceName} ✓` : instance.instanceName,
-          icon: template.icon,
-          logo: template.logo,
-          color: template.color,
-          category: template.category,
-          position: { 
-            x: Math.max(50, Math.min(x, canvasWidth - 150)), 
-            y: Math.max(50, Math.min(y, canvasHeight - 100)) 
-          }
-        };
-      }).filter(Boolean) as AppNode[];
+        return connected
+          .map((ds: any) => {
+            const template = APP_TEMPLATES.find(t => t.id === ds.type);
+            if (!template) return null;
+
+            return {
+              ...template,
+              id: `${template.id}_${ds.id}`, // Unique ID for canvas
+              position: { x: 300, y: 200 }, // Default position
+              connectedId: ds.id,
+              status: ds.status
+            };
+          })
+          .filter(Boolean);
+      }
     } catch (error) {
-      console.error('Error loading OAuth2 instances:', error);
-      return [];
+      console.error('Failed to load connected apps:', error);
     }
+    return [];
   };
 
-  // Get available apps that can be added (support multiple instances of same app type)
-  const getAvailableAppsToAdd = (): AppNode[] => {
-    const setupData = localStorage.getItem('setupData');
-    if (!setupData) return [];
-    
-    const { completedTools } = JSON.parse(setupData);
-    if (!completedTools || completedTools.length === 0) return [];
-    
-    // Return all completed app types - allow multiple instances of each
-    return APP_TEMPLATES
-      .filter(template => completedTools.includes(template.id))
-      .map(template => ({
-        id: template.id,
-        name: template.name,
-        icon: template.icon,
-        logo: template.logo,
-        color: template.color,
-        category: template.category,
-        position: { x: 400, y: 300 } // Default center position
-      }));
-  };
   
   const [nodes, setNodes] = useState<AppNode[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -232,8 +322,12 @@ export default function IntegrationsCanvas() {
 
   // Load connected apps on mount and handle dynamic centering
   useEffect(() => {
-    const connectedApps = loadConnectedApps();
-    setNodes(connectedApps);
+    const initializeApps = async () => {
+      const connectedApps = await loadConnectedApps();
+      setNodes(connectedApps);
+    };
+
+    initializeApps();
 
     // Function to center nodes based on actual canvas size
       const centerNodes = () => {
@@ -312,16 +406,16 @@ export default function IntegrationsCanvas() {
     setDragOffset({ x: 0, y: 0 });
   }, []);
 
-  // Handle OAuth2 connection creation
+  // Handle connection creation between apps
   const handleNodeConnect = (nodeId: string) => {
     if (isDrawingConnection && drawingStart && drawingStart !== nodeId) {
-      // Complete connection - initiate OAuth2 flow
+      // Complete connection - create custom integration connection
       const sourceNode = nodes.find(n => n.id === drawingStart);
       const targetNode = nodes.find(n => n.id === nodeId);
-      
-      // Start OAuth2 flow for connection
-      initiateOAuth2Connection(drawingStart, nodeId, sourceNode, targetNode);
-      
+
+      // Create new custom integration connection
+      createCustomConnection(drawingStart, nodeId, sourceNode, targetNode);
+
       setIsDrawingConnection(false);
       setDrawingStart(null);
     } else {
@@ -331,235 +425,37 @@ export default function IntegrationsCanvas() {
     }
   };
 
-  // OAuth2 setup for individual app instance (demo version)
-  const initiateOAuth2Setup = async (appNode: AppNode, template: any) => {
-    try {
-      // Generate instance ID for demo
-      const instanceId = `${template.id}_${Date.now()}`;
-      
-      // Show OAuth2 setup dialog
-      const authorized = await showOAuth2SetupDialog('/demo/oauth2', appNode, template);
-      
-      if (authorized) {
-        // Store in localStorage for demo
-        const storedApps = localStorage.getItem('demo_oauth2_instances');
-        const existingApps = storedApps ? JSON.parse(storedApps) : [];
-        
-        const newInstance = {
-          instanceId,
-          appType: template.id,
-          instanceName: appNode.name,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          credentials: {
-            accessToken: `at_${Math.random().toString(36).substring(7)}${Date.now()}`,
-            refreshToken: `rt_${Math.random().toString(36).substring(7)}${Date.now()}`,
-            scope: 'read write data.sync'
-          }
-        };
-        
-        existingApps.push(newInstance);
-        localStorage.setItem('demo_oauth2_instances', JSON.stringify(existingApps));
-        
-        // Update node with OAuth2 success indicator
-        setNodes(prev => prev.map(n => 
-          n.id === appNode.id 
-            ? { ...n, name: `${template.name} ✓`, id: instanceId }
-            : n
-        ));
-      } else {
-        // User cancelled OAuth2 setup - remove the node
-        setNodes(prev => prev.filter(n => n.id !== appNode.id));
-      }
-      
-    } catch (error) {
-      console.error('OAuth2 setup failed:', error);
-      // Remove failed node
-      setNodes(prev => prev.filter(n => n.id !== appNode.id));
-    }
-  };
-
-  // OAuth2 connection flow between existing authenticated apps
-  const initiateOAuth2Connection = async (sourceId: string, targetId: string, sourceNode: any, targetNode: any) => {
-    try {
-      // Create pending connection
-      const pendingConnection: Connection = {
-        id: Date.now().toString(),
-        sourceId: sourceId,
-        targetId: targetId,
-        description: `${sourceNode?.name} → ${targetNode?.name}`,
-        notes: 'OAuth2 connection in progress...',
-        dataFlow: 'Bidirectional',
-        frequency: 'Real-time',
-        status: 'inactive', // Start as inactive until OAuth2 completes
-        lastSync: new Date().toISOString(),
-        purpose: 'OAuth2 authenticated data synchronization',
-      };
-      
-      setConnections(prev => [...prev, pendingConnection]);
-      
-      // Start OAuth2 flow (for testing, we'll simulate the flow)
-      await simulateOAuth2Flow(sourceNode, targetNode, pendingConnection);
-      
-    } catch (error) {
-      console.error('OAuth2 connection failed:', error);
-    }
-  };
-
-  // Simulate OAuth2 flow for testing
-  const simulateOAuth2Flow = async (sourceNode: any, targetNode: any, connection: Connection) => {
-    // Step 1: Show OAuth2 authorization dialog
-    const authUrl = generateOAuth2AuthUrl(sourceNode.name, targetNode.name);
-    
-    // For testing, we'll simulate user authorization
-    const authorized = await showOAuth2Dialog(authUrl, sourceNode, targetNode);
-    
-    if (authorized) {
-      // Step 2: Exchange authorization code for access token (simulated)
-      const tokenResponse = await exchangeCodeForToken(connection);
-      
-      if (tokenResponse.success) {
-        // Step 3: Update connection to active
-        setConnections(prev => prev.map(c => 
-          c.id === connection.id 
-            ? { 
-                ...c, 
-                status: 'active',
-                notes: `OAuth2 connection established successfully.\nAccess Token: ${tokenResponse.accessToken}\nRefresh Token: ${tokenResponse.refreshToken}\nScopes: ${tokenResponse.scopes}`,
-                lastSync: new Date().toISOString()
-              }
-            : c
-        ));
-      } else {
-        // Failed to get token
-        setConnections(prev => prev.map(c => 
-          c.id === connection.id 
-            ? { ...c, status: 'error', notes: 'OAuth2 token exchange failed' }
-            : c
-        ));
-      }
-    } else {
-      // User cancelled authorization
-      setConnections(prev => prev.filter(c => c.id !== connection.id));
-    }
-  };
-
-  // Generate OAuth2 authorization URL
-  const generateOAuth2AuthUrl = (sourceName: string, targetName: string) => {
-    const clientId = 'saulto_integration_client';
-    const redirectUri = encodeURIComponent(`${window.location.origin}/oauth2/callback`);
-    const scopes = encodeURIComponent('read write data.sync');
-    const state = Math.random().toString(36).substring(7);
-    
-    return `https://oauth2.${sourceName.toLowerCase()}.com/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}`;
-  };
-
-  // Show OAuth2 setup dialog for individual app
-  const showOAuth2SetupDialog = (authUrl: string, appNode: AppNode, template: any): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const confirmed = window.confirm(
-        `OAuth2 App Setup\n\n` +
-        `App: ${template.name}\n` +
-        `Instance: ${appNode.name}\n\n` +
-        `This will open an OAuth2 authorization window where you'll:\n` +
-        `1. Login to your ${template.name} account\n` +
-        `2. Grant Saulto access permissions\n` +
-        `3. Complete the OAuth2 authentication\n\n` +
-        `Continue with OAuth2 setup?`
-      );
-      
-      if (confirmed) {
-        // For testing, simulate the OAuth2 window
-        setTimeout(() => {
-          const authorized = window.confirm(
-            `OAuth2 Authorization for ${template.name}\n\n` +
-            `You are being redirected to ${template.name} for authorization.\n\n` +
-            `Grant Saulto permission to:\n` +
-            `• Read your ${template.name} data\n` +
-            `• Sync data to Saulto Dashboard\n` +
-            `• Access API on your behalf\n\n` +
-            `Click OK to authorize, Cancel to deny.`
-          );
-          resolve(authorized);
-        }, 1000);
-      } else {
-        resolve(false);
-      }
-    });
-  };
-
-  // Show OAuth2 authorization dialog for connections between apps
-  const showOAuth2Dialog = (authUrl: string, sourceNode: any, targetNode: any): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const confirmed = window.confirm(
-        `OAuth2 Connection Setup\n\n` +
-        `Source: ${sourceNode.name}\n` +
-        `Target: ${targetNode.name}\n\n` +
-        `This will open an OAuth2 authorization window where you'll:\n` +
-        `1. Login to ${sourceNode.name}\n` +
-        `2. Grant Saulto access permissions\n` +
-        `3. Complete the connection setup\n\n` +
-        `Continue with OAuth2 authorization?`
-      );
-      
-      if (confirmed) {
-        // For testing, simulate the OAuth2 window
-        setTimeout(() => {
-          const authorized = window.confirm(
-            `OAuth2 Authorization Simulation\n\n` +
-            `You are being redirected to ${sourceNode.name} for authorization.\n\n` +
-            `Grant Saulto permission to:\n` +
-            `• Read your ${sourceNode.name} data\n` +
-            `• Write updates to ${targetNode.name}\n` +
-            `• Sync data between applications\n\n` +
-            `Click OK to authorize, Cancel to deny.`
-          );
-          resolve(authorized);
-        }, 1000);
-      } else {
-        resolve(false);
-      }
-    });
-  };
-
-  // Exchange authorization code for access token
-  const exchangeCodeForToken = async (connection: Connection): Promise<{success: boolean, accessToken?: string, refreshToken?: string, scopes?: string}> => {
-    // Simulate token exchange
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // For testing, always succeed with mock tokens
-    return {
-      success: true,
-      accessToken: `at_${Math.random().toString(36).substring(7)}${Date.now()}`,
-      refreshToken: `rt_${Math.random().toString(36).substring(7)}${Date.now()}`,
-      scopes: 'read write data.sync profile'
+  // Create custom integration connection
+  const createCustomConnection = (sourceId: string, targetId: string, sourceNode: any, targetNode: any) => {
+    const newConnection: Connection = {
+      id: Date.now().toString(),
+      sourceId: sourceId,
+      targetId: targetId,
+      description: `${sourceNode?.name} → ${targetNode?.name}`,
+      notes: 'Custom integration connection - document your implementation details here',
+      dataFlow: 'Bidirectional',
+      frequency: 'Daily',
+      status: 'active',
+      lastSync: new Date().toISOString(),
+      purpose: 'Custom integration between systems - add business logic and technical details',
     };
+
+    setConnections(prev => [...prev, newConnection]);
   };
 
-  // Add new node with OAuth2 connection setup
-  const addNode = async (templateId: string) => {
-    const template = APP_TEMPLATES.find(t => t.id === templateId);
-    if (!template) return;
-    
-    // Create unique instance ID for this OAuth2 connection
-    const instanceId = `${templateId}_${Date.now()}`;
-    const instanceName = `${template.name} (${new Date().toLocaleTimeString()})`;
-    
+
+  // Add connected app to canvas
+  const addNode = (app: AppNode) => {
+    const existingNode = nodes.find(n => n.id === app.id);
+    if (existingNode) return; // Already on canvas
+
     const newNode: AppNode = {
-      id: instanceId,
-      name: instanceName,
-      icon: template.icon,
-      logo: template.logo,
-      color: template.color,
-      category: template.category,
-      position: { x: 300, y: 200 },
+      ...app,
+      position: { x: 300, y: 200 }, // Default position
     };
-    
+
     setNodes(prev => [...prev, newNode]);
     setShowAddNode(false);
-    
-    // Immediately start OAuth2 setup for this new app instance
-    await initiateOAuth2Setup(newNode, template);
   };
 
   // Delete node and its connections
@@ -621,19 +517,19 @@ export default function IntegrationsCanvas() {
                   size="sm"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Connect New App
+                  Add Connected App
                 </Button>
                 <Button
-                  onClick={() => {
-                    localStorage.removeItem('demo_oauth2_instances');
-                    setNodes([]);
+                  onClick={async () => {
+                    const connectedApps = await loadConnectedApps();
+                    setNodes(connectedApps);
                     setConnections([]);
                   }}
                   size="sm"
                   variant="outline"
                   className="text-xs"
                 >
-                  Reset Demo
+                  Refresh Apps
                 </Button>
               </div>
               <Badge variant="outline" className="text-xs">
@@ -656,18 +552,18 @@ export default function IntegrationsCanvas() {
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center max-w-md">
               <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Zap className="w-8 h-8 text-green-600" />
+                <Zap className="w-8 h-8 text-primary" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">OAuth2 Integration Demo</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Integration Canvas</h3>
               <p className="text-gray-500 mb-6">
-                Connect multiple instances of your applications with OAuth2 authentication. Each connection is independent and can sync different data.
+                Visual representation of your custom integrations. Add connected apps from Setup & Config to document your integration work.
               </p>
-              <Button 
+              <Button
                 onClick={() => setShowAddNode(true)}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className=""
               >
                 <Zap className="w-4 h-4 mr-2" />
-                Start OAuth2 Demo
+                Add Connected App
               </Button>
             </div>
           </div>
@@ -866,7 +762,7 @@ export default function IntegrationsCanvas() {
                     size="sm"
                     variant="outline"
                     className={`w-6 h-6 p-0 bg-white shadow-md border-2 transition-all duration-200 ${
-                      isHighlighted ? 'border-amber-400 bg-amber-50' : 'border-green-200 hover:border-green-400'
+                      isHighlighted ? 'border-amber-400 bg-amber-50' : 'border-primary/20 hover:border-primary'
                     }`}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -875,7 +771,7 @@ export default function IntegrationsCanvas() {
                     onMouseEnter={() => setHighlightedConnection(connection.id)}
                     onMouseLeave={() => setHighlightedConnection(null)}
                   >
-                    <Info className="w-3 h-3 text-green-600" />
+                    <Info className="w-3 h-3 text-primary" />
                   </Button>
                 </foreignObject>
               </g>
@@ -954,21 +850,21 @@ export default function IntegrationsCanvas() {
                   {/* Simplified connection - double-click to connect */}
                   <div className="absolute inset-0 pointer-events-none">
                     {isDrawingConnection && drawingStart === node.id && (
-                      <div className="absolute -inset-2 border-2 border-dashed border-green-400 rounded-lg animate-pulse pointer-events-none"></div>
+                      <div className="absolute -inset-2 border-2 border-dashed border-primary rounded-lg animate-pulse pointer-events-none"></div>
                     )}
                     
                     {/* OAuth2 Connection button */}
                     <button
                       className={`absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full pointer-events-auto transition-all duration-200 ${
                         isDrawingConnection && drawingStart === node.id 
-                          ? 'bg-green-600 text-white shadow-lg animate-bounce' 
-                          : 'bg-white border-2 border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400 shadow-md'
+                          ? 'bg-primary text-white shadow-lg animate-bounce'
+                          : 'bg-white border-2 border-primary/30 text-primary hover:bg-green-50 hover:border-primary shadow-md'
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleNodeConnect(node.id);
                       }}
-                      title={isDrawingConnection ? "Click another app to start OAuth2 connection" : "Start OAuth2 authentication flow"}
+                      title={isDrawingConnection ? "Click another app to create custom integration connection" : "Create custom integration connection"}
                     >
                       <Zap className="w-3 h-3" />
                     </button>
@@ -979,12 +875,12 @@ export default function IntegrationsCanvas() {
           );
         })}
 
-        {/* OAuth2 connection state indicator */}
+        {/* Connection state indicator */}
         {isDrawingConnection && (
           <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
-            <Badge className="bg-green-600 text-white animate-pulse">
+            <Badge className="bg-primary text-white animate-pulse">
               <Sparkles className="w-3 h-3 mr-1" />
-              Click another app to start OAuth2 authentication
+              Click another app to create custom integration
             </Badge>
           </div>
         )}
@@ -1033,8 +929,8 @@ export default function IntegrationsCanvas() {
               {connections.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Zap className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No OAuth2 connections yet</p>
-                  <p className="text-xs">Click the ⚡ button on apps to start OAuth2 authentication</p>
+                  <p className="text-sm">No custom integrations yet</p>
+                  <p className="text-xs">Click the ⚡ button on apps to create custom integration connections</p>
                 </div>
               ) : (
                 connections.map((connection) => {
@@ -1092,11 +988,11 @@ export default function IntegrationsCanvas() {
                         <div className="mx-3 flex-shrink-0">
                           {connection.dataFlow === 'Bidirectional' ? (
                             <div className="flex items-center space-x-1">
-                              <ArrowRight className="w-3 h-3 text-green-500" />
+                              <ArrowRight className="w-3 h-3 text-primary" />
                               <ArrowRight className="w-3 h-3 text-amber-500 rotate-180" />
                             </div>
                           ) : connection.dataFlow === 'Source to Target' ? (
-                            <ArrowRight className="w-4 h-4 text-green-500" />
+                            <ArrowRight className="w-4 h-4 text-primary" />
                           ) : (
                             <ArrowRight className="w-4 h-4 text-red-500 rotate-180" />
                           )}
@@ -1125,7 +1021,7 @@ export default function IntegrationsCanvas() {
                         <div className="flex items-center space-x-2">
                           <Badge variant="outline" className={`text-xs ${connection.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' : connection.status === 'inactive' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                             <Activity className="w-3 h-3 mr-1" />
-                            {connection.status === 'active' ? 'OAuth2 Active' : connection.status === 'inactive' ? 'OAuth2 Pending' : 'OAuth2 Failed'}
+                            {connection.status === 'active' ? 'Active' : connection.status === 'inactive' ? 'Pending' : 'Error'}
                           </Badge>
                           <Badge variant="outline" className={`text-xs ${
                             connection.dataFlow === 'Bidirectional' ? 'bg-blue-50 text-blue-700 border-blue-200' :
@@ -1185,99 +1081,15 @@ export default function IntegrationsCanvas() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
-              <Zap className="w-5 h-5 text-green-600" />
-              <span>OAuth2 Demo - Connect Application</span>
+              <Zap className="w-5 h-5 text-primary" />
+              <span>Add Connected Application</span>
             </DialogTitle>
           </DialogHeader>
           
-          {(() => {
-            const availableApps = getAvailableAppsToAdd();
-            const setupData = localStorage.getItem('setupData');
-            const hasCompletedSetup = setupData && JSON.parse(setupData).completedTools?.length > 0;
-            
-            // For demo purposes, always allow connecting apps
-            if (!hasCompletedSetup) {
-              console.log('No setup completed, but allowing demo connections');
-            }
-            
-            // For demo, show all available app templates
-            const demoAvailableApps = APP_TEMPLATES.map(template => ({
-              id: template.id,
-              name: template.name,
-              icon: template.icon,
-              logo: template.logo,
-              color: template.color,
-              category: template.category,
-              position: { x: 400, y: 300 }
-            }));
-            
-            if (demoAvailableApps.length === 0) {
-              return (
-                <div className="text-center py-8">
-                  <Settings className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                  <h3 className="font-medium text-gray-900 mb-2">No Apps Available</h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    No application templates found for demo.
-                  </p>
-                </div>
-              );
-            }
-            
-            return (
-              <div className="space-y-4 mt-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Sparkles className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium text-green-800">OAuth2 Demo Mode</span>
-                  </div>
-                  <p className="text-xs text-green-700">
-                    Connect multiple OAuth2 instances of any app type. Each connection is independent with its own authentication.
-                  </p>
-                </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {demoAvailableApps.map((app) => (
-                    <Card 
-                      key={app.id}
-                      className="p-3 cursor-pointer hover:shadow-md hover:bg-green-50 transition-all border hover:border-green-300"
-                      onClick={() => addNode(app.id)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white border-2 border-green-200 p-2">
-                          <img 
-                            src={app.logo} 
-                            alt={app.name} 
-                            className="w-6 h-6 object-contain" 
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                              const parent = target.parentElement;
-                              if (parent) {
-                                const IconComponent = app.icon;
-                                parent.innerHTML = `<div class="w-4 h-4 text-green-600"></div>`;
-                              }
-                            }}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-900">{app.name}</span>
-                            <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
-                              {app.category}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs text-green-600 border-green-300">
-                              OAuth2
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">Click to start OAuth2 authentication</p>
-                        </div>
-                        <Zap className="w-4 h-4 text-green-500" />
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          <ConnectedAppsDialog
+            nodes={nodes}
+            onAddNode={addNode}
+          />
         </DialogContent>
       </Dialog>
 
@@ -1319,7 +1131,7 @@ export default function IntegrationsCanvas() {
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
               <FileText className="w-5 h-5 text-blue-600" />
-              <span>OAuth2 Connection Details</span>
+              <span>Custom Integration Details</span>
             </DialogTitle>
           </DialogHeader>
           {selectedConnection && (
@@ -1337,7 +1149,7 @@ export default function IntegrationsCanvas() {
                   </div>
                   <span className="font-medium">{nodes.find(n => n.id === selectedConnection.targetId)?.name}</span>
                   <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                    {React.createElement(nodes.find(n => n.id === selectedConnection.targetId)?.icon || Info, { className: "w-4 h-4 text-green-600" })}
+                    {React.createElement(nodes.find(n => n.id === selectedConnection.targetId)?.icon || Info, { className: "w-4 h-4 text-primary" })}
                   </div>
                 </div>
               </div>
@@ -1412,28 +1224,22 @@ export default function IntegrationsCanvas() {
               </div>
               
               <div>
-                <label className="text-sm font-medium text-gray-700">OAuth2 Authentication Details</label>
+                <label className="text-sm font-medium text-gray-700">Technical Implementation Notes</label>
                 <textarea
                   value={selectedConnection.notes}
                   onChange={(e) => setSelectedConnection({ ...selectedConnection, notes: e.target.value })}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={4}
-                  placeholder="OAuth2 tokens, scopes, authentication status, and technical implementation details..."
-                  readOnly={selectedConnection.notes.includes('Access Token:')} // Make read-only if contains OAuth tokens
+                  placeholder="Document your custom integration: scripts, APIs used, data transformations, error handling, etc..."
                 />
-                {selectedConnection.notes.includes('Access Token:') && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    ⚠️ OAuth2 credentials are automatically managed - edit carefully
-                  </p>
-                )}
               </div>
 
               {/* Status Information */}
               <div className="flex items-center space-x-6 p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center space-x-2">
-                  <CheckCircle2 className={`w-4 h-4 ${selectedConnection.status === 'active' ? 'text-green-600' : 'text-gray-400'}`} />
+                  <CheckCircle2 className={`w-4 h-4 ${selectedConnection.status === 'active' ? 'text-primary' : 'text-gray-400'}`} />
                   <span className="text-sm text-gray-600">
-                    Status: <span className={`font-medium ${selectedConnection.status === 'active' ? 'text-green-600' : selectedConnection.status === 'error' ? 'text-red-600' : 'text-orange-600'}`}>
+                    Status: <span className={`font-medium ${selectedConnection.status === 'active' ? 'text-primary' : selectedConnection.status === 'error' ? 'text-red-600' : 'text-orange-600'}`}>
                       {selectedConnection.status.charAt(0).toUpperCase() + selectedConnection.status.slice(1)}
                     </span>
                   </span>
@@ -1457,21 +1263,21 @@ export default function IntegrationsCanvas() {
                     Delete Connection
                   </Button>
                   {selectedConnection.status === 'error' && (
-                    <Button 
+                    <Button
                       variant="outline"
                       onClick={() => {
-                        // Re-initiate OAuth2 flow
-                        const sourceNode = nodes.find(n => n.id === selectedConnection.sourceId);
-                        const targetNode = nodes.find(n => n.id === selectedConnection.targetId);
-                        if (sourceNode && targetNode) {
-                          simulateOAuth2Flow(sourceNode, targetNode, selectedConnection);
-                          setSelectedConnection(null);
-                        }
+                        // Reset connection to active status
+                        setConnections(prev => prev.map(c =>
+                          c.id === selectedConnection.id
+                            ? { ...c, status: 'active', lastSync: new Date().toISOString() }
+                            : c
+                        ));
+                        setSelectedConnection(null);
                       }}
                       className="text-blue-600 hover:text-blue-700"
                     >
                       <Zap className="w-4 h-4 mr-2" />
-                      Re-authenticate OAuth2
+                      Mark as Active
                     </Button>
                   )}
                 </div>

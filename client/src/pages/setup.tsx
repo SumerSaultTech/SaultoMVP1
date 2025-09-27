@@ -184,8 +184,7 @@ const standardTables = {
   odoo: ["sales_orders", "invoices", "customers", "products"],
   quickbooks: ["invoice", "customer", "item", "payment"],
   salesforce: ["opportunity", "account", "contact", "lead"],
-  zoho: ["lead", "contact", "account", "deal"],
-  activecampaign: ["contact", "list", "campaign", "automation"]
+  zoho: ["lead", "contact", "account", "deal"]
 };
 
 // Available tables for custom setup with pricing
@@ -357,13 +356,65 @@ export default function Setup() {
   // State management - pre-populate known company info
   const [currentStep, setCurrentStep] = useState<SetupStep>(initialState.currentStep);
   const [companyName] = useState("MIAS_DATA");
-  const [industry] = useState("Technology");
+  const [industry, setIndustry] = useState("Technology");
   const [appCount, setAppCount] = useState<number | null>(initialState.appCount);
   const [selectedTools, setSelectedTools] = useState<string[]>(initialState.selectedTools);
   const [syncProgress, setSyncProgress] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [completedLogins, setCompletedLogins] = useState<string[]>(initialState.completedLogins);
+
+  // Load existing connections on mount
+  useEffect(() => {
+    const loadExistingConnections = async () => {
+      try {
+        console.log('🔍 Loading existing connections...');
+        const response = await fetch('/api/data-sources');
+
+        if (response.ok) {
+          const dataSources = await response.json();
+          console.log('📋 Found existing data sources:', dataSources);
+
+          // Map data source types to tool IDs and mark as completed
+          const existingConnections: string[] = [];
+
+          for (const source of dataSources) {
+            if (source.status === 'connected' && source.type) {
+              existingConnections.push(source.type);
+              console.log(`✅ Found existing ${source.type} connection`);
+            }
+          }
+
+          if (existingConnections.length > 0) {
+            setCompletedLogins(prev => {
+              const updated = [...new Set([...prev, ...existingConnections])];
+              console.log(`🔄 Updated completed logins:`, updated);
+              return updated;
+            });
+
+            // If tools aren't selected yet, pre-select the existing ones
+            setSelectedTools(prev => {
+              if (prev.length === 0) {
+                console.log(`🔄 Pre-selecting existing tools:`, existingConnections);
+                return existingConnections;
+              }
+              return prev;
+            });
+
+            // Mark setup as existing since we have connected data sources
+            setHasExistingSetup(true);
+            console.log(`✅ Found existing connections - showing completed setup view`);
+          }
+        } else {
+          console.log('ℹ️ No existing connections or failed to load');
+        }
+      } catch (error) {
+        console.log('ℹ️ Failed to load existing connections (this is normal for new setups):', error);
+      }
+    };
+
+    loadExistingConnections();
+  }, []);
 
   // Handle OAuth callback and show setup type dialog
   useEffect(() => {
@@ -1724,12 +1775,11 @@ export default function Setup() {
   // Render setup summary for completed setups
   const renderSetupSummary = () => {
     const savedSetup = localStorage.getItem('setupData');
-    if (!savedSetup) {
-      return renderInitialStep(); // Fallback if no saved data
-    }
 
-    const setupData = JSON.parse(savedSetup);
-    const { completedTools, toolSetupTypes, customTables } = setupData;
+    // Use existing connected data sources if no localStorage data
+    const completedTools = savedSetup ? JSON.parse(savedSetup).completedTools : completedLogins;
+    const toolSetupTypes = savedSetup ? JSON.parse(savedSetup).toolSetupTypes : {};
+    const customTables = savedSetup ? JSON.parse(savedSetup).customTables : {};
 
     // Calculate total cost
     const calculateTotalMonthlyCost = () => {
