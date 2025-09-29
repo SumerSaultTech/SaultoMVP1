@@ -9,6 +9,8 @@ import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
 import { jiraOAuthService } from "./services/jira-oauth";
 import { hubspotOAuthService } from "./services/hubspot-oauth";
+import { mailchimpOAuthService } from "./services/mailchimp-oauth";
+import { mondayOAuthService } from "./services/monday-oauth";
 import { odooOAuthService } from "./services/odoo-oauth";
 import { odooApiService } from "./services/odoo-api";
 import { zohoOAuthService } from "./services/zoho-oauth";
@@ -235,6 +237,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('HubSpot OAuth service initialized');
     } catch (error) {
       console.warn('Failed to initialize HubSpot OAuth service:', error);
+    }
+  })();
+
+  // Initialize Mailchimp OAuth service
+  (async () => {
+    try {
+      await mailchimpOAuthService.initialize();
+      console.log('Mailchimp OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Mailchimp OAuth service:', error);
+    }
+  })();
+
+  // Initialize Monday.com OAuth service
+  (async () => {
+    try {
+      await mondayOAuthService.initialize();
+      console.log('Monday.com OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Monday.com OAuth service:', error);
     }
   })();
 
@@ -663,6 +685,697 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to sync HubSpot data via OAuth",
         method: 'oauth'
       });
+    }
+  });
+
+  // Mailchimp OAuth2 Routes
+  app.get("/api/auth/mailchimp/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = mailchimpOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Mailchimp OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/mailchimp/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = mailchimpOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+
+      console.log(`🔄 Mailchimp OAuth callback for company ${companyId}`);
+
+      // Exchange code for tokens
+      const tokens = await mailchimpOAuthService.exchangeCodeForTokens(code as string, state as string);
+
+      // Get metadata to determine data center and API endpoint
+      const metadata = await mailchimpOAuthService.getMetadata(tokens.access_token);
+
+      // Get user account info
+      const accountInfo = await mailchimpOAuthService.getUserInfo(tokens.access_token, metadata.api_endpoint);
+
+      console.log(`✅ Mailchimp OAuth successful for account ${accountInfo.account_id}`);
+
+      // Store tokens and metadata in database
+      const mailchimpConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
+        scope: tokens.scope,
+        account_id: accountInfo.account_id,
+        account_name: accountInfo.account_name,
+        email: accountInfo.email,
+        dc: metadata.dc,
+        api_endpoint: metadata.api_endpoint,
+        login_url: metadata.login_url,
+        accountInfo,
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Check if Mailchimp data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingMailchimp = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (existingMailchimp) {
+        // Update existing data source
+        await storage.updateDataSource(existingMailchimp.id, {
+          status: 'connected',
+          config: mailchimpConfig,
+          lastSyncAt: new Date(),
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Mailchimp Account ${accountInfo.account_name}`,
+          type: 'mailchimp',
+          status: 'connected',
+          config: mailchimpConfig,
+        });
+      }
+
+      // Redirect back to frontend with success
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?mailchimp=connected`);
+
+    } catch (error) {
+      console.error('Mailchimp OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Mailchimp table discovery endpoint
+  app.get("/api/auth/mailchimp/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Mailchimp table discovery for company: ${companyId}`);
+
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSourcesByCompany(parseInt(companyId));
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource || !mailchimpSource.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      if (!config.accessToken) {
+        return res.status(400).json({ error: 'Invalid Mailchimp configuration' });
+      }
+
+      // Discover available tables
+      const tables = await mailchimpOAuthService.discoverTables(config.accessToken, config.api_endpoint);
+
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => t.isStandard),
+        audiences: tables.filter(t => ['lists', 'list_members', 'segments'].includes(t.name)),
+        campaigns: tables.filter(t => ['campaigns', 'campaign_reports', 'automations'].includes(t.name)),
+        ecommerce: tables.filter(t => ['stores', 'orders', 'products', 'customers', 'carts'].includes(t.name)),
+        other: tables.filter(t => !t.isStandard && !['lists', 'list_members', 'segments', 'campaigns', 'campaign_reports', 'automations', 'stores', 'orders', 'products', 'customers', 'carts'].includes(t.name))
+      };
+
+      console.log(`✅ Discovered ${tables.length} Mailchimp tables`);
+
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length
+      });
+
+    } catch (error) {
+      console.error('Error discovering Mailchimp tables:', error);
+      res.status(500).json({ error: 'Failed to discover Mailchimp tables' });
+    }
+  });
+
+  app.get("/api/auth/mailchimp/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      // Check if company has active Mailchimp connection
+      const dataSources = await storage.getDataSources(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp' && ds.status === 'connected');
+
+      if (!mailchimpSource || !mailchimpSource.config) {
+        return res.json({ connected: false });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      const status = {
+        connected: true,
+        method: 'oauth',
+        accountInfo: config.accountInfo,
+        dc: config.dc,
+        api_endpoint: config.api_endpoint,
+        expired: false // Mailchimp tokens typically don't expire
+      };
+
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await mailchimpOAuthService.testApiAccess(config.accessToken, config.api_endpoint);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Mailchimp OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Mailchimp sync endpoint
+  app.post("/api/auth/mailchimp/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      console.log(`🔄 Starting OAuth-based Mailchimp sync for company ${companyId}`);
+
+      // Use the Mailchimp OAuth service to sync data
+      const result = await mailchimpOAuthService.syncDataToSchema(companyId);
+
+      if (result.success) {
+        console.log(`✅ OAuth Mailchimp sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Mailchimp`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Mailchimp sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Mailchimp data",
+          method: 'oauth'
+        });
+      }
+
+    } catch (error) {
+      console.error('OAuth Mailchimp sync endpoint error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to sync Mailchimp data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Mailchimp webhook management endpoints
+  app.post("/api/auth/mailchimp/webhooks/create/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId } = req.body;
+
+      if (!listId) {
+        return res.status(400).json({ error: 'List ID is required' });
+      }
+
+      // Get Mailchimp configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource?.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      // Create webhook callback URL
+      const callbackUrl = `${process.env.APP_URL || 'http://localhost:5000'}/api/webhooks/mailchimp/${companyId}/${listId}`;
+
+      // Create webhook
+      const webhook = await mailchimpOAuthService.createWebhook(
+        config.accessToken,
+        config.api_endpoint,
+        listId,
+        callbackUrl
+      );
+
+      res.json({
+        success: true,
+        webhook,
+        callbackUrl
+      });
+
+    } catch (error) {
+      console.error('Error creating Mailchimp webhook:', error);
+      res.status(500).json({ error: 'Failed to create webhook' });
+    }
+  });
+
+  app.get("/api/auth/mailchimp/webhooks/list/:companyId/:listId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId } = req.params;
+
+      // Get Mailchimp configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource?.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      // List webhooks
+      const webhooks = await mailchimpOAuthService.listWebhooks(
+        config.accessToken,
+        config.api_endpoint,
+        listId
+      );
+
+      res.json({
+        success: true,
+        webhooks
+      });
+
+    } catch (error) {
+      console.error('Error listing Mailchimp webhooks:', error);
+      res.status(500).json({ error: 'Failed to list webhooks' });
+    }
+  });
+
+  app.delete("/api/auth/mailchimp/webhooks/:companyId/:listId/:webhookId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId, webhookId } = req.params;
+
+      // Get Mailchimp configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource?.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      // Delete webhook
+      await mailchimpOAuthService.deleteWebhook(
+        config.accessToken,
+        config.api_endpoint,
+        listId,
+        webhookId
+      );
+
+      res.json({
+        success: true,
+        message: 'Webhook deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Error deleting Mailchimp webhook:', error);
+      res.status(500).json({ error: 'Failed to delete webhook' });
+    }
+  });
+
+  // Mailchimp webhook handler
+  app.post("/api/webhooks/mailchimp/:companyId/:listId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId } = req.params;
+
+      // Verify webhook (Mailchimp sends a verification request)
+      if (req.query.challenge) {
+        return res.status(200).send(req.query.challenge);
+      }
+
+      // Process webhook payload
+      const normalizedPayload = await mailchimpOAuthService.processWebhookPayload(req.body);
+
+      // Log webhook event
+      console.log(`📨 Mailchimp webhook received for company ${companyId}, list ${listId}:`, normalizedPayload.type);
+
+      // Here you could trigger incremental sync or store the webhook data
+      // For now, we'll just log it and return success
+
+      res.status(200).json({
+        success: true,
+        message: 'Webhook processed successfully',
+        eventType: normalizedPayload.type
+      });
+
+    } catch (error) {
+      console.error('Error processing Mailchimp webhook:', error);
+      res.status(500).json({ error: 'Failed to process webhook' });
+    }
+  });
+
+  // Monday.com OAuth2 Routes
+  app.get("/api/auth/monday/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = mondayOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Monday.com OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/monday/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = mondayOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+
+      console.log(`🔄 Monday.com OAuth callback for company ${companyId}`);
+
+      // Exchange code for tokens
+      const tokens = await mondayOAuthService.exchangeCodeForTokens(code as string, state as string);
+
+      // Get user account info
+      const userInfo = await mondayOAuthService.getUserInfo(tokens.access_token);
+
+      console.log(`✅ Monday.com OAuth successful for user ${userInfo.id}`);
+
+      // Store tokens and user info in database
+      const mondayConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
+        scope: tokens.scope,
+        user_id: userInfo.id,
+        user_name: userInfo.name,
+        user_email: userInfo.email,
+        account_id: userInfo.account_id,
+        is_admin: userInfo.is_admin,
+        userInfo,
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Check if Monday.com data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingMonday = dataSources.find(ds => ds.type === 'monday');
+
+      if (existingMonday) {
+        // Update existing data source
+        await storage.updateDataSource(existingMonday.id, {
+          status: 'connected',
+          config: mondayConfig,
+          lastSyncAt: new Date(),
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Monday.com Account ${userInfo.name}`,
+          type: 'monday',
+          status: 'connected',
+          config: mondayConfig,
+        });
+      }
+
+      // Redirect back to frontend with success
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?monday=connected`);
+
+    } catch (error) {
+      console.error('Monday.com OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Monday.com table discovery endpoint
+  app.get("/api/auth/monday/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Monday.com table discovery for company: ${companyId}`);
+
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSourcesByCompany(parseInt(companyId));
+      const mondaySource = dataSources.find(ds => ds.type === 'monday');
+
+      if (!mondaySource || !mondaySource.config) {
+        return res.status(404).json({ error: 'Monday.com connection not found' });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      if (!config.accessToken) {
+        return res.status(400).json({ error: 'Invalid Monday.com configuration' });
+      }
+
+      // Discover available tables
+      const tables = await mondayOAuthService.discoverTables(config.accessToken);
+
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => t.isStandard),
+        boards: tables.filter(t => ['boards', 'workspaces'].includes(t.name)),
+        items: tables.filter(t => ['items', 'updates'].includes(t.name)),
+        users: tables.filter(t => ['users', 'teams'].includes(t.name)),
+        other: tables.filter(t => !t.isStandard && !['boards', 'workspaces', 'items', 'updates', 'users', 'teams'].includes(t.name))
+      };
+
+      console.log(`✅ Discovered ${tables.length} Monday.com tables`);
+
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length
+      });
+
+    } catch (error) {
+      console.error('Error discovering Monday.com tables:', error);
+      res.status(500).json({ error: 'Failed to discover Monday.com tables' });
+    }
+  });
+
+  app.get("/api/auth/monday/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      // Check if company has active Monday.com connection
+      const dataSources = await storage.getDataSources(companyId);
+      const mondaySource = dataSources.find(ds => ds.type === 'monday' && ds.status === 'connected');
+
+      if (!mondaySource || !mondaySource.config) {
+        return res.json({ connected: false });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      const status = {
+        connected: true,
+        method: 'oauth',
+        userInfo: config.userInfo,
+        account_id: config.account_id,
+        expiresAt: config.expiresAt,
+        expired: false
+      };
+
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await mondayOAuthService.testApiAccess(config.accessToken);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Monday.com OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Monday.com sync endpoint
+  app.post("/api/auth/monday/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      console.log(`🔄 Starting OAuth-based Monday.com sync for company ${companyId}`);
+
+      // Use the Monday.com OAuth service to sync data
+      const result = await mondayOAuthService.syncDataToSchema(companyId);
+
+      if (result.success) {
+        console.log(`✅ OAuth Monday.com sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Monday.com`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Monday.com sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Monday.com data",
+          method: 'oauth'
+        });
+      }
+
+    } catch (error) {
+      console.error('OAuth Monday.com sync endpoint error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to sync Monday.com data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Monday.com webhook management endpoints
+  app.post("/api/auth/monday/webhooks/create/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { boardId } = req.body;
+
+      if (!boardId) {
+        return res.status(400).json({ error: 'Board ID is required' });
+      }
+
+      // Get Monday.com configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mondaySource = dataSources.find(ds => ds.type === 'monday');
+
+      if (!mondaySource?.config) {
+        return res.status(404).json({ error: 'Monday.com connection not found' });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      // Create webhook callback URL
+      const callbackUrl = `${process.env.APP_URL || 'http://localhost:5000'}/api/webhooks/monday/${companyId}/${boardId}`;
+
+      // Create webhook
+      const webhook = await mondayOAuthService.createWebhook(
+        config.accessToken,
+        boardId,
+        callbackUrl
+      );
+
+      res.json({
+        success: true,
+        webhook,
+        callbackUrl
+      });
+
+    } catch (error) {
+      console.error('Error creating Monday.com webhook:', error);
+      res.status(500).json({ error: 'Failed to create webhook' });
+    }
+  });
+
+  app.delete("/api/auth/monday/webhooks/:companyId/:webhookId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { webhookId } = req.params;
+
+      // Get Monday.com configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mondaySource = dataSources.find(ds => ds.type === 'monday');
+
+      if (!mondaySource?.config) {
+        return res.status(404).json({ error: 'Monday.com connection not found' });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      // Delete webhook
+      await mondayOAuthService.deleteWebhook(config.accessToken, webhookId);
+
+      res.json({
+        success: true,
+        message: 'Webhook deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Error deleting Monday.com webhook:', error);
+      res.status(500).json({ error: 'Failed to delete webhook' });
+    }
+  });
+
+  // Monday.com webhook handler
+  app.post("/api/webhooks/monday/:companyId/:boardId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { boardId } = req.params;
+
+      // Verify webhook (Monday.com sends a challenge for verification)
+      if (req.body.challenge) {
+        return res.status(200).json({ challenge: req.body.challenge });
+      }
+
+      // Process webhook payload
+      const normalizedPayload = await mondayOAuthService.processWebhookPayload(req.body);
+
+      // Log webhook event
+      console.log(`📨 Monday.com webhook received for company ${companyId}, board ${boardId}:`, normalizedPayload.type);
+
+      // Here you could trigger incremental sync or store the webhook data
+      // For now, we'll just log it and return success
+
+      res.status(200).json({
+        success: true,
+        message: 'Webhook processed successfully',
+        eventType: normalizedPayload.type
+      });
+
+    } catch (error) {
+      console.error('Error processing Monday.com webhook:', error);
+      res.status(500).json({ error: 'Failed to process webhook' });
     }
   });
 
