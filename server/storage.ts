@@ -7,6 +7,7 @@ import {
   setupStatus,
   users,
   metricReports,
+  metricCategories,
   type Company,
   type InsertCompany,
   type DataSource,
@@ -26,6 +27,8 @@ import {
   type InsertSetupStatus,
   type InsertUser,
   type InsertMetricReport,
+  type MetricCategory,
+  type InsertMetricCategory,
   type InsertGoal,
 } from "@shared/schema";
 
@@ -63,6 +66,7 @@ export interface IStorage {
   getUsersByCompany(companyId: number): Promise<User[]>;
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined>;
 
@@ -197,23 +201,44 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(user => user.username === username);
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(user => user.email === email);
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentId++;
     const user: User = {
       ...insertUser,
       id,
-      companyId: null,
-      role: "user",
-      firstName: null,
-      lastName: null,
-      email: null,
-      status: "active",
-      permissions: [],
-      mfaEnabled: false,
-      mfaSecret: null,
+      companyId: insertUser.companyId || null,
+      role: insertUser.role || "user",
+      firstName: insertUser.firstName || null,
+      lastName: insertUser.lastName || null,
+      email: insertUser.email || null,
+      status: insertUser.status || "active",
+      permissions: insertUser.permissions || [],
+      mfaEnabled: insertUser.mfaEnabled || false,
+      mfaSecret: insertUser.mfaSecret || null,
       lastLoginAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      // Add all the additional security fields with defaults
+      loginAttempts: 0,
+      lockedUntil: null,
+      lastActivityAt: null,
+      sessionCount: 0,
+      maxSessions: 3,
+      passwordChangedAt: null,
+      passwordResetToken: null,
+      passwordResetExpires: null,
+      mustChangePassword: false,
+      passwordHistory: [],
+      accountLockedBy: null,
+      accountLockedReason: null,
+      accountLockedAt: null,
+      deactivatedAt: null,
+      deactivatedBy: null,
+      deactivationReason: null,
     };
     this.users.set(id, user);
     return user;
@@ -226,7 +251,7 @@ export class MemStorage implements IStorage {
     const updatedUser: User = {
       ...existingUser,
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(),
     };
     this.users.set(id, updatedUser);
     return updatedUser;
@@ -243,7 +268,22 @@ export class MemStorage implements IStorage {
 
   async createDataSource(insertDataSource: InsertDataSource): Promise<DataSource> {
     const id = this.currentId++;
-    const dataSource: DataSource = { ...insertDataSource, id, lastSyncAt: null };
+    const dataSource: DataSource = {
+      ...insertDataSource,
+      id,
+      lastSyncAt: null,
+      status: insertDataSource.status || "disconnected",
+      credentials: insertDataSource.credentials || null,
+      config: insertDataSource.config || null,
+      createdAt: insertDataSource.createdAt || new Date(),
+      updatedAt: insertDataSource.updatedAt || new Date(),
+      connectorId: insertDataSource.connectorId || null,
+      tableCount: insertDataSource.tableCount || 0,
+      syncTables: insertDataSource.syncTables || [],
+      syncFrequency: insertDataSource.syncFrequency || "daily",
+      lastSyncRecords: insertDataSource.lastSyncRecords || 0,
+      lastSyncError: insertDataSource.lastSyncError || null,
+    };
     this.dataSources.set(id, dataSource);
     return dataSource;
   }
@@ -268,8 +308,8 @@ export class MemStorage implements IStorage {
     return Array.from(this.dataSources.values()).find(ds => {
       if (ds.config) {
         try {
-          const config = JSON.parse(ds.config);
-          return config.instanceId === instanceId;
+          const config = typeof ds.config === 'string' ? JSON.parse(ds.config) : ds.config;
+          return (config as any).instanceId === instanceId;
         } catch (e) {
           return false;
         }
@@ -280,7 +320,7 @@ export class MemStorage implements IStorage {
 
   async updateDataSourceSyncTime(companyId: number, connectorType: string, syncTime: Date): Promise<void> {
     // Find the data source by company and type
-    for (const [id, dataSource] of this.dataSources.entries()) {
+    for (const [id, dataSource] of Array.from(this.dataSources.entries())) {
       if (dataSource.companyId === companyId && dataSource.type === connectorType) {
         // Update the lastSyncAt time
         this.dataSources.set(id, { ...dataSource, lastSyncAt: syncTime });
@@ -297,21 +337,27 @@ export class MemStorage implements IStorage {
     return Array.from(this.sqlModels.values());
   }
 
-  async getSqlModelsByLayer(layer: string): Promise<SqlModel[]> {
-    return Array.from(this.sqlModels.values()).filter(model => model.layer === layer);
+  async getSqlModelsByLayer(companyId: number, layer: string): Promise<SqlModel[]> {
+    return Array.from(this.sqlModels.values()).filter(model => model.layer === layer && model.companyId === companyId);
   }
 
   async getSqlModel(id: number): Promise<SqlModel | undefined> {
     return this.sqlModels.get(id);
   }
 
-  async getSqlModelByName(name: string): Promise<SqlModel | undefined> {
-    return Array.from(this.sqlModels.values()).find(model => model.name === name);
+  async getSqlModelByName(companyId: number, name: string): Promise<SqlModel | undefined> {
+    return Array.from(this.sqlModels.values()).find(model => model.name === name && model.companyId === companyId);
   }
 
   async createSqlModel(insertModel: InsertSqlModel): Promise<SqlModel> {
     const id = this.currentId++;
-    const model: SqlModel = { ...insertModel, id, deployedAt: null };
+    const model: SqlModel = {
+      ...insertModel,
+      id,
+      deployedAt: null,
+      status: insertModel.status || "pending",
+      dependencies: insertModel.dependencies || []
+    };
     this.sqlModels.set(id, model);
     return model;
   }
@@ -375,7 +421,8 @@ export class MemStorage implements IStorage {
       ...insertMessage,
       id,
       timestamp: new Date(),
-      companyId: insertMessage.companyId || 0
+      companyId: insertMessage.companyId || 0,
+      metadata: insertMessage.metadata || null
     };
     this.chatMessages.set(id, message);
     return message;
@@ -399,7 +446,8 @@ export class MemStorage implements IStorage {
       ...insertActivity,
       id,
       timestamp: new Date(),
-      companyId: insertActivity.companyId || 0
+      companyId: insertActivity.companyId || 0,
+      metadata: insertActivity.metadata || null
     };
     this.pipelineActivities.set(id, activity);
     return activity;
@@ -478,10 +526,16 @@ export class MemStorage implements IStorage {
     const report: MetricReport = {
       ...insertReport,
       id,
-      shareToken,
+      shareToken: shareToken,
       createdAt: now,
       updatedAt: now,
-      companyId: insertReport.companyId, // Company ID must be provided
+      companyId: insertReport.companyId || 0,
+      description: insertReport.description || null,
+      customGroupings: insertReport.customGroupings || null,
+      reportConfig: insertReport.reportConfig || null,
+      generatedInsights: insertReport.generatedInsights || null,
+      isPublic: insertReport.isPublic || null,
+      createdBy: insertReport.createdBy || null,
     };
     
     this.metricReports.set(id, report);
@@ -851,6 +905,16 @@ export class DatabaseStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error('Failed to get user by username:', error);
+      return undefined;
+    }
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    try {
+      const result = await this.db.select().from(users).where(eq(users.email, email));
+      return result[0];
+    } catch (error) {
+      console.error('Failed to get user by email:', error);
       return undefined;
     }
   }
@@ -1980,6 +2044,143 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error(`Failed to refresh goals_daily for company ${companyId}:`, error);
       // Don't throw - this is not critical for the operation
+    }
+  }
+
+  // Metric Categories CRUD Methods
+  async getMetricCategories(companyId: number): Promise<MetricCategory[]> {
+    try {
+      const categories = await this.db
+        .select()
+        .from(metricCategories)
+        .where(eq(metricCategories.companyId, companyId))
+        .orderBy(metricCategories.name);
+
+      // If no custom categories exist, return default ones
+      if (categories.length === 0) {
+        return this.getDefaultMetricCategories(companyId);
+      }
+
+      return categories;
+    } catch (error) {
+      console.error('Error fetching metric categories:', error);
+      throw error;
+    }
+  }
+
+  async createMetricCategory(categoryData: InsertMetricCategory): Promise<MetricCategory> {
+    try {
+      const [newCategory] = await this.db
+        .insert(metricCategories)
+        .values(categoryData)
+        .returning();
+
+      console.log(`✅ Created metric category: ${newCategory.name} for company ${categoryData.companyId}`);
+      return newCategory;
+    } catch (error) {
+      console.error('Error creating metric category:', error);
+      throw error;
+    }
+  }
+
+  async updateMetricCategory(id: number, companyId: number, updates: Partial<InsertMetricCategory>): Promise<MetricCategory | undefined> {
+    try {
+      const [updatedCategory] = await this.db
+        .update(metricCategories)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(
+          and(
+            eq(metricCategories.id, id),
+            eq(metricCategories.companyId, companyId)
+          )
+        )
+        .returning();
+
+      console.log(`✅ Updated metric category: ${id} for company ${companyId}`);
+      return updatedCategory;
+    } catch (error) {
+      console.error('Error updating metric category:', error);
+      throw error;
+    }
+  }
+
+  async deleteMetricCategory(id: number, companyId: number): Promise<boolean> {
+    try {
+      const result = await this.db
+        .delete(metricCategories)
+        .where(
+          and(
+            eq(metricCategories.id, id),
+            eq(metricCategories.companyId, companyId)
+          )
+        )
+        .returning();
+
+      console.log(`✅ Deleted metric category: ${id} for company ${companyId}`);
+      return result.length > 0;
+    } catch (error) {
+      console.error('Error deleting metric category:', error);
+      throw error;
+    }
+  }
+
+  private async getDefaultMetricCategories(companyId: number): Promise<MetricCategory[]> {
+    // Create simple default categories for the company
+    const defaultCategories = [
+      {
+        companyId,
+        name: "Marketing",
+        value: "marketing",
+        color: "bg-pink-100 text-pink-800",
+        isDefault: true,
+        isActive: true,
+      },
+      {
+        companyId,
+        name: "Sales",
+        value: "sales",
+        color: "bg-green-100 text-green-800",
+        isDefault: true,
+        isActive: true,
+      },
+      {
+        companyId,
+        name: "Operations",
+        value: "operations",
+        color: "bg-blue-100 text-blue-800",
+        isDefault: true,
+        isActive: true,
+      },
+      {
+        companyId,
+        name: "Finance",
+        value: "finance",
+        color: "bg-yellow-100 text-yellow-800",
+        isDefault: true,
+        isActive: true,
+      },
+      {
+        companyId,
+        name: "Technology",
+        value: "technology",
+        color: "bg-purple-100 text-purple-800",
+        isDefault: true,
+        isActive: true,
+      },
+    ];
+
+    try {
+      // Insert default categories
+      const createdCategories = await this.db
+        .insert(metricCategories)
+        .values(defaultCategories)
+        .returning();
+
+      console.log(`✅ Created default metric categories for company ${companyId}`);
+      return createdCategories;
+    } catch (error) {
+      console.error('Error creating default metric categories:', error);
+      return [];
     }
   }
 

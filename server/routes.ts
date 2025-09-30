@@ -163,12 +163,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log(`🔍 Checking route: ${req.path} for tenant validation bypass`);
 
     // Skip tenant validation for these routes
-    if (req.path.startsWith('/admin') ||
-        req.path.includes('/admin/') ||
-        req.path.startsWith('/auth') ||
+    if (req.path.startsWith('/auth') ||
         req.path.startsWith('/health') ||
         req.path.startsWith('/test-post') ||
-        req.path.startsWith('/companies')) {
+        req.path.startsWith('/companies') ||
+        req.path === '/metric-categories' ||
+        // Only specific admin routes that need to bypass tenant validation
+        req.path.startsWith('/admin/users') ||
+        req.path.startsWith('/admin/companies') ||
+        req.path.startsWith('/admin/sessions') ||
+        req.path.startsWith('/admin/current-company') ||
+        req.path.startsWith('/admin/clear-company') ||
+        req.path.startsWith('/admin/switch-company')) {
       console.log(`🔧 Bypassing tenant validation for route: ${req.path}`);
       return next();
     }
@@ -5432,6 +5438,122 @@ CRITICAL REQUIREMENTS:
   });
 
   // Removed Snowflake execute endpoint - use /api/postgres/query instead
+
+  // Admin Metric Categories API (accessible to all authenticated users)
+  app.get("/api/admin/metric-categories", validateTenantAccess, async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      // Prevent HTTP caching for admin categories to ensure fresh data after deletions
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
+      const categories = await storage.getMetricCategories(companyId);
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching metric categories:", error);
+      res.status(500).json({ error: "Failed to fetch metric categories" });
+    }
+  });
+
+  app.post("/api/admin/metric-categories", validateTenantAccess, async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      const { name, value, color } = req.body;
+
+      if (!name || !value) {
+        return res.status(400).json({ error: "Name and value are required" });
+      }
+
+      const newCategory = await storage.createMetricCategory({
+        companyId,
+        name,
+        value,
+        color: color || "bg-blue-100 text-blue-800",
+        isDefault: false,
+        isActive: true,
+      });
+
+      res.json(newCategory);
+    } catch (error) {
+      console.error("Error creating metric category:", error);
+      res.status(500).json({ error: "Failed to create metric category" });
+    }
+  });
+
+  app.put("/api/admin/metric-categories/:id", validateTenantAccess, async (req, res) => {
+    try {
+      const categoryId = parseInt(req.params.id);
+      const companyId = (req.session as any)?.selectedCompany?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      const updatedCategory = await storage.updateMetricCategory(categoryId, companyId, req.body);
+      res.json(updatedCategory);
+    } catch (error) {
+      console.error("Error updating metric category:", error);
+      res.status(500).json({ error: "Failed to update metric category" });
+    }
+  });
+
+  app.delete("/api/admin/metric-categories/:id", validateTenantAccess, async (req, res) => {
+    try {
+      console.log("🗑️ DELETE /api/admin/metric-categories/:id called with ID:", req.params.id);
+      const categoryId = parseInt(req.params.id);
+      const companyId = (req.session as any)?.selectedCompany?.id;
+
+      console.log("🗑️ Parsed categoryId:", categoryId, "companyId:", companyId);
+
+      if (!companyId) {
+        console.log("🗑️ Missing company ID");
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      console.log("🗑️ Calling storage.deleteMetricCategory...");
+      await storage.deleteMetricCategory(categoryId, companyId);
+      console.log("🗑️ Category deleted successfully, returning response");
+      res.json({ success: true });
+    } catch (error) {
+      console.error("🗑️ Error deleting metric category:", error);
+      res.status(500).json({ error: "Failed to delete metric category" });
+    }
+  });
+
+  // Public Metric Categories API (for frontend use)
+  app.get("/api/metric-categories", async (req, res) => {
+    try {
+      console.log('🔍 Metric categories API called');
+      const companyId = (req.session as any)?.selectedCompany?.id;
+      console.log(`🏢 Company ID from session: ${companyId}`);
+
+      if (!companyId) {
+        console.log('❌ No company selected in session');
+        return res.status(400).json({
+          success: false,
+          error: "No company selected. Please select a company first.",
+          requiresCompanySelection: true
+        });
+      }
+
+      console.log(`📊 Fetching metric categories for company ${companyId}`);
+      const categories = await storage.getMetricCategories(companyId);
+      console.log(`✅ Found ${categories.length} categories`);
+      res.json(categories);
+    } catch (error) {
+      console.error("❌ Error fetching metric categories:", error);
+      res.status(500).json({ error: "Failed to fetch metric categories" });
+    }
+  });
 
   // SaultoChat integration routes - using integrated Azure OpenAI
   app.post("/api/ai-assistant/chat", async (req: any, res: any) => {

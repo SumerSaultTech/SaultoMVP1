@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Edit, Trash2, Target, TrendingUp, Users, DollarSign, BarChart3, Save, Sparkles } from "lucide-react";
+import { Plus, Edit, Trash2, BarChart3, Save, Sparkles } from "lucide-react";
 import { apiRequest, apiRequestJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { MetricsAssistant } from "@/components/assistant/metrics-assistant";
@@ -63,12 +63,6 @@ interface MetricFormData {
 }
 
 
-const METRIC_CATEGORIES = [
-  { value: "revenue", label: "Revenue", icon: DollarSign, color: "bg-green-100 text-green-800" },
-  { value: "growth", label: "Growth", icon: TrendingUp, color: "bg-blue-100 text-blue-800" },
-  { value: "retention", label: "Retention", icon: Users, color: "bg-purple-100 text-purple-800" },
-  { value: "efficiency", label: "Efficiency", icon: Target, color: "bg-orange-100 text-orange-800" },
-];
 
 const METRIC_FORMATS = [
   { value: "currency", label: "Currency ($)" },
@@ -195,6 +189,19 @@ export default function MetricsManagement() {
       console.log('❌ Metrics query error:', error?.message);
     },
   });
+
+  // Fetch metric categories for dynamic form options
+  const { data: categoriesData = [] } = useQuery({
+    queryKey: ["/api/metric-categories"],
+    staleTime: 60000, // Cache for 1 minute
+  });
+
+  // Convert categories to the format expected by the form (always use dynamic data)
+  const METRIC_CATEGORIES = categoriesData.map((cat: any) => ({
+    value: cat.value,
+    label: cat.name,
+    color: cat.color
+  }));
 
   // Fetch dynamic data sources for the current company
   const { data: companyDataSources = [], isLoading: isLoadingDataSources } = useQuery({

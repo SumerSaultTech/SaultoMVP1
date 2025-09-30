@@ -22,15 +22,37 @@ export const users = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   email: text("email"),
-  status: text("status").default("active"), // 'active', 'invited', 'disabled'
+  status: text("status").default("active"), // 'active', 'invited', 'disabled', 'suspended', 'locked', 'inactive'
   companyId: bigint("company_id", { mode: "number" }).references(() => companies.id),
-  role: text("role").default("user"), // 'admin', 'user', 'viewer'
+  role: text("role").default("user"), // 'admin', 'user', 'viewer', 'company_admin'
   permissions: jsonb("permissions").default([]), // Array of permission strings
   mfaEnabled: boolean("mfa_enabled").default(false),
   mfaSecret: text("mfa_secret"), // TOTP secret for 2FA
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+
+  // Session Management & Security
+  loginAttempts: integer("login_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  lastActivityAt: timestamp("last_activity_at"),
+  sessionCount: integer("session_count").default(0),
+  maxSessions: integer("max_sessions").default(3),
+
+  // Password Security
+  passwordChangedAt: timestamp("password_changed_at"),
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpires: timestamp("password_reset_expires"),
+  mustChangePassword: boolean("must_change_password").default(false),
+  passwordHistory: jsonb("password_history").default([]), // Store last 5 password hashes
+
+  // Account Lifecycle
+  accountLockedBy: integer("account_locked_by"),
+  accountLockedReason: text("account_locked_reason"),
+  accountLockedAt: timestamp("account_locked_at"),
+  deactivatedAt: timestamp("deactivated_at"),
+  deactivatedBy: integer("deactivated_by"),
+  deactivationReason: text("deactivation_reason"),
 });
 
 // Permissions table for RBAC
@@ -61,6 +83,48 @@ export const auditLogs = pgTable("audit_logs", {
   userAgent: text("user_agent"),
   sessionId: text("session_id"),
   companyId: bigint("company_id", { mode: "number" }).references(() => companies.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Session tracking for enhanced security
+export const userSessions = pgTable("user_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  sessionId: text("session_id").notNull().unique(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastActivity: timestamp("last_activity").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  isActive: boolean("is_active").default(true),
+});
+
+// User invitation system
+export const userInvitations = pgTable("user_invitations", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
+  role: text("role").notNull(),
+  invitedBy: integer("invited_by").references(() => users.id),
+  invitationToken: text("invitation_token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  status: text("status").default("pending"), // 'pending', 'accepted', 'expired', 'cancelled'
+});
+
+// MFA devices for enhanced security
+export const mfaDevices = pgTable("mfa_devices", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  deviceName: text("device_name").notNull(),
+  deviceType: text("device_type").notNull(), // 'totp', 'sms', 'email'
+  secret: text("secret"), // For TOTP
+  phoneNumber: text("phone_number"), // For SMS
+  isPrimary: boolean("is_primary").default(false),
+  verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -313,6 +377,8 @@ export type Metric = {
   updatedAt?: Date;
 };
 
+export type InsertMetric = Omit<Metric, 'id' | 'createdAt' | 'updatedAt' | 'lastCalculatedAt'>;
+
 export type Goal = {
   id: number;
   metricKey: string;
@@ -321,6 +387,8 @@ export type Goal = {
   target: number;
   createdAt?: Date;
 };
+
+export type InsertGoal = Omit<Goal, 'id' | 'createdAt'>;
 
 export type MetricHistory = {
   id: number;
@@ -353,6 +421,22 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
 // Note: Goal type is already defined above. Removed duplicate definition.
 // MetricRegistry types removed - consolidated into Metric types
 
+// Custom metric categories table (tenant-specific)
+export const metricCategories = pgTable("metric_categories", {
+  id: serial("id").primaryKey(),
+  companyId: bigint("company_id", { mode: "number" }).references(() => companies.id).notNull(),
+  name: text("name").notNull(), // e.g., "Marketing", "Finance", "Operations"
+  value: text("value").notNull(), // e.g., "marketing", "finance", "operations" (slug)
+  color: text("color").default("bg-blue-100 text-blue-800"), // Tailwind color classes
+  isDefault: boolean("is_default").default(false), // System default categories
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  // Ensure unique category values per company
+  uniqueCompanyValue: unique().on(table.companyId, table.value),
+}));
+
 // Types for new RBAC and audit tables
 export type Permission = typeof permissions.$inferSelect;
 export type InsertPermission = z.infer<typeof insertPermissionSchema>;
@@ -360,3 +444,12 @@ export type RolePermission = typeof rolePermissions.$inferSelect;
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+
+// Types for metric categories
+export type MetricCategory = typeof metricCategories.$inferSelect;
+export const insertMetricCategorySchema = createInsertSchema(metricCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertMetricCategory = z.infer<typeof insertMetricCategorySchema>;

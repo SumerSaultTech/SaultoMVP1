@@ -11,7 +11,7 @@ export async function apiRequest(
   url: string,
   method: string,
   data?: unknown | undefined,
-): Promise<Response> {
+): Promise<any> {
   const res = await fetch(url, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
@@ -20,7 +20,21 @@ export async function apiRequest(
   });
 
   await throwIfResNotOk(res);
-  return res;
+
+  // Parse JSON for successful responses, handle empty responses gracefully
+  const contentType = res.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    return await res.json();
+  }
+
+  // For successful DELETE requests with empty body, return success indicator
+  if (method === "DELETE" && res.ok) {
+    return { success: true };
+  }
+
+  // For other responses, try to parse as text or return null
+  const text = await res.text();
+  return text || { success: true };
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
