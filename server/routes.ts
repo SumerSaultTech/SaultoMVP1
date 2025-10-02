@@ -6109,7 +6109,10 @@ CRITICAL REQUIREMENTS:
         return res.status(400).json({ error: "Message is required" });
       }
 
-      const response = await metricsAIService.chatWithAssistant(message, context);
+      // Get company ID from session
+      const companyId = getSessionCompanyId(req);
+      
+      const response = await metricsAIService.chatWithAssistant(message, context, companyId);
       res.json({ response });
     } catch (error) {
       console.error("AI chat error:", error);

@@ -353,17 +353,74 @@ Please suggest the most important metrics this business should track.`;
     }
   }
 
-  async chatWithAssistant(message: string, context?: any): Promise<string> {
-    const systemPrompt = `You are a helpful business metrics and analytics assistant. Help users understand, create, and optimize their business KPIs. 
+  async chatWithAssistant(message: string, context?: any, companyId?: number): Promise<string> {
+    // Fetch company context if available
+    let companyContext = '';
+    console.log(`🤖 Chat request - Company ID: ${companyId}, Message: "${message.substring(0, 50)}..."`);
+    
+    if (companyId) {
+      try {
+        const ctx = await this.getCompanyContext(companyId);
+        console.log(`📊 Found ${ctx.schemaInfo.tables.length} tables for company ${companyId}`);
+        
+        if (ctx.schemaInfo.tables.length > 0) {
+          companyContext = `\n\n## Company Data Context:\n`;
+          companyContext += `### Available Tables (${ctx.schemaInfo.tables.length} total):\n`;
+          // Group tables by type
+          const coreTables = ctx.schemaInfo.tables.filter(t => t.name.startsWith('core_'));
+          const stgTables = ctx.schemaInfo.tables.filter(t => t.name.startsWith('stg_'));
+          const intTables = ctx.schemaInfo.tables.filter(t => t.name.startsWith('int_'));
+          
+          if (coreTables.length > 0) {
+            companyContext += `\n**Core Tables:** ${coreTables.map(t => `\`${t.name}\``).join(', ')}\n`;
+          }
+          if (stgTables.length > 0) {
+            companyContext += `**Staging Tables:** ${stgTables.map(t => `\`${t.name}\``).join(', ')}\n`;
+          }
+          if (intTables.length > 0) {
+            companyContext += `**Intermediate Tables:** ${intTables.map(t => `\`${t.name}\``).join(', ')}\n`;
+          }
+          
+          if (ctx.dataSources.length > 0) {
+            companyContext += `\n### Connected Systems:\n`;
+            companyContext += ctx.dataSources.map(ds => `- **${ds.name}** (${ds.type}) - Status: ${ds.status}`).join('\n');
+            companyContext += '\n';
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ Could not fetch company context:', error);
+      }
+    } else {
+      console.log('⚠️ No company ID provided for chat');
+    }
+
+    const systemPrompt = `You are a helpful business metrics and analytics assistant. Help users understand, create, and optimize their business KPIs.
+
+**IMPORTANT FORMATTING RULES:**
+- Always format your responses using proper Markdown
+- Use headers (##, ###) to organize sections
+- Use bullet points (- or *) for lists
+- Use **bold** for emphasis on key terms
+- Use \`inline code\` for metric names, SQL keywords, or formulas
+- Use code blocks (\`\`\`sql) for SQL queries
+- Use numbered lists (1., 2., 3.) for step-by-step instructions
+- Include line breaks between sections for readability
 
 You can:
 - Explain business metrics and their importance
 - Help define new metrics based on business goals
 - Suggest improvements to existing metrics
 - Provide insights about metric interpretation
-- Help with general guidance on metric calculations
+- Help with SQL queries and calculations
+- List and describe available database tables when asked
+- Reference actual company data and connected systems
 
-Keep responses concise, actionable, and business-focused. Focus on metric concepts rather than specific database implementations.`;
+When users ask about available tables or data:
+- ALWAYS list the specific tables available in their company's database
+- Explain what each table type contains (core = processed data, stg = staging, int = intermediate)
+- Mention connected systems like HubSpot, Salesforce, etc.
+
+Keep responses well-structured, actionable, and business-focused.${companyContext}`;
 
     try {
       if (!openai) {
@@ -374,16 +431,35 @@ Keep responses concise, actionable, and business-focused. Focus on metric concep
         model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: message }
+          { role: "user", content: `Please provide a well-formatted response with markdown:\n\n${message}` }
         ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: 800
       });
 
       return response.choices[0].message.content || "I'm sorry, I couldn't process your request.";
     } catch (error) {
       console.error('Error in chat:', error);
-      return "I'm experiencing some technical difficulties. Please try again.";
+      // Return a formatted fallback response
+      return `## Unable to Connect to AI Service
+
+I'm currently unable to connect to the AI service, but I can still help you with metrics guidance:
+
+### Common Business Metrics:
+- **Monthly Recurring Revenue (MRR)** - Total predictable revenue per month
+- **Customer Acquisition Cost (CAC)** - Cost to acquire a new customer
+- **Customer Lifetime Value (CLV)** - Total revenue from a customer relationship
+- **Churn Rate** - Percentage of customers who stop using your service
+- **Net Promoter Score (NPS)** - Customer satisfaction and loyalty metric
+
+### To Calculate Metrics:
+
+1. **Identify your data source** (e.g., \`core_customer_metrics\` table)
+2. **Define the calculation formula**
+3. **Set appropriate time periods** (daily, monthly, yearly)
+4. **Establish realistic goals** based on industry benchmarks
+
+Would you like help with a specific metric calculation?`;
     }
   }
 

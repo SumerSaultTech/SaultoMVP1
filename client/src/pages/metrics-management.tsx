@@ -756,7 +756,15 @@ export default function MetricsManagement() {
   };
 
   const getCategoryInfo = (category: string) => {
-    return METRIC_CATEGORIES.find(cat => cat.value === category) || METRIC_CATEGORIES[0];
+    const found = METRIC_CATEGORIES.find(cat => cat.value === category);
+    if (found) return found;
+    
+    // Fallback category if dynamic categories haven't loaded yet
+    return METRIC_CATEGORIES[0] || {
+      value: category || 'other',
+      label: category || 'Other',
+      color: 'bg-gray-100 text-gray-800'
+    };
   };
 
   // Get available tables based on main data source (using dynamic data)

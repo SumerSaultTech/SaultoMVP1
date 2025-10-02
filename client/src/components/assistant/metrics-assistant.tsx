@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { Bot, Send, Sparkles, TrendingUp, Calculator, Lightbulb, Plus } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessage {
   id: string;
@@ -296,7 +298,39 @@ export function MetricsAssistant({ onMetricCreate }: MetricsAssistantProps) {
                       : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                   }`}
                 >
-                  <div className="break-words text-sm">{message.content}</div>
+                  <div className="break-words text-sm prose prose-sm w-full dark:prose-invert">
+                    {message.role === "assistant" ? (
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // Custom styling for markdown elements
+                          h1: ({children}) => <h1 className="text-lg font-bold mb-2 text-gray-900 dark:text-gray-100">{children}</h1>,
+                          h2: ({children}) => <h2 className="text-base font-semibold mb-2 text-gray-900 dark:text-gray-100">{children}</h2>,
+                          h3: ({children}) => <h3 className="text-sm font-semibold mb-1 text-gray-900 dark:text-gray-100">{children}</h3>,
+                          p: ({children}) => <p className="mb-2 text-gray-800 dark:text-gray-200">{children}</p>,
+                          ul: ({children}) => <ul className="list-disc list-inside mb-2 text-gray-800 dark:text-gray-200">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal list-inside mb-2 text-gray-800 dark:text-gray-200">{children}</ol>,
+                          li: ({children}) => <li className="mb-1">{children}</li>,
+                          code: ({children, ...props}: any) => {
+                            const inline = !props.className?.includes('language-');
+                            return inline ? (
+                              <code className="px-1 py-0.5 rounded bg-green-50 border border-green-200 text-green-800 text-xs font-mono break-all">{children}</code>
+                            ) : (
+                              <code className="block p-3 rounded border bg-green-50 border-green-200 text-green-800 text-sm font-mono whitespace-pre-wrap break-all max-w-full">{children}</code>
+                            );
+                          },
+                          pre: ({children}) => <pre className="mb-2 overflow-x-auto max-w-full">{children}</pre>,
+                          blockquote: ({children}) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-3 italic">{children}</blockquote>,
+                          strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+                          em: ({children}) => <em className="italic">{children}</em>,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    ) : (
+                      message.content
+                    )}
+                  </div>
                   
                   {/* Render metric suggestions as clickable buttons */}
                   {message.suggestions && message.suggestions.length > 0 && (

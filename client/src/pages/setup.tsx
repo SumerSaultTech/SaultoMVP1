@@ -2358,10 +2358,10 @@ export default function Setup() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">
-                Connected: {completedLogins.length}/{selectedTools.length}
+                Connected: {completedLogins.filter(login => selectedTools.includes(login)).length}/{selectedTools.length}
               </p>
               <p className="text-sm text-gray-600">
-                {completedLogins.length === selectedTools.length 
+                {completedLogins.filter(login => selectedTools.includes(login)).length === selectedTools.length 
                   ? "All apps connected! Ready to sync data." 
                   : "Connect all apps to proceed to data sync."
                 }
@@ -2380,7 +2380,7 @@ export default function Setup() {
                   setCurrentStep("syncProgress");
                   realDataSync();
                 }}
-                disabled={completedLogins.length !== selectedTools.length}
+                disabled={completedLogins.filter(login => selectedTools.includes(login)).length !== selectedTools.length}
                 className="bg-saulto-600 hover:bg-saulto-700 text-white"
               >
                 Start Data Sync
