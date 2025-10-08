@@ -37,6 +37,10 @@ export async function validateTenantAccess(req: Request, res: Response, next: Ne
 
     // Check if session exists and has selected company
     if (!req.session?.selectedCompany?.id) {
+      console.warn('🚫 Tenant validation blocked: no selectedCompany in session', {
+        hasSession: !!req.session,
+        sessionKeys: req.session ? Object.keys(req.session as any) : [],
+      });
       return res.status(401).json({
         success: false,
         error: 'No company selected. Please select a company first.',
@@ -49,6 +53,7 @@ export async function validateTenantAccess(req: Request, res: Response, next: Ne
     // Validate company exists in database
     const company = await storage.getCompany(companyId);
     if (!company) {
+      console.log(`🚫 Tenant validation blocked: company ${companyId} not found`);
       return res.status(404).json({
         success: false,
         error: `Company with ID ${companyId} not found`,
@@ -72,6 +77,7 @@ export async function validateTenantAccess(req: Request, res: Response, next: Ne
         hasValidSchema = await validateTenantSchema(dbStorage.sql, companyId);
         
         if (!hasValidSchema) {
+          console.log(`🚫 Tenant validation blocked: analytics schema not found for company ${companyId}`);
           return res.status(400).json({
             success: false,
             error: `Analytics schema not found for company ${companyId}. Please ensure the company is properly set up.`,

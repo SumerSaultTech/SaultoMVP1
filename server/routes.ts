@@ -34,9 +34,11 @@ import { requireAdmin, auditAdminAction } from "./middleware/admin-middleware";
 import { rbacService, PERMISSIONS } from "./services/rbac-service";
 import { syncScheduler } from "./services/sync-scheduler";
 import { MetricsTimeSeriesETL } from "./services/metrics-time-series-etl";
-// Force server reload to initialize sync scheduler
 import { mfaService } from "./services/mfa-service";
 import { MetricsSeriesService } from "./services/metrics-series.js";
+
+import { etlScheduler } from "./services/etl-scheduler";
+
 import { sessionManagementService, createSessionMiddleware } from "./services/session-management";
 import { accountSecurityService } from "./services/account-security";
 import { emailService } from "./services/email-service";
@@ -46,8 +48,8 @@ import bcrypt from "bcryptjs";
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
 const ALLOWED_EXTENSIONS = new Set([
-  'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx', 
-  'ppt', 'pptx', 'csv', 'json', 'zip', 'py', 'js', 'html', 'css', 'c', 
+  'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx', 'xls', 'xlsx',
+  'ppt', 'pptx', 'csv', 'json', 'zip', 'py', 'js', 'html', 'css', 'c',
   'cpp', 'h', 'java', 'rb', 'php', 'xml', 'md'
 ]);
 
@@ -147,6 +149,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   if (syncScheduler) {
     console.log('✅ Sync scheduler loaded and available');
   }
+  // Ensure ETL scheduler is started
+  console.log('🔧 Initializing ETL scheduler...');
+  if (etlScheduler) {
+    console.log('✅ ETL scheduler loaded and available');
+  }
   
   // Configure session middleware
   app.use(session({
@@ -224,6 +231,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     health.services.postgres = "running";
 
     res.json(health);
+  });
+
+  // Admin ETL endpoints
+  // View scheduler status and scheduled jobs
+  app.get('/api/admin/etl/status', requireAdmin, async (req, res) => {
+    try {
+      const enabled = process.env.ENABLE_ETL_SCHEDULER === 'true';
+      const jobs = etlScheduler?.getJobs ? etlScheduler.getJobs() : [];
+      res.json({ enabled, checkIntervalMs: 60000, jobs });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message || 'Failed to get ETL status' });
+    }
+  });
+
+  // Trigger ETL runs on demand
+  app.post('/api/admin/etl/run', requireAdmin, async (req, res) => {
+    try {
+      const { companyId, periods } = req.body || {};
+      const result = await etlScheduler.runNow({ companyId, periods });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message || 'Failed to run ETL' });
+    }
   });
 
   // Initialize Jira OAuth service
@@ -3157,6 +3187,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: company.name,
         slug: company.slug
       };
+      // Backward compatibility: also set companyId for routes that read req.session.companyId
+      (req.session as any).companyId = company.id;
       
       console.log(`✅ Company selected: ${company.name} (ID: ${company.id})`);
       res.json({ 
@@ -3174,6 +3206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current session info including selected company
   app.get("/api/session", async (req, res) => {
     try {
+      console.log("Getting session info...");
       res.json({
         selectedCompany: req.session?.selectedCompany || null,
         user: req.session?.user || null
@@ -5632,12 +5665,24 @@ CRITICAL REQUIREMENTS:
   // Pipeline Activities
   app.get("/api/pipeline-activities", async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      console.log("📊 Getting pipeline activities...");
+      // Use standardized helper to validate/get company context
+      let companyId: number | null = null;
+      try {
+        companyId = getValidatedCompanyId(req);
+      } catch (e) {
+        // Fallback to legacy session key if helper throws
+        companyId = (req.session as any)?.companyId || (req.session as any)?.selectedCompany?.id || null;
+      }
+      console.log("Company ID resolved for /api/pipeline-activities:", companyId);
       if (!companyId) {
+        console.warn("No company ID found in session or request context");
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const activities = await storage.getPipelineActivities(companyId, limit);
+      // Prevent caching so clients don't get 304 with stale/empty payloads in dev
+      res.set('Cache-Control', 'no-store');
       res.json(activities);
     } catch (error) {
       res.status(500).json({ message: "Failed to get pipeline activities" });

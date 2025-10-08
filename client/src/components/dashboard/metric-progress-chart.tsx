@@ -68,29 +68,49 @@ function getPeriodMapping(timePeriod: string) {
 export default function MetricProgressChart({ metric, timePeriod = "Monthly View" }: MetricProgressChartProps) {
   console.log('🔍 Chart Rendering for:', metric.name);
   console.log('🔍 MetricProgressChart component loaded and executing');
-  
   // Get the metric key for API calls
   const metricKey = getMetricKey(metric.name || '');
   console.log('🔍 Metric key mapping result:', { name: metric.name, metricKey });
   const periodType = getPeriodMapping(timePeriod);
-  
+  console.log('🔍 Period type mapping result:', { timePeriod, periodType });
   // Fetch chart data from original working API
   const { data: chartDataResponse, isLoading, error } = useQuery({
     queryKey: ['chart-data', metricKey, periodType],
     queryFn: async () => {
       if (!metricKey) {
         console.warn('No metric key found for:', metric.name);
-        return [];
+        return []; 
       }
       
       console.log('📊 Fetching chart data:', { metricKey, timePeriod });
       console.log('📊 Making API call to:', `/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`);
       
-      const response = await fetch(`/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`);
+      const url = `/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`;
+      const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) {
-        throw new Error(`Failed to fetch chart data: ${response.statusText}`);
+        // Log error body for better diagnostics
+        let errorBody: any = null;
+        try {
+          errorBody = await response.text();
+        } catch (e) {
+          errorBody = '[unreadable error body]';
+        }
+        console.error('❌ Chart data fetch failed', {
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody,
+        });
+        throw new Error(`Failed to fetch chart data: ${response.status} ${response.statusText}`);
       }
       const result = await response.json();
+      console.log('📦 chart-data raw result summary:', {
+        url,
+        hasDataArray: Array.isArray(result?.data),
+        length: Array.isArray(result?.data) ? result.data.length : null,
+        sampleKeys: result?.data?.[0] ? Object.keys(result.data[0]) : [],
+        sample: result?.data?.[0] ?? null,
+      });
       return result.data || [];
     },
     enabled: !!metricKey,
@@ -98,6 +118,10 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
 
   // Chart data is directly from the API response
   const rawChartData = chartDataResponse || [];
+  console.log('📈 rawChartData count:', Array.isArray(rawChartData) ? rawChartData.length : null, {
+    metricKey,
+    periodType,
+  });
 
   // Process the real API data
   const chartData = React.useMemo(() => {
@@ -107,6 +131,9 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
     }
 
     // Process real data points
+    const uniqueKeys = Array.from(new Set((rawChartData || []).map((item: any) => item?.metric_key)));
+    console.log('🧪 Unique metric_key values in payload:', uniqueKeys);
+
     const processedPoints = rawChartData
       .filter((item: any) => item.metric_key === metricKey)
       .map((item: any) => ({
@@ -115,6 +142,8 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
         is_goal: item.is_goal
       }))
       .sort((a: any, b: any) => a.ts.localeCompare(b.ts));
+
+    console.log('🧮 processedPoints count:', processedPoints.length);
 
     // Group by date to combine actual and goal values
     const dataByDate: Record<string, any> = {};
