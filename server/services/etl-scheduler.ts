@@ -26,7 +26,12 @@ class EtlScheduler {
   constructor() {
     const postgres = new PostgresAnalyticsService();
     this.etlService = new MetricsTimeSeriesETL(postgres);
-    this.start();
+    // Env guard: set ENABLE_ETL_SCHEDULER=true to enable
+    if (process.env.ENABLE_ETL_SCHEDULER === 'true') {
+      this.start();
+    } else {
+      console.log('⏸️ ETL scheduler disabled (set ENABLE_ETL_SCHEDULER=true to enable)');
+    }
   }
 
   start() {
@@ -59,8 +64,8 @@ class EtlScheduler {
       let count = 0;
 
       for (const company of companies) {
-        // Default: run monthly ETL every 15 minutes
-        this.addScheduledEtl(company.id, ['monthly'], 15);
+        // Default: run weekly, monthly, quarterly, yearly ETL every 15 minutes
+        this.addScheduledEtl(company.id, ['weekly', 'monthly', 'quarterly', 'yearly'], 15);
         count++;
       }
 
@@ -155,6 +160,56 @@ class EtlScheduler {
         `➕ Added scheduled ETL for company ${companyId} every ${intervalMinutes} minutes (periods: ${periods.join(', ')})`
       );
     }
+  }
+
+  /**
+   * Return a snapshot of scheduled ETL jobs (for admin/status)
+   */
+  getJobs() {
+    return this.scheduledEtls.map(j => ({
+      companyId: j.companyId,
+      periods: [...j.periods],
+      interval: j.interval,
+      lastRunAt: j.lastRunAt,
+      nextRunAt: j.nextRunAt,
+      enabled: j.enabled,
+    }));
+  }
+
+  /**
+   * Run ETL immediately for a specific company or all scheduled companies.
+   * Returns per-period results.
+   */
+  async runNow(params?: { companyId?: number; periods?: Array<'weekly'|'monthly'|'quarterly'|'yearly'> }) {
+    const { companyId, periods } = params || {};
+    const targets = companyId
+      ? this.scheduledEtls.filter(j => j.companyId === companyId)
+      : this.scheduledEtls;
+
+    const results: Array<{
+      companyId: number;
+      period: 'weekly'|'monthly'|'quarterly'|'yearly';
+      success: boolean;
+      message: string;
+    }> = [];
+
+    for (const job of targets) {
+      const runPeriods = periods && periods.length ? periods : job.periods;
+      for (const period of runPeriods) {
+        try {
+          const res = await this.etlService.runETLJob({
+            companyId: job.companyId,
+            periodType: period,
+            forceRefresh: true,
+          });
+          results.push({ companyId: job.companyId, period, success: res.success, message: res.message });
+        } catch (e) {
+          results.push({ companyId: job.companyId, period, success: false, message: (e as Error).message || 'Unknown error' });
+        }
+      }
+    }
+
+    return { success: results.every(r => r.success), results };
   }
 }
 

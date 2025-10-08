@@ -180,6 +180,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(health);
   });
 
+  // Admin ETL endpoints
+  // View scheduler status and scheduled jobs
+  app.get('/api/admin/etl/status', requireAdmin, async (req, res) => {
+    try {
+      const enabled = process.env.ENABLE_ETL_SCHEDULER === 'true';
+      const jobs = etlScheduler?.getJobs ? etlScheduler.getJobs() : [];
+      res.json({ enabled, checkIntervalMs: 60000, jobs });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message || 'Failed to get ETL status' });
+    }
+  });
+
+  // Trigger ETL runs on demand
+  app.post('/api/admin/etl/run', requireAdmin, async (req, res) => {
+    try {
+      const { companyId, periods } = req.body || {};
+      const result = await etlScheduler.runNow({ companyId, periods });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message || 'Failed to run ETL' });
+    }
+  });
+
   // Initialize Jira OAuth service
   (async () => {
     try {
