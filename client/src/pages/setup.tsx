@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CredentialDialog } from "@/components/ui/credential-dialog";
-import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle, Building2 } from "lucide-react";
+import { CheckCircle, CheckCircle2, Clock, Settings, Database, Zap, Calendar, FileText, Users, DollarSign, Briefcase, Target, X, ChevronDown, ChevronRight, Plus, Shield, Mail, Search, MessageCircle, Building2, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Step definitions
@@ -184,8 +184,7 @@ const standardTables = {
   odoo: ["sales_orders", "invoices", "customers", "products"],
   quickbooks: ["invoice", "customer", "item", "payment"],
   salesforce: ["opportunity", "account", "contact", "lead"],
-  zoho: ["lead", "contact", "account", "deal"],
-  activecampaign: ["contact", "list", "campaign", "automation"]
+  zoho: ["lead", "contact", "account", "deal"]
 };
 
 // Available tables for custom setup with pricing
@@ -357,13 +356,65 @@ export default function Setup() {
   // State management - pre-populate known company info
   const [currentStep, setCurrentStep] = useState<SetupStep>(initialState.currentStep);
   const [companyName] = useState("MIAS_DATA");
-  const [industry] = useState("Technology");
+  const [industry, setIndustry] = useState("Technology");
   const [appCount, setAppCount] = useState<number | null>(initialState.appCount);
   const [selectedTools, setSelectedTools] = useState<string[]>(initialState.selectedTools);
   const [syncProgress, setSyncProgress] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [completedLogins, setCompletedLogins] = useState<string[]>(initialState.completedLogins);
+
+  // Load existing connections on mount
+  useEffect(() => {
+    const loadExistingConnections = async () => {
+      try {
+        console.log('🔍 Loading existing connections...');
+        const response = await fetch('/api/data-sources');
+
+        if (response.ok) {
+          const dataSources = await response.json();
+          console.log('📋 Found existing data sources:', dataSources);
+
+          // Map data source types to tool IDs and mark as completed
+          const existingConnections: string[] = [];
+
+          for (const source of dataSources) {
+            if (source.status === 'connected' && source.type) {
+              existingConnections.push(source.type);
+              console.log(`✅ Found existing ${source.type} connection`);
+            }
+          }
+
+          if (existingConnections.length > 0) {
+            setCompletedLogins(prev => {
+              const updated = [...new Set([...prev, ...existingConnections])];
+              console.log(`🔄 Updated completed logins:`, updated);
+              return updated;
+            });
+
+            // If tools aren't selected yet, pre-select the existing ones
+            setSelectedTools(prev => {
+              if (prev.length === 0) {
+                console.log(`🔄 Pre-selecting existing tools:`, existingConnections);
+                return existingConnections;
+              }
+              return prev;
+            });
+
+            // Mark setup as existing since we have connected data sources
+            setHasExistingSetup(true);
+            console.log(`✅ Found existing connections - showing completed setup view`);
+          }
+        } else {
+          console.log('ℹ️ No existing connections or failed to load');
+        }
+      } catch (error) {
+        console.log('ℹ️ Failed to load existing connections (this is normal for new setups):', error);
+      }
+    };
+
+    loadExistingConnections();
+  }, []);
 
   // Handle OAuth callback and show setup type dialog
   useEffect(() => {
@@ -488,11 +539,13 @@ export default function Setup() {
   const [odooDatabase, setOdooDatabase] = useState("");
   const [odooUsername, setOdooUsername] = useState("");
   const [odooApiKey, setOdooApiKey] = useState("");
+  const [showOdooApiKey, setShowOdooApiKey] = useState(false);
 
   // ActiveCampaign setup dialog state
   const [activeCampaignSetupDialogOpen, setActiveCampaignSetupDialogOpen] = useState(false);
   const [activeCampaignApiUrl, setActiveCampaignApiUrl] = useState("");
   const [activeCampaignApiKey, setActiveCampaignApiKey] = useState("");
+  const [showActiveCampaignApiKey, setShowActiveCampaignApiKey] = useState(false);
 
   const { toast } = useToast();
 
@@ -1136,6 +1189,7 @@ export default function Setup() {
       setOdooDatabase("");
       setOdooUsername("");
       setOdooApiKey("");
+      setShowOdooApiKey(false);
 
       // Add odoo to completed logins (same pattern as OAuth flows)
       setCompletedLogins([...completedLogins, "odoo"]);
@@ -1208,6 +1262,7 @@ export default function Setup() {
       // Clear form
       setActiveCampaignApiUrl("");
       setActiveCampaignApiKey("");
+      setShowActiveCampaignApiKey(false);
 
       // Add ActiveCampaign to completed logins (same pattern as other integrations)
       setCompletedLogins([...completedLogins, "activecampaign"]);
@@ -1720,12 +1775,11 @@ export default function Setup() {
   // Render setup summary for completed setups
   const renderSetupSummary = () => {
     const savedSetup = localStorage.getItem('setupData');
-    if (!savedSetup) {
-      return renderInitialStep(); // Fallback if no saved data
-    }
 
-    const setupData = JSON.parse(savedSetup);
-    const { completedTools, toolSetupTypes, customTables } = setupData;
+    // Use existing connected data sources if no localStorage data
+    const completedTools = savedSetup ? JSON.parse(savedSetup).completedTools : completedLogins;
+    const toolSetupTypes = savedSetup ? JSON.parse(savedSetup).toolSetupTypes : {};
+    const customTables = savedSetup ? JSON.parse(savedSetup).customTables : {};
 
     // Calculate total cost
     const calculateTotalMonthlyCost = () => {
@@ -2304,10 +2358,10 @@ export default function Setup() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">
-                Connected: {completedLogins.length}/{selectedTools.length}
+                Connected: {completedLogins.filter(login => selectedTools.includes(login)).length}/{selectedTools.length}
               </p>
               <p className="text-sm text-gray-600">
-                {completedLogins.length === selectedTools.length 
+                {completedLogins.filter(login => selectedTools.includes(login)).length === selectedTools.length 
                   ? "All apps connected! Ready to sync data." 
                   : "Connect all apps to proceed to data sync."
                 }
@@ -2326,7 +2380,7 @@ export default function Setup() {
                   setCurrentStep("syncProgress");
                   realDataSync();
                 }}
-                disabled={completedLogins.length !== selectedTools.length}
+                disabled={completedLogins.filter(login => selectedTools.includes(login)).length !== selectedTools.length}
                 className="bg-saulto-600 hover:bg-saulto-700 text-white"
               >
                 Start Data Sync
@@ -3150,13 +3204,24 @@ export default function Setup() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="odooApiKey">API Key</Label>
-                  <Input
-                    id="odooApiKey"
-                    type="password"
-                    placeholder="Your Odoo API Key"
-                    value={odooApiKey}
-                    onChange={(e) => setOdooApiKey(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="odooApiKey"
+                      type={showOdooApiKey ? "text" : "password"}
+                      placeholder="Your Odoo API Key"
+                      value={odooApiKey}
+                      onChange={(e) => setOdooApiKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOdooApiKey(!showOdooApiKey)}
+                      className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none"
+                      aria-label={showOdooApiKey ? "Hide API key" : "Show API key"}
+                    >
+                      {showOdooApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-sm text-gray-700">
@@ -3177,6 +3242,7 @@ export default function Setup() {
                 setOdooDatabase("");
                 setOdooUsername("");
                 setOdooApiKey("");
+                setShowOdooApiKey(false);
               }}
             >
               Cancel
@@ -3246,13 +3312,24 @@ export default function Setup() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="activeCampaignApiKey">API Key</Label>
-                  <Input
-                    id="activeCampaignApiKey"
-                    type="password"
-                    placeholder="Your ActiveCampaign API Key"
-                    value={activeCampaignApiKey}
-                    onChange={(e) => setActiveCampaignApiKey(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="activeCampaignApiKey"
+                      type={showActiveCampaignApiKey ? "text" : "password"}
+                      placeholder="Your ActiveCampaign API Key"
+                      value={activeCampaignApiKey}
+                      onChange={(e) => setActiveCampaignApiKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowActiveCampaignApiKey(!showActiveCampaignApiKey)}
+                      className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none"
+                      aria-label={showActiveCampaignApiKey ? "Hide API key" : "Show API key"}
+                    >
+                      {showActiveCampaignApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-sm text-gray-700">
@@ -3272,6 +3349,7 @@ export default function Setup() {
                 setActiveCampaignSetupDialogOpen(false);
                 setActiveCampaignApiUrl("");
                 setActiveCampaignApiKey("");
+                setShowActiveCampaignApiKey(false);
               }}
             >
               Cancel

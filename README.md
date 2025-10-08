@@ -75,6 +75,18 @@ This application provides a modern, responsive dashboard for businesses to:
 - OpenAI API key (for AI features)
 
 ### Environment Setup
+
+**For new team members:**
+```bash
+# 1. Install dotenv-vault globally
+npm install -g dotenv-vault
+
+# 2. Login to vault and pull encrypted .env
+npx dotenv-vault@latest login
+npx dotenv-vault@latest pull
+```
+
+**Manual setup (if not using vault):**
 Create a `.env` file with:
 ```env
 DATABASE_URL=postgresql://username:password@localhost:5432/database

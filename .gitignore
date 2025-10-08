@@ -72,3 +72,7 @@ uploads/*
 *.tmp
 *.temp
 .cache/
+.env*
+.flaskenv*
+!.env.project
+!.env.vault

@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { RefreshCw, Calendar, Info, Database, Table, Columns } from "lucide-react";
 import MetricProgressChart from "./metric-progress-chart";
@@ -15,6 +15,15 @@ interface MetricsOverviewProps {
   onRefresh: () => void;
 }
 
+interface MetricCategory {
+  id: number;
+  name: string;
+  value: string;
+  color: string;
+  isDefault: boolean;
+  isActive: boolean;
+}
+
 // Default metrics for initial display
 const defaultMetrics = [
   {
@@ -24,7 +33,7 @@ const defaultMetrics = [
     yearlyGoal: "$3,000,000",
     goalProgress: "107",
     changePercent: "+15%",
-    category: "revenue",
+    category: "sales",
     format: "currency",
     priority: 1,
     isIncreasing: true,
@@ -37,7 +46,7 @@ const defaultMetrics = [
     yearlyGoal: "$200,000",
     goalProgress: "90",
     changePercent: "+8%",
-    category: "revenue",
+    category: "sales",
     format: "currency",
     priority: 2,
     isIncreasing: true,
@@ -50,7 +59,7 @@ const defaultMetrics = [
     yearlyGoal: "$120",
     goalProgress: "67",
     changePercent: "-3%",
-    category: "efficiency",
+    category: "operations",
     format: "currency",
     priority: 3,
     isIncreasing: false,
@@ -63,7 +72,7 @@ const defaultMetrics = [
     yearlyGoal: "$3,200",
     goalProgress: "75",
     changePercent: "+12%",
-    category: "revenue",
+    category: "sales",
     format: "currency",
     priority: 4,
     isIncreasing: true,
@@ -76,7 +85,7 @@ const defaultMetrics = [
     yearlyGoal: "1.5%",
     goalProgress: "47",
     changePercent: "+0.8%",
-    category: "retention",
+    category: "marketing",
     format: "percentage",
     priority: 5,
     isIncreasing: false,
@@ -89,7 +98,7 @@ const defaultMetrics = [
     yearlyGoal: "125%",
     goalProgress: "106",
     changePercent: "+7%",
-    category: "retention",
+    category: "marketing",
     format: "percentage",
     priority: 6,
     isIncreasing: true,
@@ -102,7 +111,7 @@ const defaultMetrics = [
     yearlyGoal: "60,000",
     goalProgress: "64",
     changePercent: "+12%",
-    category: "growth",
+    category: "technology",
     format: "number",
     priority: 7,
     isIncreasing: true,
@@ -115,7 +124,7 @@ const defaultMetrics = [
     yearlyGoal: "15%",
     goalProgress: "119",
     changePercent: "+4.2%",
-    category: "growth",
+    category: "technology",
     format: "percentage",
     priority: 8,
     isIncreasing: true,
@@ -128,7 +137,7 @@ const defaultMetrics = [
     yearlyGoal: "$10,000",
     goalProgress: "62",
     changePercent: "-8%",
-    category: "revenue",
+    category: "sales",
     format: "currency",
     priority: 9,
     isIncreasing: false,
@@ -141,7 +150,7 @@ const defaultMetrics = [
     yearlyGoal: "35 days",
     goalProgress: "125",
     changePercent: "-12 days",
-    category: "efficiency",
+    category: "operations",
     format: "number",
     priority: 10,
     isIncreasing: true,
@@ -154,7 +163,7 @@ const defaultMetrics = [
     yearlyGoal: "4.5/5",
     goalProgress: "91",
     changePercent: "-0.1",
-    category: "retention",
+    category: "marketing",
     format: "number",
     priority: 11,
     isIncreasing: false,
@@ -167,7 +176,7 @@ const defaultMetrics = [
     yearlyGoal: "75%",
     goalProgress: "69",
     changePercent: "+2%",
-    category: "growth",
+    category: "technology",
     format: "percentage",
     priority: 12,
     isIncreasing: true,
@@ -177,27 +186,75 @@ const defaultMetrics = [
 
 export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
   const [timePeriod, setTimePeriod] = useState("Monthly View");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   
   // Fetch real Snowflake dashboard metrics
-  const { data: dashboardMetrics, isLoading: isDashboardLoading } = useQuery({
+  const { data: dashboardMetrics, isLoading: isDashboardLoading, error: dashboardError } = useQuery({
     queryKey: ["/api/dashboard/metrics-data", timePeriod],
     queryFn: async () => {
       const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(timePeriod)}`);
+      const data = await response.json();
+
+      // Check if response indicates company selection is required
+      if (data.requiresCompanySelection || data.error?.includes('company selected')) {
+        throw new Error('COMPANY_SELECTION_REQUIRED');
+      }
+
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard metrics');
       }
-      return response.json();
+      return data;
     },
     refetchInterval: 30000, // Refresh every 30 seconds
+    retry: (failureCount, error) => {
+      // Don't retry if it's a company selection error
+      if (error?.message === 'COMPANY_SELECTION_REQUIRED') {
+        return false;
+      }
+      return failureCount < 3;
+    }
   });
 
   // Also fetch configured KPI metrics for additional display
-  const { data: kpiMetrics, isLoading: isKpiLoading } = useQuery({
+  const { data: kpiMetrics, isLoading: isKpiLoading, error: kpiError } = useQuery({
     queryKey: ["/api/kpi-metrics"],
+    queryFn: async () => {
+      const response = await fetch('/api/kpi-metrics');
+      const data = await response.json();
+
+      // Check if response indicates company selection is required
+      if (data.requiresCompanySelection || data.error?.includes('company selected')) {
+        throw new Error('COMPANY_SELECTION_REQUIRED');
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch KPI metrics');
+      }
+      return data;
+    },
+    retry: (failureCount, error) => {
+      // Don't retry if it's a company selection error
+      if (error?.message === 'COMPANY_SELECTION_REQUIRED') {
+        return false;
+      }
+      return failureCount < 3;
+    }
+  });
+
+  // Fetch metric categories for dynamic tabs
+  const { data: categories, refetch: refetchCategories } = useQuery<MetricCategory[]>({
+    queryKey: ["/api/metric-categories"],
+    refetchInterval: 10000, // Refresh every 10 seconds
+    staleTime: 5000, // Consider data stale after 5 seconds
   });
 
   const isLoading = isDashboardLoading || isKpiLoading;
-  
+
+  // Check for company selection errors
+  const requiresCompanySelection =
+    (dashboardError?.message === 'COMPANY_SELECTION_REQUIRED') ||
+    (kpiError?.message === 'COMPANY_SELECTION_REQUIRED');
+
   // Merge real dashboard data with KPI metrics structure
   const metrics = (() => {
     if (!kpiMetrics || !Array.isArray(kpiMetrics) || kpiMetrics.length === 0) {
@@ -547,18 +604,34 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   // Using shared formatActualValue from format-utils (imported above)
 
-  // Group metrics by category
-  const metricsByCategory = metrics.reduce((acc: any, metric: any) => {
-    const category = metric.category || 'other';
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(metric);
-    return acc;
-  }, {});
 
   // Calculate overall performance
-  const overallProgress = metrics.length > 0 ? 
-    Math.round(metrics.reduce((sum: number, metric: any) => 
+  const overallProgress = metrics.length > 0 ?
+    Math.round(metrics.reduce((sum: number, metric: any) =>
       sum + parseFloat(metric.goalProgress || "0"), 0) / metrics.length) : 0;
+
+  // Handle company selection required error
+  if (requiresCompanySelection) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <div className="mx-auto max-w-md">
+            <Database className="mx-auto h-12 w-12 text-yellow-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Company Selection Required
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Please select a company to view business metrics. You need to be logged in and have a company selected to access your dashboard data.
+            </p>
+            <Button onClick={() => window.location.href = '/company-selection'} className="bg-primary hover:bg-primary/90">
+              <Database className="h-4 w-4 mr-2" />
+              Select Company
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -640,26 +713,50 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={onRefresh} variant="outline" size="sm">
+          <Button onClick={() => { onRefresh(); refetchCategories(); }} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
         </div>
       </div>
 
-      {/* Tabs for different categories */}
-      <Tabs defaultValue="all" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="all">All Metrics</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="growth">Growth</TabsTrigger>
-          <TabsTrigger value="retention">Retention</TabsTrigger>
-          <TabsTrigger value="efficiency">Efficiency</TabsTrigger>
-        </TabsList>
+      {/* Dynamic Category Pills Filter */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2 mb-6">
+        {/* All Metrics pill */}
+        <Badge
+          variant={selectedCategory === "all" ? "default" : "outline"}
+          className={`cursor-pointer transition-all duration-200 text-center justify-center py-2 min-h-[2.5rem] text-xs sm:text-sm ${
+            selectedCategory === "all"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "hover:bg-gray-100 dark:hover:bg-gray-800"
+          }`}
+          onClick={() => setSelectedCategory("all")}
+        >
+          All Metrics
+        </Badge>
 
-        <TabsContent value="all" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {metrics.map((metric: any) => (
+        {/* All categories as responsive pills */}
+        {categories?.filter(cat => cat.isActive).map((category) => (
+          <Badge
+            key={category.value}
+            variant={selectedCategory === category.value ? "default" : "outline"}
+            className={`cursor-pointer transition-all duration-200 text-center justify-center py-2 min-h-[2.5rem] text-xs sm:text-sm ${
+              selectedCategory === category.value
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+            onClick={() => setSelectedCategory(category.value)}
+          >
+            {category.name}
+          </Badge>
+        ))}
+      </div>
+
+      {/* Filtered Metrics Display */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {metrics
+          .filter((metric: any) => selectedCategory === "all" || metric.category === selectedCategory)
+          .map((metric: any) => (
               <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
                 {/* Goal progress indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${
@@ -757,116 +854,8 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
                   </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        {Object.entries(metricsByCategory).map(([category, categoryMetrics]: [string, any]) => (
-          <TabsContent key={category} value={category} className="mt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(categoryMetrics as any[]).map((metric: any) => (
-                <Card key={metric.id} className="relative overflow-hidden border hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800">
-                  {/* Goal progress indicator */}
-                  <div className={`absolute top-0 left-0 w-full h-1 ${
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 100 ? 'bg-green-500' : 
-                    getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 90 ? 'bg-yellow-500' : 'bg-red-500'
-                  }`}></div>
-                  
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
-                            {metric.name}
-                          </CardTitle>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <Info className="h-3 w-3 text-gray-500" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-80">
-                              <div className="p-3 space-y-3">
-                                <div className="font-semibold text-sm text-gray-900 dark:text-white">
-                                  Data Source Information
-                                </div>
-                                
-                                <div className="space-y-2 text-xs">
-                                  <div className="flex items-center gap-2">
-                                    <div className="h-3 w-3 bg-orange-500 rounded-full" />
-                                    <span className="font-medium">Original Source:</span>
-                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).source}</span>
-                                  </div>
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <Database className="h-3 w-3 text-blue-500" />
-                                    <span className="font-medium">Data Warehouse:</span>
-                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).warehouse}</span>
-                                  </div>
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <Table className="h-3 w-3 text-green-500" />
-                                    <span className="font-medium">Table:</span>
-                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).table}</span>
-                                  </div>
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <Columns className="h-3 w-3 text-purple-500" />
-                                    <span className="font-medium">Column:</span>
-                                    <span className="text-gray-600 dark:text-gray-400">{getDataSourceInfo(metric.name).column}</span>
-                                  </div>
-                                </div>
-                                
-                                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                                  <div className="font-medium text-xs text-gray-900 dark:text-white mb-1">
-                                    Description:
-                                  </div>
-                                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                                    {getDataSourceInfo(metric.name).description}
-                                  </div>
-                                </div>
-                              </div>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                          {metric.description}
-                        </p>
-                      </div>
-                      <div className={`ml-2 flex items-center text-xs font-medium px-2 py-1 rounded-full ${
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 100 ? 'text-green-700 bg-green-100 dark:text-green-400 dark:bg-green-900/30' : 
-                        getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric) >= 90 ? 'text-yellow-700 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30' :
-                        'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
-                      }`}>
-                        {getAdaptiveProgress(metric.value, metric.yearlyGoal, timePeriod, metric.id, metric)}% to goal
-                      </div>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="space-y-4 pt-0">
-                    {/* Current Value */}
-                    <div>
-                      <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                        {formatActualValue(metric.rawCurrentValue ?? getAdaptiveActual(metric.value, timePeriod, metric.id, metric))}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        vs. {formatActualValue(metric.rawPeriodGoal ?? getAdaptiveGoal(metric.yearlyGoal, timePeriod, metric))} {getTimePeriodLabelShort(timePeriod)} goal
-                      </div>
-                    </div>
-                    
-
-
-                    {/* Chart */}
-                    <div className="h-32 -mx-2">
-                      <MetricProgressChart metric={metric} timePeriod={timePeriod} />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-        ))}
-      </Tabs>
+          ))}
+      </div>
 
     </div>
   );

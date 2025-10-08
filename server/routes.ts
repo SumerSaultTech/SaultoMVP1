@@ -9,6 +9,8 @@ import { metricsAIService } from "./services/metrics-ai";
 import { azureOpenAIService } from "./services/azure-openai";
 import { jiraOAuthService } from "./services/jira-oauth";
 import { hubspotOAuthService } from "./services/hubspot-oauth";
+import { mailchimpOAuthService } from "./services/mailchimp-oauth";
+import { mondayOAuthService } from "./services/monday-oauth";
 import { odooOAuthService } from "./services/odoo-oauth";
 import { odooApiService } from "./services/odoo-api";
 import { zohoOAuthService } from "./services/zoho-oauth";
@@ -34,7 +36,14 @@ import { syncScheduler } from "./services/sync-scheduler";
 import { MetricsTimeSeriesETL } from "./services/metrics-time-series-etl";
 import { mfaService } from "./services/mfa-service";
 import { MetricsSeriesService } from "./services/metrics-series.js";
+
 import { etlScheduler } from "./services/etl-scheduler";
+
+import { sessionManagementService, createSessionMiddleware } from "./services/session-management";
+import { accountSecurityService } from "./services/account-security";
+import { emailService } from "./services/email-service";
+import bcrypt from "bcryptjs";
+
 
 // File upload configuration
 const UPLOAD_FOLDER = 'uploads';
@@ -123,10 +132,17 @@ const companiesArray: any[] = [
 ];
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
   // Initialize services
   const metricsSeriesService = new MetricsSeriesService(postgresAnalyticsService);
-  
+
+  // Initialize security services with database connection
+  (sessionManagementService as any).db = storage.db;
+  (accountSecurityService as any).db = storage.db;
+
+  // Add session security middleware
+  app.use(createSessionMiddleware(sessionManagementService));
+
   // Ensure sync scheduler is started
   console.log('🔧 Initializing sync scheduler...');
   // Force the module to execute by referencing the syncScheduler
@@ -151,9 +167,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }));
 
-  // Add tenant validation middleware for multi-tenant security
-  app.use('/api', validateTenantAccess);
+  // Add tenant validation middleware for multi-tenant security (except admin routes)
+  app.use('/api', (req, res, next) => {
+    console.log(`🔍 Checking route: ${req.path} for tenant validation bypass`);
+
+    // Skip tenant validation for these routes
+    if (req.path.startsWith('/auth') ||
+        req.path.startsWith('/health') ||
+        req.path.startsWith('/test-post') ||
+        req.path.startsWith('/companies') ||
+        req.path === '/metric-categories' ||
+        // Only specific admin routes that need to bypass tenant validation
+        req.path.startsWith('/admin/users') ||
+        req.path.startsWith('/admin/companies') ||
+        req.path.startsWith('/admin/sessions') ||
+        req.path.startsWith('/admin/current-company') ||
+        req.path.startsWith('/admin/clear-company') ||
+        req.path.startsWith('/admin/switch-company')) {
+      console.log(`🔧 Bypassing tenant validation for route: ${req.path}`);
+      return next();
+    }
+
+    console.log(`📋 Applying tenant validation to: ${req.path}`);
+    return validateTenantAccess(req, res, next);
+  });
   
+  // Simple test endpoint to verify browser requests work
+  app.post("/api/test-post", (req, res) => {
+    console.log("🧪 Test POST request received:", {
+      body: req.body,
+      headers: req.headers,
+      sessionId: req.sessionID
+    });
+    res.json({ success: true, message: "Test POST endpoint working", receivedBody: req.body });
+  });
+
+  // Debug endpoint to get last login error
+  app.get("/api/debug/last-error", (req, res) => {
+    res.json(global.lastLoginError || { message: "No recent login errors" });
+  });
+
   // Health check endpoint with service status
   app.get("/api/health", async (req, res) => {
     const health = {
@@ -220,6 +273,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('HubSpot OAuth service initialized');
     } catch (error) {
       console.warn('Failed to initialize HubSpot OAuth service:', error);
+    }
+  })();
+
+  // Initialize Mailchimp OAuth service
+  (async () => {
+    try {
+      await mailchimpOAuthService.initialize();
+      console.log('Mailchimp OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Mailchimp OAuth service:', error);
+    }
+  })();
+
+  // Initialize Monday.com OAuth service
+  (async () => {
+    try {
+      await mondayOAuthService.initialize();
+      console.log('Monday.com OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Monday.com OAuth service:', error);
     }
   })();
 
@@ -305,6 +378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           resources,
           accountId: userInfo?.account_id || null
         },
+        status: 'connected',
         isActive: true
       });
 
@@ -647,6 +721,697 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to sync HubSpot data via OAuth",
         method: 'oauth'
       });
+    }
+  });
+
+  // Mailchimp OAuth2 Routes
+  app.get("/api/auth/mailchimp/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = mailchimpOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Mailchimp OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/mailchimp/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = mailchimpOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+
+      console.log(`🔄 Mailchimp OAuth callback for company ${companyId}`);
+
+      // Exchange code for tokens
+      const tokens = await mailchimpOAuthService.exchangeCodeForTokens(code as string, state as string);
+
+      // Get metadata to determine data center and API endpoint
+      const metadata = await mailchimpOAuthService.getMetadata(tokens.access_token);
+
+      // Get user account info
+      const accountInfo = await mailchimpOAuthService.getUserInfo(tokens.access_token, metadata.api_endpoint);
+
+      console.log(`✅ Mailchimp OAuth successful for account ${accountInfo.account_id}`);
+
+      // Store tokens and metadata in database
+      const mailchimpConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
+        scope: tokens.scope,
+        account_id: accountInfo.account_id,
+        account_name: accountInfo.account_name,
+        email: accountInfo.email,
+        dc: metadata.dc,
+        api_endpoint: metadata.api_endpoint,
+        login_url: metadata.login_url,
+        accountInfo,
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Check if Mailchimp data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingMailchimp = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (existingMailchimp) {
+        // Update existing data source
+        await storage.updateDataSource(existingMailchimp.id, {
+          status: 'connected',
+          config: mailchimpConfig,
+          lastSyncAt: new Date(),
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Mailchimp Account ${accountInfo.account_name}`,
+          type: 'mailchimp',
+          status: 'connected',
+          config: mailchimpConfig,
+        });
+      }
+
+      // Redirect back to frontend with success
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?mailchimp=connected`);
+
+    } catch (error) {
+      console.error('Mailchimp OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Mailchimp table discovery endpoint
+  app.get("/api/auth/mailchimp/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Mailchimp table discovery for company: ${companyId}`);
+
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSourcesByCompany(parseInt(companyId));
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource || !mailchimpSource.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      if (!config.accessToken) {
+        return res.status(400).json({ error: 'Invalid Mailchimp configuration' });
+      }
+
+      // Discover available tables
+      const tables = await mailchimpOAuthService.discoverTables(config.accessToken, config.api_endpoint);
+
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => t.isStandard),
+        audiences: tables.filter(t => ['lists', 'list_members', 'segments'].includes(t.name)),
+        campaigns: tables.filter(t => ['campaigns', 'campaign_reports', 'automations'].includes(t.name)),
+        ecommerce: tables.filter(t => ['stores', 'orders', 'products', 'customers', 'carts'].includes(t.name)),
+        other: tables.filter(t => !t.isStandard && !['lists', 'list_members', 'segments', 'campaigns', 'campaign_reports', 'automations', 'stores', 'orders', 'products', 'customers', 'carts'].includes(t.name))
+      };
+
+      console.log(`✅ Discovered ${tables.length} Mailchimp tables`);
+
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length
+      });
+
+    } catch (error) {
+      console.error('Error discovering Mailchimp tables:', error);
+      res.status(500).json({ error: 'Failed to discover Mailchimp tables' });
+    }
+  });
+
+  app.get("/api/auth/mailchimp/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      // Check if company has active Mailchimp connection
+      const dataSources = await storage.getDataSources(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp' && ds.status === 'connected');
+
+      if (!mailchimpSource || !mailchimpSource.config) {
+        return res.json({ connected: false });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      const status = {
+        connected: true,
+        method: 'oauth',
+        accountInfo: config.accountInfo,
+        dc: config.dc,
+        api_endpoint: config.api_endpoint,
+        expired: false // Mailchimp tokens typically don't expire
+      };
+
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await mailchimpOAuthService.testApiAccess(config.accessToken, config.api_endpoint);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Mailchimp OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Mailchimp sync endpoint
+  app.post("/api/auth/mailchimp/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      console.log(`🔄 Starting OAuth-based Mailchimp sync for company ${companyId}`);
+
+      // Use the Mailchimp OAuth service to sync data
+      const result = await mailchimpOAuthService.syncDataToSchema(companyId);
+
+      if (result.success) {
+        console.log(`✅ OAuth Mailchimp sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Mailchimp`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Mailchimp sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Mailchimp data",
+          method: 'oauth'
+        });
+      }
+
+    } catch (error) {
+      console.error('OAuth Mailchimp sync endpoint error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to sync Mailchimp data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Mailchimp webhook management endpoints
+  app.post("/api/auth/mailchimp/webhooks/create/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId } = req.body;
+
+      if (!listId) {
+        return res.status(400).json({ error: 'List ID is required' });
+      }
+
+      // Get Mailchimp configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource?.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      // Create webhook callback URL
+      const callbackUrl = `${process.env.APP_URL || 'http://localhost:5000'}/api/webhooks/mailchimp/${companyId}/${listId}`;
+
+      // Create webhook
+      const webhook = await mailchimpOAuthService.createWebhook(
+        config.accessToken,
+        config.api_endpoint,
+        listId,
+        callbackUrl
+      );
+
+      res.json({
+        success: true,
+        webhook,
+        callbackUrl
+      });
+
+    } catch (error) {
+      console.error('Error creating Mailchimp webhook:', error);
+      res.status(500).json({ error: 'Failed to create webhook' });
+    }
+  });
+
+  app.get("/api/auth/mailchimp/webhooks/list/:companyId/:listId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId } = req.params;
+
+      // Get Mailchimp configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource?.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      // List webhooks
+      const webhooks = await mailchimpOAuthService.listWebhooks(
+        config.accessToken,
+        config.api_endpoint,
+        listId
+      );
+
+      res.json({
+        success: true,
+        webhooks
+      });
+
+    } catch (error) {
+      console.error('Error listing Mailchimp webhooks:', error);
+      res.status(500).json({ error: 'Failed to list webhooks' });
+    }
+  });
+
+  app.delete("/api/auth/mailchimp/webhooks/:companyId/:listId/:webhookId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId, webhookId } = req.params;
+
+      // Get Mailchimp configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mailchimpSource = dataSources.find(ds => ds.type === 'mailchimp');
+
+      if (!mailchimpSource?.config) {
+        return res.status(404).json({ error: 'Mailchimp connection not found' });
+      }
+
+      const config = typeof mailchimpSource.config === 'string'
+        ? JSON.parse(mailchimpSource.config)
+        : mailchimpSource.config;
+
+      // Delete webhook
+      await mailchimpOAuthService.deleteWebhook(
+        config.accessToken,
+        config.api_endpoint,
+        listId,
+        webhookId
+      );
+
+      res.json({
+        success: true,
+        message: 'Webhook deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Error deleting Mailchimp webhook:', error);
+      res.status(500).json({ error: 'Failed to delete webhook' });
+    }
+  });
+
+  // Mailchimp webhook handler
+  app.post("/api/webhooks/mailchimp/:companyId/:listId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { listId } = req.params;
+
+      // Verify webhook (Mailchimp sends a verification request)
+      if (req.query.challenge) {
+        return res.status(200).send(req.query.challenge);
+      }
+
+      // Process webhook payload
+      const normalizedPayload = await mailchimpOAuthService.processWebhookPayload(req.body);
+
+      // Log webhook event
+      console.log(`📨 Mailchimp webhook received for company ${companyId}, list ${listId}:`, normalizedPayload.type);
+
+      // Here you could trigger incremental sync or store the webhook data
+      // For now, we'll just log it and return success
+
+      res.status(200).json({
+        success: true,
+        message: 'Webhook processed successfully',
+        eventType: normalizedPayload.type
+      });
+
+    } catch (error) {
+      console.error('Error processing Mailchimp webhook:', error);
+      res.status(500).json({ error: 'Failed to process webhook' });
+    }
+  });
+
+  // Monday.com OAuth2 Routes
+  app.get("/api/auth/monday/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+
+      const authUrl = mondayOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Monday.com OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/monday/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({ error: "Missing code or state parameter" });
+      }
+
+      // Parse state to get company context
+      const stateData = mondayOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+
+      console.log(`🔄 Monday.com OAuth callback for company ${companyId}`);
+
+      // Exchange code for tokens
+      const tokens = await mondayOAuthService.exchangeCodeForTokens(code as string, state as string);
+
+      // Get user account info
+      const userInfo = await mondayOAuthService.getUserInfo(tokens.access_token);
+
+      console.log(`✅ Monday.com OAuth successful for user ${userInfo.id}`);
+
+      // Store tokens and user info in database
+      const mondayConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
+        scope: tokens.scope,
+        user_id: userInfo.id,
+        user_name: userInfo.name,
+        user_email: userInfo.email,
+        account_id: userInfo.account_id,
+        is_admin: userInfo.is_admin,
+        userInfo,
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Check if Monday.com data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingMonday = dataSources.find(ds => ds.type === 'monday');
+
+      if (existingMonday) {
+        // Update existing data source
+        await storage.updateDataSource(existingMonday.id, {
+          status: 'connected',
+          config: mondayConfig,
+          lastSyncAt: new Date(),
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Monday.com Account ${userInfo.name}`,
+          type: 'monday',
+          status: 'connected',
+          config: mondayConfig,
+        });
+      }
+
+      // Redirect back to frontend with success
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?monday=connected`);
+
+    } catch (error) {
+      console.error('Monday.com OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Monday.com table discovery endpoint
+  app.get("/api/auth/monday/discover-tables/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      console.log(`🔍 Monday.com table discovery for company: ${companyId}`);
+
+      // Get the stored OAuth token for this company
+      const dataSources = await storage.getDataSourcesByCompany(parseInt(companyId));
+      const mondaySource = dataSources.find(ds => ds.type === 'monday');
+
+      if (!mondaySource || !mondaySource.config) {
+        return res.status(404).json({ error: 'Monday.com connection not found' });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      if (!config.accessToken) {
+        return res.status(400).json({ error: 'Invalid Monday.com configuration' });
+      }
+
+      // Discover available tables
+      const tables = await mondayOAuthService.discoverTables(config.accessToken);
+
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => t.isStandard),
+        boards: tables.filter(t => ['boards', 'workspaces'].includes(t.name)),
+        items: tables.filter(t => ['items', 'updates'].includes(t.name)),
+        users: tables.filter(t => ['users', 'teams'].includes(t.name)),
+        other: tables.filter(t => !t.isStandard && !['boards', 'workspaces', 'items', 'updates', 'users', 'teams'].includes(t.name))
+      };
+
+      console.log(`✅ Discovered ${tables.length} Monday.com tables`);
+
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length
+      });
+
+    } catch (error) {
+      console.error('Error discovering Monday.com tables:', error);
+      res.status(500).json({ error: 'Failed to discover Monday.com tables' });
+    }
+  });
+
+  app.get("/api/auth/monday/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      // Check if company has active Monday.com connection
+      const dataSources = await storage.getDataSources(companyId);
+      const mondaySource = dataSources.find(ds => ds.type === 'monday' && ds.status === 'connected');
+
+      if (!mondaySource || !mondaySource.config) {
+        return res.json({ connected: false });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      const status = {
+        connected: true,
+        method: 'oauth',
+        userInfo: config.userInfo,
+        account_id: config.account_id,
+        expiresAt: config.expiresAt,
+        expired: false
+      };
+
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await mondayOAuthService.testApiAccess(config.accessToken);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Monday.com OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Monday.com sync endpoint
+  app.post("/api/auth/monday/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+
+      console.log(`🔄 Starting OAuth-based Monday.com sync for company ${companyId}`);
+
+      // Use the Monday.com OAuth service to sync data
+      const result = await mondayOAuthService.syncDataToSchema(companyId);
+
+      if (result.success) {
+        console.log(`✅ OAuth Monday.com sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Monday.com`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Monday.com sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Monday.com data",
+          method: 'oauth'
+        });
+      }
+
+    } catch (error) {
+      console.error('OAuth Monday.com sync endpoint error:', error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to sync Monday.com data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Monday.com webhook management endpoints
+  app.post("/api/auth/monday/webhooks/create/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { boardId } = req.body;
+
+      if (!boardId) {
+        return res.status(400).json({ error: 'Board ID is required' });
+      }
+
+      // Get Monday.com configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mondaySource = dataSources.find(ds => ds.type === 'monday');
+
+      if (!mondaySource?.config) {
+        return res.status(404).json({ error: 'Monday.com connection not found' });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      // Create webhook callback URL
+      const callbackUrl = `${process.env.APP_URL || 'http://localhost:5000'}/api/webhooks/monday/${companyId}/${boardId}`;
+
+      // Create webhook
+      const webhook = await mondayOAuthService.createWebhook(
+        config.accessToken,
+        boardId,
+        callbackUrl
+      );
+
+      res.json({
+        success: true,
+        webhook,
+        callbackUrl
+      });
+
+    } catch (error) {
+      console.error('Error creating Monday.com webhook:', error);
+      res.status(500).json({ error: 'Failed to create webhook' });
+    }
+  });
+
+  app.delete("/api/auth/monday/webhooks/:companyId/:webhookId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { webhookId } = req.params;
+
+      // Get Monday.com configuration
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const mondaySource = dataSources.find(ds => ds.type === 'monday');
+
+      if (!mondaySource?.config) {
+        return res.status(404).json({ error: 'Monday.com connection not found' });
+      }
+
+      const config = typeof mondaySource.config === 'string'
+        ? JSON.parse(mondaySource.config)
+        : mondaySource.config;
+
+      // Delete webhook
+      await mondayOAuthService.deleteWebhook(config.accessToken, webhookId);
+
+      res.json({
+        success: true,
+        message: 'Webhook deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Error deleting Monday.com webhook:', error);
+      res.status(500).json({ error: 'Failed to delete webhook' });
+    }
+  });
+
+  // Monday.com webhook handler
+  app.post("/api/webhooks/monday/:companyId/:boardId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      const { boardId } = req.params;
+
+      // Verify webhook (Monday.com sends a challenge for verification)
+      if (req.body.challenge) {
+        return res.status(200).json({ challenge: req.body.challenge });
+      }
+
+      // Process webhook payload
+      const normalizedPayload = await mondayOAuthService.processWebhookPayload(req.body);
+
+      // Log webhook event
+      console.log(`📨 Monday.com webhook received for company ${companyId}, board ${boardId}:`, normalizedPayload.type);
+
+      // Here you could trigger incremental sync or store the webhook data
+      // For now, we'll just log it and return success
+
+      res.status(200).json({
+        success: true,
+        message: 'Webhook processed successfully',
+        eventType: normalizedPayload.type
+      });
+
+    } catch (error) {
+      console.error('Error processing Monday.com webhook:', error);
+      res.status(500).json({ error: 'Failed to process webhook' });
     }
   });
 
@@ -1364,30 +2129,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Authentication
   app.post("/api/auth/login", async (req, res) => {
-    console.log("🔑 Login attempt started:", { username: req.body.username, hasPassword: !!req.body.password });
+    let user; // Declare outside try block for catch block access
+    console.log("🔑 Login attempt started:", {
+      username: req.body.username,
+      hasPassword: !!req.body.password,
+      userAgent: req.get('User-Agent'),
+      origin: req.get('Origin'),
+      sessionId: req.sessionID
+    });
     try {
       const { username, password } = req.body;
-      
+
       if (!username || !password) {
         return res.status(400).json({ message: "Username and password are required" });
       }
 
       // Get user by username
-      const user = await storage.getUserByUsername(username);
-      
+      user = await storage.getUserByUsername(username);
+
       if (!user) {
+        // Don't leak information about whether user exists
         return res.status(401).json({ message: "Invalid username or password" });
       }
 
-      // For now, we'll do a simple password check (in production, use bcrypt)
-      if (user.password !== password) {
-        return res.status(401).json({ message: "Invalid username or password" });
+      // Check if account is locked
+      const lockStatus = await accountSecurityService.isAccountLocked(user.id);
+      if (lockStatus.locked) {
+        const remainingMinutes = Math.ceil((lockStatus.remainingTime || 0) / (1000 * 60));
+        return res.status(423).json({
+          message: `Account is locked due to too many failed login attempts. Please try again in ${remainingMinutes} minutes.`,
+          accountLocked: true,
+          remainingTime: remainingMinutes
+        });
       }
 
-      // Check if user has admin permissions (replaces simple email check)
+      // Verify password with bcrypt
+      const passwordValid = await bcrypt.compare(password, user.password);
+
+      if (!passwordValid) {
+        // Record failed login attempt
+        const attemptResult = await accountSecurityService.recordFailedLogin(user.id);
+
+        if (attemptResult.shouldLock) {
+          return res.status(423).json({
+            message: "Account has been locked due to too many failed login attempts. Please try again in 30 minutes.",
+            accountLocked: true
+          });
+        }
+
+        return res.status(401).json({
+          message: "Invalid username or password",
+          attemptsRemaining: attemptResult.attemptsRemaining
+        });
+      }
+
+      // Check if password change is required
+      if (user.mustChangePassword) {
+        return res.status(200).json({
+          success: false,
+          requiresPasswordChange: true,
+          message: "You must change your password before continuing"
+        });
+      }
+
+      // Record successful login
+      console.log('🔄 Recording successful login...');
+      await accountSecurityService.recordSuccessfulLogin(user.id);
+
+      // Create session in database
+      console.log('🔄 Creating session in database...');
+      await sessionManagementService.createSession({
+        userId: user.id,
+        sessionId: req.sessionID,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      // Check if user has admin permissions
+      console.log('🔄 Getting user permissions...');
       const userPermissions = await rbacService.getUserPermissions(user.id);
       const isAdmin = userPermissions.includes(PERMISSIONS.ADMIN_PANEL);
-      
+
       // Set user in session
       req.session!.user = {
         id: user.id,
@@ -1399,12 +2221,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         permissions: userPermissions
       };
 
-      // Update last login time
-      await storage.updateUser(user.id, { lastLoginAt: new Date() });
-
       // Check if MFA is enabled for this user
       const mfaEnabled = await mfaService.isMFAEnabled(user.id);
-      
+
       // For admin users, ALWAYS clear any existing company selection - they must choose
       // For regular users, set their company automatically for tenant isolation
       if (isAdmin) {
@@ -1426,10 +2245,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await rbacService.logAction({
         userId: user.id,
         action: 'auth.login',
-        details: { 
-          isAdmin, 
+        details: {
+          isAdmin,
           mfaEnabled,
-          userAgent: req.get('User-Agent')
+          userAgent: req.get('User-Agent'),
+          ipAddress: req.ip,
+          sessionId: req.sessionID
         },
         req,
       });
@@ -1452,22 +2273,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
     } catch (error) {
-      console.error('❌ Login error:', error);
-      res.status(500).json({ message: "Login failed" });
+      const errorDetails = {
+        message: error.message,
+        stack: error.stack,
+        username: req.body.username,
+        userFound: !!user,
+        userId: user?.id,
+        sessionId: req.sessionID,
+        userAgent: req.get('User-Agent'),
+        origin: req.get('Origin')
+      };
+      console.error('❌ Login error details:', errorDetails);
+
+      // Store error in global for debugging
+      global.lastLoginError = errorDetails;
+
+      res.status(500).json({
+        message: "Login failed",
+        error: error.message,
+        debugId: Date.now()
+      });
     }
   });
 
   app.post("/api/auth/logout", async (req, res) => {
     const userId = (req.session as any)?.user?.id;
     const selectedCompany = (req.session as any)?.selectedCompany;
-    
+    const sessionId = req.sessionID;
+
     // Log logout action if we have user info
     if (userId) {
       try {
         await rbacService.logAction({
           userId,
           action: 'auth.logout',
-          details: { 
+          details: {
             hadCompanySelected: !!selectedCompany,
             companyName: selectedCompany?.name
           },
@@ -1477,7 +2317,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Failed to log logout action:', error);
       }
     }
-    
+
+    // Clean up session in database
+    if (sessionId) {
+      try {
+        await sessionManagementService.destroySession(sessionId);
+      } catch (error) {
+        console.error('Failed to clean up session in database:', error);
+      }
+    }
+
     req.session?.destroy((err) => {
       if (err) {
         console.error('❌ Logout error:', err);
@@ -1488,7 +2337,745 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  
+  // Password Reset Endpoints
+  app.post("/api/auth/password-reset/request", async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      // Find user by email
+      const user = await storage.getUserByEmail(email);
+
+      if (!user) {
+        // Don't reveal whether email exists or not for security
+        return res.json({
+          success: true,
+          message: "If an account with that email exists, you will receive a password reset link."
+        });
+      }
+
+      // Generate reset token
+      const { token } = await accountSecurityService.generatePasswordResetToken(user.id);
+
+      // Send password reset email
+      const resetLink = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${token}`;
+
+      const emailSent = await emailService.sendPasswordResetEmail(email, {
+        firstName: user.firstName || user.username,
+        resetLink,
+        expirationTime: '30 minutes' // Match token expiration time
+      });
+
+      if (!emailSent && emailService.isEnabled()) {
+        console.error(`❌ Failed to send password reset email to ${email}`);
+        // Don't reveal failure to user for security
+      }
+
+      // Log token for development/debugging (remove in production)
+      if (!emailService.isEnabled()) {
+        console.log(`🔑 Password reset token for ${email}: ${token}`);
+        console.log(`🔗 Reset link: ${resetLink}`);
+      }
+
+      // Log password reset request
+      await rbacService.logAction({
+        userId: user.id,
+        action: 'auth.password_reset_request',
+        details: { email },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "If an account with that email exists, you will receive a password reset link."
+      });
+
+    } catch (error) {
+      console.error('❌ Password reset request error:', error);
+      res.status(500).json({ message: "Failed to process password reset request" });
+    }
+  });
+
+  app.post("/api/auth/password-reset/verify", async (req, res) => {
+    try {
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({ message: "Reset token is required" });
+      }
+
+      const verification = await accountSecurityService.verifyPasswordResetToken(token);
+
+      if (!verification.valid) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired reset token"
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Token is valid"
+      });
+
+    } catch (error) {
+      console.error('❌ Password reset verify error:', error);
+      res.status(500).json({ message: "Failed to verify reset token" });
+    }
+  });
+
+  app.post("/api/auth/password-reset/complete", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+
+      const result = await accountSecurityService.resetPasswordWithToken({
+        token,
+        newPassword
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Password reset failed",
+          errors: result.errors
+        });
+      }
+
+      // Get user info for logging
+      const verification = await accountSecurityService.verifyPasswordResetToken(token);
+      if (verification.valid && verification.userId) {
+        await rbacService.logAction({
+          userId: verification.userId,
+          action: 'auth.password_reset_complete',
+          details: { resetViaToken: true },
+          req,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Password has been reset successfully. You can now log in with your new password."
+      });
+
+    } catch (error) {
+      console.error('❌ Password reset complete error:', error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Change password (for logged in users)
+  app.post("/api/auth/password-change", async (req, res) => {
+    try {
+      const userId = (req.session as any)?.user?.id;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current password and new password are required" });
+      }
+
+      const result = await accountSecurityService.changePassword({
+        userId,
+        newPassword,
+        currentPassword
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Password change failed",
+          errors: result.errors
+        });
+      }
+
+      // Destroy all other sessions for security
+      await sessionManagementService.destroyAllUserSessions(userId, req.sessionID);
+
+      // Log password change
+      await rbacService.logAction({
+        userId,
+        action: 'auth.password_change',
+        details: {
+          destroyedOtherSessions: true,
+          userInitiated: true
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "Password changed successfully. Other sessions have been logged out for security."
+      });
+
+    } catch (error) {
+      console.error('❌ Password change error:', error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  // Admin Security Management Endpoints
+  // Get user security status (admin only)
+  app.get("/api/admin/users/:userId/security", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const status = await accountSecurityService.getSecurityStatus(userId);
+
+      res.json({
+        success: true,
+        data: status
+      });
+
+    } catch (error) {
+      console.error('❌ Admin get user security status error:', error);
+      res.status(500).json({ message: "Failed to get user security status" });
+    }
+  });
+
+  // Unlock user account (admin only)
+  app.post("/api/admin/users/:userId/unlock", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      await accountSecurityService.unlockAccount(userId, adminId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.unlock_account',
+        resource: `user:${userId}`,
+        details: { targetUserId: userId },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "Account unlocked successfully"
+      });
+
+    } catch (error) {
+      console.error('❌ Admin unlock account error:', error);
+      res.status(500).json({ message: "Failed to unlock account" });
+    }
+  });
+
+  // Force password change for user (admin only)
+  app.post("/api/admin/users/:userId/force-password-change", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+      const { reason } = req.body;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      await accountSecurityService.requirePasswordChange(userId, reason);
+
+      // Destroy all user sessions to force re-authentication
+      await sessionManagementService.destroyAllUserSessions(userId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.force_password_change',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          reason: reason || 'Admin initiated'
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "User will be required to change password on next login"
+      });
+
+    } catch (error) {
+      console.error('❌ Admin force password change error:', error);
+      res.status(500).json({ message: "Failed to force password change" });
+    }
+  });
+
+  // Reset user password (admin only)
+  app.post("/api/admin/users/:userId/reset-password", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+      const { newPassword, temporaryPassword } = req.body;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      if (!newPassword) {
+        return res.status(400).json({ message: "New password is required" });
+      }
+
+      const result = await accountSecurityService.changePassword({
+        userId,
+        newPassword,
+        bypassCurrentCheck: true // Admin can reset without current password
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Password reset failed",
+          errors: result.errors
+        });
+      }
+
+      // If this is a temporary password, require change on next login
+      if (temporaryPassword) {
+        await accountSecurityService.requirePasswordChange(userId, 'Temporary password set by admin');
+      }
+
+      // Destroy all user sessions to force re-authentication
+      await sessionManagementService.destroyAllUserSessions(userId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.reset_password',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          temporaryPassword: !!temporaryPassword,
+          destroyedSessions: true
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: `Password reset successfully${temporaryPassword ? '. User will be required to change it on next login.' : '.'}`
+      });
+
+    } catch (error) {
+      console.error('❌ Admin reset password error:', error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Get all active sessions for a user (admin only)
+  app.get("/api/admin/users/:userId/sessions", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const sessions = await sessionManagementService.getUserSessions(userId);
+
+      res.json({
+        success: true,
+        data: sessions.map(session => ({
+          id: session.id,
+          sessionId: session.sessionId,
+          ipAddress: session.ipAddress,
+          userAgent: session.userAgent,
+          createdAt: session.createdAt,
+          lastActivity: session.lastActivity,
+          expiresAt: session.expiresAt
+        }))
+      });
+
+    } catch (error) {
+      console.error('❌ Admin get user sessions error:', error);
+      res.status(500).json({ message: "Failed to get user sessions" });
+    }
+  });
+
+  // Terminate specific user session (admin only)
+  app.delete("/api/admin/users/:userId/sessions/:sessionId", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const sessionId = req.params.sessionId;
+      const adminId = (req.session as any)?.user?.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      await sessionManagementService.destroySession(sessionId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.terminate_session',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          terminatedSessionId: sessionId
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: "Session terminated successfully"
+      });
+
+    } catch (error) {
+      console.error('❌ Admin terminate session error:', error);
+      res.status(500).json({ message: "Failed to terminate session" });
+    }
+  });
+
+  // Terminate all user sessions (admin only)
+  app.delete("/api/admin/users/:userId/sessions", requireAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const adminId = (req.session as any)?.user?.id;
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const terminatedCount = await sessionManagementService.destroyAllUserSessions(userId);
+
+      // Log admin action
+      await rbacService.logAction({
+        userId: adminId,
+        action: 'admin.terminate_all_sessions',
+        resource: `user:${userId}`,
+        details: {
+          targetUserId: userId,
+          terminatedSessionCount: terminatedCount
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        message: `Terminated ${terminatedCount} sessions`,
+        terminatedCount
+      });
+
+    } catch (error) {
+      console.error('❌ Admin terminate all sessions error:', error);
+      res.status(500).json({ message: "Failed to terminate sessions" });
+    }
+  });
+
+  // Get session statistics (admin only)
+  app.get("/api/admin/sessions/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await sessionManagementService.getSessionStats();
+
+      res.json({
+        success: true,
+        data: stats
+      });
+
+    } catch (error) {
+      console.error('❌ Admin get session stats error:', error);
+      res.status(500).json({ message: "Failed to get session statistics" });
+    }
+  });
+
+  // Create System Admin User (super admin only)
+  app.post("/api/admin/users/create-admin", requireAdmin, async (req, res) => {
+    try {
+      const currentUser = (req.session as any)?.user;
+      const { username, password, firstName, lastName, email, temporaryPassword = false } = req.body;
+
+      // Validate required fields
+      if (!username || !password || !firstName || !lastName || !email) {
+        return res.status(400).json({
+          message: "Username, password, first name, last name, and email are required"
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = accountSecurityService.validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: "Password does not meet requirements",
+          errors: passwordValidation.errors
+        });
+      }
+
+      // Check if username or email already exists
+      try {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({
+            message: "A user with this email already exists"
+          });
+        }
+      } catch (error) {
+        // User doesn't exist, which is what we want
+      }
+
+      // Hash the password with bcrypt
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create admin user (no company association for system admins)
+      const newAdmin = await storage.createUser({
+        username,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        email,
+        role: "admin",
+        status: "active",
+        companyId: null, // System admins don't belong to a specific company
+        mustChangePassword: temporaryPassword, // Force password change if it's temporary
+        passwordChangedAt: new Date(),
+      });
+
+      // If temporary password, require change on first login
+      if (temporaryPassword) {
+        await accountSecurityService.requirePasswordChange(
+          newAdmin.id,
+          'Temporary password set during admin creation'
+        );
+      }
+
+      // Log admin creation action
+      await rbacService.logAction({
+        userId: currentUser.id,
+        action: 'admin.create_admin_user',
+        resource: `user:${newAdmin.id}`,
+        details: {
+          createdUsername: username,
+          createdEmail: email,
+          createdRole: 'admin',
+          temporaryPassword: temporaryPassword
+        },
+        req,
+      });
+
+      // Send welcome email to new admin
+      try {
+        const loginLink = `${process.env.APP_URL || 'http://localhost:5000'}/login`;
+        await emailService.sendUserCreatedEmail(email, {
+          firstName,
+          lastName,
+          email,
+          username,
+          role: 'System Administrator',
+          tempPassword: temporaryPassword ? password : undefined,
+          loginLink
+        });
+        console.log(`📧 Welcome email sent to new admin: ${email}`);
+      } catch (emailError) {
+        console.error(`❌ Failed to send welcome email to ${email}:`, emailError);
+        // Don't fail the user creation if email fails
+      }
+
+      console.log(`👑 New admin user created: ${username} by ${currentUser.username}`);
+
+      // Return user without password
+      const { password: _, ...userResponse } = newAdmin;
+      res.status(201).json({
+        success: true,
+        message: `Admin user ${username} created successfully`,
+        user: userResponse
+      });
+
+    } catch (error) {
+      console.error('❌ Admin user creation failed:', error);
+      res.status(500).json({ message: "Failed to create admin user" });
+    }
+  });
+
+  // Create Regular User (admin only)
+  app.post("/api/admin/users/create", requireAdmin, async (req, res) => {
+    try {
+      const currentUser = (req.session as any)?.user;
+      const { username, password, firstName, lastName, email, role = "user", companyId, temporaryPassword = false } = req.body;
+
+      // Validate required fields
+      if (!username || !password || !firstName || !lastName || !email || !companyId) {
+        return res.status(400).json({
+          message: "Username, password, first name, last name, email, and company are required"
+        });
+      }
+
+      // Validate role
+      const validRoles = ["user", "viewer", "company_admin"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          message: `Invalid role. Must be one of: ${validRoles.join(", ")}`
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = accountSecurityService.validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: "Password does not meet requirements",
+          errors: passwordValidation.errors
+        });
+      }
+
+      // Check if username or email already exists
+      try {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({
+            message: "A user with this email already exists"
+          });
+        }
+      } catch (error) {
+        // User doesn't exist, which is what we want
+      }
+
+      // Hash the password with bcrypt
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create user
+      const newUser = await storage.createUser({
+        username,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        email,
+        role,
+        status: "active",
+        companyId: parseInt(companyId),
+        mustChangePassword: temporaryPassword,
+        passwordChangedAt: new Date(),
+      });
+
+      // If temporary password, require change on first login
+      if (temporaryPassword) {
+        await accountSecurityService.requirePasswordChange(
+          newUser.id,
+          'Temporary password set during user creation'
+        );
+      }
+
+      // Log user creation action
+      await rbacService.logAction({
+        userId: currentUser.id,
+        action: 'admin.create_user',
+        resource: `user:${newUser.id}`,
+        details: {
+          createdUsername: username,
+          createdEmail: email,
+          createdRole: role,
+          companyId: parseInt(companyId),
+          temporaryPassword: temporaryPassword
+        },
+        req,
+      });
+
+      // Get company information for the email
+      const company = await storage.getCompany(parseInt(companyId));
+      const companyName = company?.name || 'Your Company';
+
+      // Send welcome email to new user
+      try {
+        const loginLink = `${process.env.APP_URL || 'http://localhost:5000'}/login`;
+        await emailService.sendUserCreatedEmail(email, {
+          firstName,
+          lastName,
+          email,
+          username,
+          role,
+          companyName,
+          tempPassword: temporaryPassword ? password : undefined,
+          loginLink
+        });
+        console.log(`📧 Welcome email sent to new user: ${email}`);
+      } catch (emailError) {
+        console.error(`❌ Failed to send welcome email to ${email}:`, emailError);
+        // Don't fail the user creation if email fails
+      }
+
+      // Send notification to company admins
+      try {
+        const allUsers = await storage.getUsers();
+        const systemAdmins = allUsers.filter(user => user.role === 'admin');
+        const companyAdmins = allUsers.filter(user =>
+          user.companyId === parseInt(companyId) &&
+          (user.role === 'company_admin' || user.role === 'admin')
+        );
+        const allAdmins = [...systemAdmins, ...companyAdmins];
+
+        const adminEmails = allAdmins
+          .filter(admin => admin.email && admin.id !== newUser.id) // Don't notify self
+          .map(admin => admin.email)
+          .filter((email, index, arr) => arr.indexOf(email) === index); // Remove duplicates
+
+        if (adminEmails.length > 0) {
+          await emailService.sendAdminNotifications(adminEmails, {
+            newUserName: `${firstName} ${lastName}`,
+            newUserEmail: email,
+            newUserRole: role,
+            companyName,
+            createdBy: `${currentUser.firstName || currentUser.username} ${currentUser.lastName || ''}`
+          });
+          console.log(`📧 Admin notifications sent for new user: ${email}`);
+        }
+      } catch (emailError) {
+        console.error(`❌ Failed to send admin notifications for ${email}:`, emailError);
+        // Don't fail the user creation if email fails
+      }
+
+      console.log(`👤 New user created: ${username} (${role}) by ${currentUser.username}`);
+
+      // Return user without password
+      const { password: _, ...userResponse } = newUser;
+      res.status(201).json({
+        success: true,
+        message: `User ${username} created successfully`,
+        user: userResponse
+      });
+
+    } catch (error) {
+      console.error('❌ User creation failed:', error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  // List all users (admin only)
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const { role, companyId, status, page = 1, limit = 50 } = req.query;
+
+      // Note: This would need implementation in storage layer
+      // For now, return a placeholder response
+      res.json({
+        success: true,
+        message: "User listing endpoint - requires storage implementation",
+        filters: { role, companyId, status, page, limit }
+      });
+
+    } catch (error) {
+      console.error('❌ User listing failed:', error);
+      res.status(500).json({ message: "Failed to list users" });
+    }
+  });
+
+
   // Companies
   app.get("/api/companies", async (req, res) => {
     try {
@@ -1889,11 +3476,57 @@ The Saulto Analytics Team
   // Setup Status
   app.get("/api/setup-status", async (req, res) => {
     try {
-      const companyId = (req.session as any)?.companyId;
+      console.log('🔍 Setup status debug:', {
+        hasSession: !!req.session,
+        selectedCompany: req.session?.selectedCompany,
+        sessionId: req.sessionID,
+        fullSession: req.session
+      });
+
+      const companyId = req.session?.selectedCompany?.id;
       if (!companyId) {
+        console.log('❌ Setup status: No company ID found in session');
         return res.status(400).json({ message: "No company selected. Please select a company first." });
       }
-      const status = await storage.getSetupStatus(companyId);
+
+      // Get setup status and dynamically check actual data sources
+      let status = await storage.getSetupStatus(companyId);
+
+      // If no setup status exists, create a default one
+      if (!status) {
+        status = await storage.updateSetupStatus(companyId, {
+          warehouseConnected: false,
+          dataSourcesConfigured: false,
+          modelsDeployed: 0,
+          totalModels: 0,
+        });
+      }
+
+      // Check actual data sources to update status
+      const dataSources = await storage.getDataSources(companyId);
+
+      // Fix any existing data sources that are missing status field
+      for (const dataSource of dataSources) {
+        if (!dataSource.status && dataSource.isActive) {
+          console.log(`🔧 Fixing data source ${dataSource.id} (${dataSource.type}) - setting status to 'connected'`);
+          await storage.updateDataSource(dataSource.id, {
+            status: 'connected'
+          });
+        }
+      }
+
+      // Re-fetch data sources after potential updates
+      const updatedDataSources = await storage.getDataSources(companyId);
+      const connectedSources = updatedDataSources.filter(ds => ds.status === 'connected');
+      const hasConnectedSources = connectedSources.length > 0;
+
+      // Update setup status if data sources are now configured
+      if (hasConnectedSources && !status.dataSourcesConfigured) {
+        status = await storage.updateSetupStatus(companyId, {
+          dataSourcesConfigured: true,
+        });
+      }
+
       res.json(status);
     } catch (error) {
       res.status(500).json({ message: "Failed to get setup status" });
@@ -1901,9 +3534,84 @@ The Saulto Analytics Team
   });
 
   // Data Sources
-  app.get("/api/data-sources", async (req, res) => {
+  app.get("/api/data-sources", validateTenantAccess, async (req, res) => {
     try {
-      const dataSources = await storage.getDataSources();
+      const companyId = getValidatedCompanyId(req);
+      let dataSources = await storage.getDataSources(companyId);
+
+      // Debug: Show what we found in data_sources table
+      console.log(`🔍 Found ${dataSources.length} data sources for company ${companyId}:`, dataSources);
+
+      // Also check for any data_sources records for this company (regardless of status)
+      const dbStorage = storage as any;
+      if (dbStorage.sql) {
+        try {
+          const allDataSources = await dbStorage.sql`
+            SELECT id, name, type, status, company_id, created_at
+            FROM data_sources
+            WHERE company_id = ${companyId}
+          `;
+          console.log(`🔍 All data_sources records for company ${companyId}:`, allDataSources);
+        } catch (e) {
+          console.log('🔍 Failed to query all data sources:', e);
+        }
+      }
+
+      // Migration: Check if there are analytics tables but no connected data_sources records
+      try {
+        const dbStorage = storage as any;
+        if (dbStorage.sql) {
+          const schemaName = `analytics_company_${companyId}`;
+          const jiraTables = await dbStorage.sql`
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = ${schemaName}
+            AND table_name LIKE 'core_jira_%'
+            LIMIT 1
+          `;
+
+          if (jiraTables.length > 0) {
+            // Check if we have existing Jira data sources that are disconnected
+            const disconnectedJiraSources = dataSources.filter(ds => ds.type === 'jira' && ds.status === 'disconnected');
+
+            if (disconnectedJiraSources.length > 0) {
+              console.log('🔧 Found Jira analytics tables with disconnected Jira data source - updating status to connected');
+
+              // Update the first disconnected Jira source to connected
+              const sourceToUpdate = disconnectedJiraSources[0];
+              await dbStorage.sql`
+                UPDATE data_sources
+                SET status = 'connected'
+                WHERE id = ${sourceToUpdate.id}
+              `;
+
+              console.log(`✅ Updated Jira data source ${sourceToUpdate.id} status to connected`);
+
+              // Refresh data sources list
+              dataSources = await storage.getDataSources(companyId);
+            } else if (dataSources.length === 0) {
+              console.log('🔧 Found Jira analytics tables but no data_sources record - creating Jira data source');
+
+              // Create Jira data source record
+              const jiraDataSource = await storage.createDataSource({
+                companyId,
+                name: 'Jira (Migrated)',
+                type: 'jira',
+                status: 'connected',
+                config: { migrated: true, oauth: true },
+              });
+
+              console.log('✅ Created migrated Jira data source:', jiraDataSource.id);
+
+              // Refresh data sources list
+              dataSources = await storage.getDataSources(companyId);
+            }
+          }
+        }
+      } catch (migrationError) {
+        console.log('ℹ️ Migration check failed (this is OK):', migrationError);
+      }
+
       res.json(dataSources);
     } catch (error) {
       res.status(500).json({ message: "Failed to get data sources" });
@@ -3016,7 +4724,7 @@ Convert the user request into the appropriate filter structure:
           format: metric.format,
           yearlyGoal: metric.yearlyGoal,
           isIncreasing: metric.isIncreasing,
-          sqlQuery: metric.sqlQuery,
+          sqlQuery: metric.exprSql,
           currentValue: null,
           goalProgress: null,
           changePercent: null,
@@ -3024,14 +4732,14 @@ Convert the user request into the appropriate filter structure:
         };
         
         // Calculate real metric value if SQL query exists
-        if (metric.sqlQuery) {
+        if (metric.exprSql) {
           try {
             const result = await postgresAnalyticsService.calculateMetric(
-              metric.name, 
-              companyId, 
-              timePeriod, 
-              metric.id, 
-              metric.sqlQuery
+              metric.name,
+              companyId,
+              timePeriod,
+              metric.id,
+              metric.exprSql
             );
             
             if (result) {
@@ -3185,9 +4893,85 @@ Annual forecast: ${yearlyProjection.toLocaleString()}. ${progress > 50 ? 'Expect
         return res.status(404).json({ message: "Report not found" });
       }
       
-      // Get report data first
-      const reportDataResponse = await fetch(`http://localhost:${process.env.PORT || 5000}/api/metric-reports/${reportId}/data?timePeriod=${timePeriod}`);
-      const reportData = await reportDataResponse.json();
+      // Get report data directly (avoid internal HTTP call that loses session context)
+      // Get all metrics to build metric lookup
+      const allMetrics = await storage.getKpiMetrics(companyId);
+      const metricsMap = new Map(allMetrics.map(m => [m.id, m]));
+
+      // Calculate data for selected metrics
+      const reportData = {
+        report,
+        timePeriod,
+        generatedAt: new Date().toISOString(),
+        metrics: [],
+        summary: {
+          totalMetrics: 0,
+          calculatedMetrics: 0,
+          failedMetrics: 0,
+        }
+      };
+
+      // Process each selected metric (reuse logic from data endpoint)
+      for (const metricId of (report.selectedMetrics as number[] || [])) {
+        const metric = metricsMap.get(metricId);
+        if (!metric) continue;
+
+        reportData.summary.totalMetrics++;
+
+        let metricData = {
+          id: metric.id,
+          name: metric.name,
+          description: metric.description,
+          category: metric.category,
+          format: metric.format,
+          yearlyGoal: metric.yearlyGoal,
+          isIncreasing: metric.isIncreasing,
+          sqlQuery: metric.exprSql,
+          currentValue: null,
+          goalProgress: null,
+          changePercent: null,
+          status: 'pending' as 'success' | 'error' | 'pending'
+        };
+
+        // Calculate real metric value if SQL query exists
+        if (metric.exprSql) {
+          try {
+            const result = await postgresAnalyticsService.calculateMetric(
+              metric.name,
+              companyId,
+              timePeriod,
+              metric.id,
+              metric.exprSql
+            );
+
+            if (result) {
+              metricData.currentValue = result.currentValue;
+
+              // Calculate goal progress
+              if (metric.yearlyGoal && parseFloat(metric.yearlyGoal) > 0) {
+                const yearlyGoal = parseFloat(metric.yearlyGoal);
+                const currentValue = result.currentValue || 0;
+                metricData.goalProgress = (currentValue / yearlyGoal) * 100;
+              }
+
+              metricData.status = 'success';
+              reportData.summary.calculatedMetrics++;
+            } else {
+              metricData.status = 'error';
+              reportData.summary.failedMetrics++;
+            }
+          } catch (error) {
+            console.error(`Error calculating metric ${metric.name}:`, error);
+            metricData.status = 'error';
+            reportData.summary.failedMetrics++;
+          }
+        } else {
+          metricData.status = 'error';
+          reportData.summary.failedMetrics++;
+        }
+
+        reportData.metrics.push(metricData);
+      }
       
       if (!reportData || !reportData.metrics) {
         return res.status(400).json({ message: "Unable to generate insights - no metric data available" });
@@ -4370,7 +6154,10 @@ CRITICAL REQUIREMENTS:
         return res.status(400).json({ error: "Message is required" });
       }
 
-      const response = await metricsAIService.chatWithAssistant(message, context);
+      // Get company ID from session
+      const companyId = getSessionCompanyId(req);
+      
+      const response = await metricsAIService.chatWithAssistant(message, context, companyId);
       res.json({ response });
     } catch (error) {
       console.error("AI chat error:", error);
@@ -4412,6 +6199,122 @@ CRITICAL REQUIREMENTS:
   });
 
   // Removed Snowflake execute endpoint - use /api/postgres/query instead
+
+  // Admin Metric Categories API (accessible to all authenticated users)
+  app.get("/api/admin/metric-categories", validateTenantAccess, async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      // Prevent HTTP caching for admin categories to ensure fresh data after deletions
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
+      const categories = await storage.getMetricCategories(companyId);
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching metric categories:", error);
+      res.status(500).json({ error: "Failed to fetch metric categories" });
+    }
+  });
+
+  app.post("/api/admin/metric-categories", validateTenantAccess, async (req, res) => {
+    try {
+      const companyId = (req.session as any)?.selectedCompany?.id;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      const { name, value, color } = req.body;
+
+      if (!name || !value) {
+        return res.status(400).json({ error: "Name and value are required" });
+      }
+
+      const newCategory = await storage.createMetricCategory({
+        companyId,
+        name,
+        value,
+        color: color || "bg-blue-100 text-blue-800",
+        isDefault: false,
+        isActive: true,
+      });
+
+      res.json(newCategory);
+    } catch (error) {
+      console.error("Error creating metric category:", error);
+      res.status(500).json({ error: "Failed to create metric category" });
+    }
+  });
+
+  app.put("/api/admin/metric-categories/:id", validateTenantAccess, async (req, res) => {
+    try {
+      const categoryId = parseInt(req.params.id);
+      const companyId = (req.session as any)?.selectedCompany?.id;
+
+      if (!companyId) {
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      const updatedCategory = await storage.updateMetricCategory(categoryId, companyId, req.body);
+      res.json(updatedCategory);
+    } catch (error) {
+      console.error("Error updating metric category:", error);
+      res.status(500).json({ error: "Failed to update metric category" });
+    }
+  });
+
+  app.delete("/api/admin/metric-categories/:id", validateTenantAccess, async (req, res) => {
+    try {
+      console.log("🗑️ DELETE /api/admin/metric-categories/:id called with ID:", req.params.id);
+      const categoryId = parseInt(req.params.id);
+      const companyId = (req.session as any)?.selectedCompany?.id;
+
+      console.log("🗑️ Parsed categoryId:", categoryId, "companyId:", companyId);
+
+      if (!companyId) {
+        console.log("🗑️ Missing company ID");
+        return res.status(400).json({ error: "Company selection required" });
+      }
+
+      console.log("🗑️ Calling storage.deleteMetricCategory...");
+      await storage.deleteMetricCategory(categoryId, companyId);
+      console.log("🗑️ Category deleted successfully, returning response");
+      res.json({ success: true });
+    } catch (error) {
+      console.error("🗑️ Error deleting metric category:", error);
+      res.status(500).json({ error: "Failed to delete metric category" });
+    }
+  });
+
+  // Public Metric Categories API (for frontend use)
+  app.get("/api/metric-categories", async (req, res) => {
+    try {
+      console.log('🔍 Metric categories API called');
+      const companyId = (req.session as any)?.selectedCompany?.id;
+      console.log(`🏢 Company ID from session: ${companyId}`);
+
+      if (!companyId) {
+        console.log('❌ No company selected in session');
+        return res.status(400).json({
+          success: false,
+          error: "No company selected. Please select a company first.",
+          requiresCompanySelection: true
+        });
+      }
+
+      console.log(`📊 Fetching metric categories for company ${companyId}`);
+      const categories = await storage.getMetricCategories(companyId);
+      console.log(`✅ Found ${categories.length} categories`);
+      res.json(categories);
+    } catch (error) {
+      console.error("❌ Error fetching metric categories:", error);
+      res.status(500).json({ error: "Failed to fetch metric categories" });
+    }
+  });
 
   // SaultoChat integration routes - using integrated Azure OpenAI
   app.post("/api/ai-assistant/chat", async (req: any, res: any) => {

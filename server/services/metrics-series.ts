@@ -392,13 +392,55 @@ export class MetricsSeriesService {
       }
       
       const result = await this.postgres.executeQuery(`
-        SELECT ts, series_label as series, value, running_sum, is_goal,
-               period_relative_value, period_relative_running_sum, period_baseline_value
-        FROM ${schemaName}.metrics_time_series 
-        WHERE period_type = '${periodType}' 
-          ${whereClause}
-          ${dateFilter}
-        ORDER BY ts ASC, series_label, is_goal
+        SELECT
+          mh.date::timestamp with time zone as ts,
+          m.name as series,
+          mh.actual_value::numeric as value,
+          SUM(mh.actual_value::numeric) OVER (
+            PARTITION BY mh.metric_id
+            ORDER BY mh.date
+            ROWS UNBOUNDED PRECEDING
+          ) as running_sum,
+          false as is_goal,
+          mh.actual_value::numeric as period_relative_value,
+          SUM(mh.actual_value::numeric) OVER (
+            PARTITION BY mh.metric_id
+            ORDER BY mh.date
+            ROWS UNBOUNDED PRECEDING
+          ) as period_relative_running_sum,
+          0 as period_baseline_value
+        FROM ${schemaName}.metric_history mh
+        JOIN ${schemaName}.metrics m ON m.id = mh.metric_id
+        WHERE mh.period = '${periodType.replace('ly', '')}'
+          ${whereClause.replace('series_label', 'm.name')}
+          ${dateFilter.replace('ts', 'mh.date')}
+
+        UNION ALL
+
+        SELECT
+          mh.date::timestamp with time zone as ts,
+          m.name as series,
+          mh.goal_value::numeric as value,
+          SUM(mh.goal_value::numeric) OVER (
+            PARTITION BY mh.metric_id
+            ORDER BY mh.date
+            ROWS UNBOUNDED PRECEDING
+          ) as running_sum,
+          true as is_goal,
+          mh.goal_value::numeric as period_relative_value,
+          SUM(mh.goal_value::numeric) OVER (
+            PARTITION BY mh.metric_id
+            ORDER BY mh.date
+            ROWS UNBOUNDED PRECEDING
+          ) as period_relative_running_sum,
+          0 as period_baseline_value
+        FROM ${schemaName}.metric_history mh
+        JOIN ${schemaName}.metrics m ON m.id = mh.metric_id
+        WHERE mh.period = '${periodType.replace('ly', '')}'
+          ${whereClause.replace('series_label', 'm.name')}
+          ${dateFilter.replace('ts', 'mh.date')}
+
+        ORDER BY ts ASC, series, is_goal
       `);
       
       if (!result.success) {

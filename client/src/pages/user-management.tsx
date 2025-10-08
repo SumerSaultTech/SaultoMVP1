@@ -182,7 +182,7 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="container mx-auto py-8 px-4 pb-20">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -192,16 +192,18 @@ export default function UserManagement() {
             Manage users and their company assignments
           </p>
         </div>
-        <Button 
-          onClick={() => {
-            resetNewUserForm();
-            setShowCreateForm(true);
-          }}
-          className="flex items-center gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Add User
-        </Button>
+        {!showCreateForm && (
+          <Button
+            onClick={() => {
+              resetNewUserForm();
+              setShowCreateForm(true);
+            }}
+            className="flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Add User
+          </Button>
+        )}
       </div>
 
       {/* Create User Form */}
@@ -247,24 +249,7 @@ export default function UserManagement() {
                   An invitation email will be sent to this address with account setup instructions.
                 </p>
               </div>
-              <div>
-                <Label htmlFor="company">Company</Label>
-                <Select 
-                  value={newUser.companyId} 
-                  onValueChange={(value) => setNewUser(prev => ({ ...prev, companyId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select company" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {companies?.map((company) => (
-                      <SelectItem key={company.id} value={company.id.toString()}>
-                        {company.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Company selection hidden - automatically uses current tenant context */}
               <div className="md:col-span-2">
                 <Label htmlFor="role">User Role</Label>
                 <Select 
