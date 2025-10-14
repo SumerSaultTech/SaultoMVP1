@@ -737,8 +737,11 @@ export default function Setup() {
     
     // Mark connected tools as completed (but don't auto-sync)
     if (['jira', 'hubspot', 'odoo', 'zoho', 'activecampaign'].includes(currentToolForSetup)) {
-      // Mark tool as connected after setup type selection
-      setCompletedLogins(prev => [...prev, currentToolForSetup]);
+      // Mark tool as connected after setup type selection (avoid duplicates)
+      setCompletedLogins(prev => {
+        const uniqueLogins = new Set([...prev, currentToolForSetup]);
+        return Array.from(uniqueLogins);
+      });
       
       if (setupType === 'standard') {
         toast({
@@ -2358,10 +2361,10 @@ export default function Setup() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">
-                Connected: {completedLogins.filter(login => selectedTools.includes(login)).length}/{selectedTools.length}
+                Connected: {[...new Set(completedLogins)].filter(login => selectedTools.includes(login)).length}/{selectedTools.length}
               </p>
               <p className="text-sm text-gray-600">
-                {completedLogins.filter(login => selectedTools.includes(login)).length === selectedTools.length 
+                {[...new Set(completedLogins)].filter(login => selectedTools.includes(login)).length === selectedTools.length 
                   ? "All apps connected! Ready to sync data." 
                   : "Connect all apps to proceed to data sync."
                 }
