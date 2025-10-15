@@ -200,6 +200,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(global.lastLoginError || { message: "No recent login errors" });
   });
 
+  // Debug endpoint for Zoho data format (bypasses auth for testing)
+  app.get("/api/debug/zoho-format/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId) || 1757967976336;
+      const result = await postgresAnalyticsService.executeQuery(`
+        SELECT 
+          id,
+          jsonb_typeof(data) as data_type,
+          data->>'id' as direct_extract_id,
+          data->>'Account_Name' as direct_extract_name,
+          (data #>> '{}')::jsonb->>'id' as string_extract_id,
+          (data #>> '{}')::jsonb->>'Account_Name' as string_extract_name,
+          left(data::text, 500) as raw_data_preview
+        FROM analytics_company_${companyId}.raw_zoho_accounts
+        LIMIT 3
+      `, companyId);
+      
+      res.json({
+        success: true,
+        debug: "Zoho data format test",
+        rawData: result.data,
+        analysis: {
+          hasDirectExtraction: result.data?.[0]?.direct_extract_id !== null,
+          hasStringExtraction: result.data?.[0]?.string_extract_id !== null,
+          dataType: result.data?.[0]?.data_type
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        hint: "Check if raw_zoho_accounts table exists"
+      });
+    }
+  });
+
   // Health check endpoint with service status
   app.get("/api/health", async (req, res) => {
     const health = {
