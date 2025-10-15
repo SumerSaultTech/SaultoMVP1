@@ -614,19 +614,19 @@ export class ZohoOAuthService extends OAuthServiceBase {
         await sql`
           CREATE TABLE ${sql(schema)}.stg_zoho_leads AS
           SELECT DISTINCT 
-            data->>'id' as lead_id,
-            data->>'First_Name' as first_name,
-            data->>'Last_Name' as last_name,
-            data->>'Email' as email,
-            data->>'Phone' as phone,
-            data->>'Company' as company,
-            data->>'Lead_Status' as lead_status,
-            data->>'Lead_Source' as lead_source,
-            COALESCE((data->>'Annual_Revenue')::numeric, 0) as annual_revenue,
-            (data->>'Created_Time')::timestamp as created_at,
-            (data->>'Modified_Time')::timestamp as updated_at,
-            data#>>'{Owner,name}' as owner_name,
-            data as raw_data
+            (data #>> '{}')::jsonb->>'id' as lead_id,
+            (data #>> '{}')::jsonb->>'First_Name' as first_name,
+            (data #>> '{}')::jsonb->>'Last_Name' as last_name,
+            (data #>> '{}')::jsonb->>'Email' as email,
+            (data #>> '{}')::jsonb->>'Phone' as phone,
+            (data #>> '{}')::jsonb->>'Company' as company,
+            (data #>> '{}')::jsonb->>'Lead_Status' as lead_status,
+            (data #>> '{}')::jsonb->>'Lead_Source' as lead_source,
+            COALESCE(((data #>> '{}')::jsonb->>'Annual_Revenue')::numeric, 0) as annual_revenue,
+            ((data #>> '{}')::jsonb->>'Created_Time')::timestamp as created_at,
+            ((data #>> '{}')::jsonb->>'Modified_Time')::timestamp as updated_at,
+            (data #>> '{}')::jsonb#>>'{Owner,name}' as owner_name,
+            (data #>> '{}')::jsonb as raw_data
           FROM ${sql(schema)}.raw_zoho_leads
           WHERE data IS NOT NULL
         `;
@@ -638,17 +638,17 @@ export class ZohoOAuthService extends OAuthServiceBase {
         await sql`
           CREATE TABLE ${sql(schema)}.stg_zoho_contacts AS
           SELECT DISTINCT
-            data->>'id' as contact_id,
-            data->>'First_Name' as first_name,
-            data->>'Last_Name' as last_name,
-            data->>'Email' as email,
-            data->>'Phone' as phone,
-            data#>>'{Account_Name,name}' as account_name,
-            data->>'Title' as title,
-            data->>'Department' as department,
-            (data->>'Created_Time')::timestamp as created_at,
-            (data->>'Modified_Time')::timestamp as updated_at,
-            data#>>'{Owner,name}' as owner_name
+            (data #>> '{}')::jsonb->>'id' as contact_id,
+            (data #>> '{}')::jsonb->>'First_Name' as first_name,
+            (data #>> '{}')::jsonb->>'Last_Name' as last_name,
+            (data #>> '{}')::jsonb->>'Email' as email,
+            (data #>> '{}')::jsonb->>'Phone' as phone,
+            (data #>> '{}')::jsonb#>>'{Account_Name,name}' as account_name,
+            (data #>> '{}')::jsonb->>'Title' as title,
+            (data #>> '{}')::jsonb->>'Department' as department,
+            ((data #>> '{}')::jsonb->>'Created_Time')::timestamp as created_at,
+            ((data #>> '{}')::jsonb->>'Modified_Time')::timestamp as updated_at,
+            (data #>> '{}')::jsonb#>>'{Owner,name}' as owner_name
           FROM ${sql(schema)}.raw_zoho_contacts
           WHERE data IS NOT NULL
         `;
@@ -657,24 +657,47 @@ export class ZohoOAuthService extends OAuthServiceBase {
       // STG: zoho_accounts - normalized
       if (hasAccounts) {
         console.log('  ✅ Creating stg_zoho_accounts');
+        
+        // Debug: Check what's in raw data first
+        const rawSample = await sql`
+          SELECT 
+            jsonb_typeof(data) as data_type,
+            data->>'id' as direct_id,
+            data->>'Account_Name' as direct_name,
+            left(data::text, 200) as sample_data
+          FROM ${sql(schema)}.raw_zoho_accounts
+          LIMIT 1
+        `;
+        console.log('  📊 Raw data sample:', rawSample);
+        
         await sql`
           CREATE TABLE ${sql(schema)}.stg_zoho_accounts AS  
           SELECT DISTINCT
-            data->>'id' as account_id,
-            data->>'Account_Name' as account_name,
-            data->>'Account_Number' as account_number,
-            data->>'Industry' as industry,
-            COALESCE((data->>'Annual_Revenue')::numeric, 0) as annual_revenue,
-            COALESCE((data->>'Employees')::integer, 0) as employees,
-            data->>'Website' as website,
-            data->>'Phone' as phone,
-            data->>'Billing_City' as billing_city,
-            (data->>'Created_Time')::timestamp as created_at,
-            (data->>'Modified_Time')::timestamp as updated_at,
-            data#>>'{Owner,name}' as owner_name
+            (data #>> '{}')::jsonb->>'id' as account_id,
+            (data #>> '{}')::jsonb->>'Account_Name' as account_name,
+            (data #>> '{}')::jsonb->>'Account_Number' as account_number,
+            (data #>> '{}')::jsonb->>'Industry' as industry,
+            COALESCE(((data #>> '{}')::jsonb->>'Annual_Revenue')::numeric, 0) as annual_revenue,
+            COALESCE(((data #>> '{}')::jsonb->>'Employees')::integer, 0) as employees,
+            (data #>> '{}')::jsonb->>'Website' as website,
+            (data #>> '{}')::jsonb->>'Phone' as phone,
+            (data #>> '{}')::jsonb->>'Billing_City' as billing_city,
+            ((data #>> '{}')::jsonb->>'Created_Time')::timestamp as created_at,
+            ((data #>> '{}')::jsonb->>'Modified_Time')::timestamp as updated_at,
+            (data #>> '{}')::jsonb#>>'{Owner,name}' as owner_name
           FROM ${sql(schema)}.raw_zoho_accounts
           WHERE data IS NOT NULL
         `;
+        
+        // Debug: Check what got inserted
+        const stagingSample = await sql`
+          SELECT COUNT(*) as row_count, 
+                 COUNT(account_id) as non_null_ids,
+                 MIN(account_id) as sample_id,
+                 MIN(account_name) as sample_name
+          FROM ${sql(schema)}.stg_zoho_accounts
+        `;
+        console.log('  📊 Staging data result:', stagingSample);
       }
       
       // STG: zoho_deals - normalized
@@ -683,18 +706,18 @@ export class ZohoOAuthService extends OAuthServiceBase {
         await sql`
           CREATE TABLE ${sql(schema)}.stg_zoho_deals AS  
           SELECT DISTINCT
-            data->>'id' as deal_id,
-            data->>'Deal_Name' as deal_name,
-            COALESCE((data->>'Amount')::numeric, 0) as amount,
-            data->>'Stage' as stage,
-            COALESCE((data->>'Probability')::numeric, 0) as probability,
-            (data->>'Closing_Date')::timestamp as closing_date,
-            data#>>'{Account_Name,name}' as account_name,
-            data#>>'{Contact_Name,name}' as contact_name,
-            data->>'Lead_Source' as lead_source,
-            (data->>'Created_Time')::timestamp as created_at,
-            (data->>'Modified_Time')::timestamp as updated_at,
-            data#>>'{Owner,name}' as owner_name
+            (data #>> '{}')::jsonb->>'id' as deal_id,
+            (data #>> '{}')::jsonb->>'Deal_Name' as deal_name,
+            COALESCE(((data #>> '{}')::jsonb->>'Amount')::numeric, 0) as amount,
+            (data #>> '{}')::jsonb->>'Stage' as stage,
+            COALESCE(((data #>> '{}')::jsonb->>'Probability')::numeric, 0) as probability,
+            ((data #>> '{}')::jsonb->>'Closing_Date')::timestamp as closing_date,
+            (data #>> '{}')::jsonb#>>'{Account_Name,name}' as account_name,
+            (data #>> '{}')::jsonb#>>'{Contact_Name,name}' as contact_name,
+            (data #>> '{}')::jsonb->>'Lead_Source' as lead_source,
+            ((data #>> '{}')::jsonb->>'Created_Time')::timestamp as created_at,
+            ((data #>> '{}')::jsonb->>'Modified_Time')::timestamp as updated_at,
+            (data #>> '{}')::jsonb#>>'{Owner,name}' as owner_name
           FROM ${sql(schema)}.raw_zoho_deals
           WHERE data IS NOT NULL
         `;

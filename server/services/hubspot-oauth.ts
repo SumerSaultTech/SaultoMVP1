@@ -464,19 +464,19 @@ export class HubSpotOAuthService extends OAuthServiceBase {
       await sql`
         CREATE TABLE ${sql(schema)}.stg_hubspot_contacts AS
         SELECT DISTINCT 
-          data->>'id' as contact_id,
-          data#>>'{properties,firstname}' as first_name,
-          data#>>'{properties,lastname}' as last_name,
-          data#>>'{properties,email}' as email,
-          data#>>'{properties,phone}' as phone,
-          data#>>'{properties,company}' as company_name,
-          data#>>'{properties,jobtitle}' as job_title,
-          data#>>'{properties,lifecyclestage}' as lifecycle_stage,
-          (data#>>'{properties,createdate}')::timestamp as created_at,
-          (data#>>'{properties,lastmodifieddate}')::timestamp as updated_at,
-          data#>>'{properties,hs_lead_status}' as lead_status,
-          data#>>'{properties,industry}' as industry,
-          data as raw_data
+          (data #>> '{}')::jsonb->>'id' as contact_id,
+          (data #>> '{}')::jsonb#>>'{properties,firstname}' as first_name,
+          (data #>> '{}')::jsonb#>>'{properties,lastname}' as last_name,
+          (data #>> '{}')::jsonb#>>'{properties,email}' as email,
+          (data #>> '{}')::jsonb#>>'{properties,phone}' as phone,
+          (data #>> '{}')::jsonb#>>'{properties,company}' as company_name,
+          (data #>> '{}')::jsonb#>>'{properties,jobtitle}' as job_title,
+          (data #>> '{}')::jsonb#>>'{properties,lifecyclestage}' as lifecycle_stage,
+          ((data #>> '{}')::jsonb#>>'{properties,createdate}')::timestamp as created_at,
+          ((data #>> '{}')::jsonb#>>'{properties,lastmodifieddate}')::timestamp as updated_at,
+          (data #>> '{}')::jsonb#>>'{properties,hs_lead_status}' as lead_status,
+          (data #>> '{}')::jsonb#>>'{properties,industry}' as industry,
+          (data #>> '{}')::jsonb as raw_data
         FROM ${sql(schema)}.raw_hubspot_contacts
         WHERE data IS NOT NULL
       `;
@@ -485,17 +485,17 @@ export class HubSpotOAuthService extends OAuthServiceBase {
       await sql`
         CREATE TABLE ${sql(schema)}.stg_hubspot_companies AS
         SELECT DISTINCT
-          data->>'id' as company_id,
-          data#>>'{properties,name}' as company_name,
-          data#>>'{properties,domain}' as domain,
-          data#>>'{properties,industry}' as industry,
-          COALESCE((data#>>'{properties,numberofemployees}')::integer, 0) as number_of_employees,
-          COALESCE((data#>>'{properties,annualrevenue}')::numeric, 0) as annual_revenue,
-          data#>>'{properties,city}' as city,
-          data#>>'{properties,state}' as state,
-          data#>>'{properties,country}' as country,
-          (data#>>'{properties,createdate}')::timestamp as created_at,
-          (data#>>'{properties,lastmodifieddate}')::timestamp as updated_at
+          (data #>> '{}')::jsonb->>'id' as company_id,
+          (data #>> '{}')::jsonb#>>'{properties,name}' as company_name,
+          (data #>> '{}')::jsonb#>>'{properties,domain}' as domain,
+          (data #>> '{}')::jsonb#>>'{properties,industry}' as industry,
+          COALESCE(((data #>> '{}')::jsonb#>>'{properties,numberofemployees}')::integer, 0) as number_of_employees,
+          COALESCE(((data #>> '{}')::jsonb#>>'{properties,annualrevenue}')::numeric, 0) as annual_revenue,
+          (data #>> '{}')::jsonb#>>'{properties,city}' as city,
+          (data #>> '{}')::jsonb#>>'{properties,state}' as state,
+          (data #>> '{}')::jsonb#>>'{properties,country}' as country,
+          ((data #>> '{}')::jsonb#>>'{properties,createdate}')::timestamp as created_at,
+          ((data #>> '{}')::jsonb#>>'{properties,lastmodifieddate}')::timestamp as updated_at
         FROM ${sql(schema)}.raw_hubspot_companies
         WHERE data IS NOT NULL
       `;
@@ -504,15 +504,15 @@ export class HubSpotOAuthService extends OAuthServiceBase {
       await sql`
         CREATE TABLE ${sql(schema)}.stg_hubspot_deals AS  
         SELECT DISTINCT
-          data->>'id' as deal_id,
-          data#>>'{properties,dealname}' as deal_name,
-          COALESCE((data#>>'{properties,amount}')::numeric, 0) as amount,
-          data#>>'{properties,dealstage}' as deal_stage,
-          data#>>'{properties,pipeline}' as pipeline,
-          (data#>>'{properties,closedate}')::timestamp as close_date,
-          (data#>>'{properties,createdate}')::timestamp as created_at,
-          COALESCE((data#>>'{properties,hs_forecast_probability}')::numeric, 0) as forecast_probability,
-          CASE WHEN data#>>'{properties,hs_is_closed_won}' = 'true' THEN true ELSE false END as is_closed_won
+          (data #>> '{}')::jsonb->>'id' as deal_id,
+          (data #>> '{}')::jsonb#>>'{properties,dealname}' as deal_name,
+          COALESCE(((data #>> '{}')::jsonb#>>'{properties,amount}')::numeric, 0) as amount,
+          (data #>> '{}')::jsonb#>>'{properties,dealstage}' as deal_stage,
+          (data #>> '{}')::jsonb#>>'{properties,pipeline}' as pipeline,
+          ((data #>> '{}')::jsonb#>>'{properties,closedate}')::timestamp as close_date,
+          ((data #>> '{}')::jsonb#>>'{properties,createdate}')::timestamp as created_at,
+          COALESCE(((data #>> '{}')::jsonb#>>'{properties,hs_forecast_probability}')::numeric, 0) as forecast_probability,
+          CASE WHEN (data #>> '{}')::jsonb#>>'{properties,hs_is_closed_won}' = 'true' THEN true ELSE false END as is_closed_won
         FROM ${sql(schema)}.raw_hubspot_deals
         WHERE data IS NOT NULL
       `;
