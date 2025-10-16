@@ -127,5 +127,11 @@ export const SERVICE_CONFIGS = {
     tokenUrl: 'https://auth.monday.com/oauth2/token',
     apiBaseUrl: 'https://api.monday.com/v2', // GraphQL endpoint
     rateLimit: { requestsPerSecond: 5, maxRetries: 3 } // Lower due to complexity points
+  },
+  asana: {
+    authorizationUrl: 'https://app.asana.com/-/oauth_authorize',
+    tokenUrl: 'https://app.asana.com/-/oauth_token',
+    apiBaseUrl: 'https://app.asana.com/api/1.0',
+    rateLimit: { requestsPerSecond: 15, maxRetries: 3 } // Asana allows 1500 requests/minute
   }
 } as const;
