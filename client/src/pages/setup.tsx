@@ -425,6 +425,7 @@ export default function Setup() {
     const hubspotConnected = urlParams.get('hubspot');
     const odooConnected = urlParams.get('odoo');
     const zohoConnected = urlParams.get('zoho');
+    const asanaConnected = urlParams.get('asana');
 
     // Check if we're returning from HubSpot OAuth (backend redirect)
     if (hubspotConnected === 'connected') {
@@ -468,6 +469,23 @@ export default function Setup() {
       
       toast({
         title: "Zoho CRM Connected Successfully!",
+        description: "Connection established. Please choose how you'd like to set up your tables.",
+      });
+    }
+    // Check if we're returning from Asana OAuth (backend redirect)
+    else if (asanaConnected === 'connected') {
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // OAuth completed successfully - now show setup type selection
+      setCurrentToolForSetup('asana');
+      setSetupTypeDialogOpen(true);
+      
+      // Mark Asana as completed (connected)
+      setCompletedLogins(prev => [...prev, 'asana']);
+      
+      toast({
+        title: "Asana Connected Successfully!",
         description: "Connection established. Please choose how you'd like to set up your tables.",
       });
     }
@@ -736,7 +754,7 @@ export default function Setup() {
     setSetupTypeDialogOpen(false);
     
     // Mark connected tools as completed (but don't auto-sync)
-    if (['jira', 'hubspot', 'odoo', 'zoho', 'activecampaign'].includes(currentToolForSetup)) {
+    if (['jira', 'hubspot', 'odoo', 'zoho', 'asana', 'activecampaign'].includes(currentToolForSetup)) {
       // Mark tool as connected after setup type selection (avoid duplicates)
       setCompletedLogins(prev => {
         const uniqueLogins = new Set([...prev, currentToolForSetup]);
@@ -761,6 +779,8 @@ export default function Setup() {
           discoverOdooTables();
         } else if (currentToolForSetup === 'zoho') {
           discoverZohoTables();
+        } else if (currentToolForSetup === 'asana') {
+          discoverAsanaTables();
         } else if (currentToolForSetup === 'activecampaign') {
           discoverActiveCampaignTables();
         }
@@ -819,6 +839,57 @@ export default function Setup() {
         description: "Failed to start Jira OAuth flow. Please try again.",
         variant: "destructive",
       });
+    }
+  };
+
+  // Discover Asana tables
+  const discoverAsanaTables = async () => {
+    setLoadingTables(true);
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      const companyId = selectedCompany?.id;
+      
+      if (!companyId) {
+        throw new Error('No company selected');
+      }
+      
+      console.log(`🔍 Discovering Asana tables for company ${companyId}`);
+      const response = await fetch(`/api/auth/asana/discover-tables/${companyId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.tables) {
+        // Flatten categorized tables into a single array
+        const allTables = [
+          ...data.tables.core || [],
+          ...data.tables.extended || []
+        ];
+        
+        setDiscoveredTables(allTables);
+        
+        // Show workspace info
+        if (data.workspace) {
+          toast({
+            title: "Asana Workspace Connected",
+            description: `Discovered tables from ${data.workspace}`,
+          });
+        }
+      } else {
+        throw new Error('Invalid response format');
+      }
+    } catch (error) {
+      console.error('Failed to discover Asana tables:', error);
+      toast({
+        title: "Discovery Failed",
+        description: "Failed to discover Asana tables. Using standard setup.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingTables(false);
     }
   };
 
@@ -1135,6 +1206,46 @@ export default function Setup() {
     }
   };
 
+  // Initiate Asana OAuth flow
+  const initiateAsanaOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`🔄 Starting Asana OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/asana/authorize?companyId=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start Asana OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start Asana OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle Odoo setup form submission
   const handleOdooSetupSubmit = async () => {
     try {
@@ -1282,6 +1393,59 @@ export default function Setup() {
       toast({
         title: "Setup Failed",
         description: error.message || "Failed to save ActiveCampaign configuration. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Trigger Asana data sync after OAuth completion
+  const triggerAsanaSync = async (setupType: 'standard' | 'custom') => {
+    try {
+      const selectedCompany = JSON.parse(localStorage.getItem("selectedCompany") || '{}');
+      if (!selectedCompany?.id) {
+        console.error('No company selected for sync');
+        return;
+      }
+
+      console.log(`🔄 Triggering Asana sync for company ${selectedCompany.id} with ${setupType} setup`);
+
+      // Use the OAuth-based sync endpoint
+      const response = await fetch(`/api/auth/asana/sync/${selectedCompany.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ setupType })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Sync Complete", 
+          description: `Successfully synced ${result.recordsSynced} records from ${result.tablesCreated?.length || 0} tables.`,
+        });
+
+        // Mark as completed
+        setCompletedLogins(prev => [...new Set([...prev, 'asana'])]);
+        
+        // Navigate to dashboard or next step
+        if (selectedTools.every(tool => completedLogins.includes(tool))) {
+          navigate("/dashboard");
+        }
+      } else {
+        throw new Error(result.error || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Asana sync error:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Failed to sync Asana data. Please try again.",
         variant: "destructive",
       });
     }
@@ -2329,6 +2493,8 @@ export default function Setup() {
                             initiateOdooOAuth();
                           } else if (toolId === 'zoho') {
                             initiateZohoOAuth();
+                          } else if (toolId === 'asana') {
+                            initiateAsanaOAuth();
                           } else if (toolId === 'activecampaign') {
                             initiateActiveCampaignSetup();
                           } else {
