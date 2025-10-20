@@ -6576,7 +6576,16 @@ CRITICAL REQUIREMENTS:
         return res.status(404).json({ error: "Company not found" });
       }
 
-      // Mock successful connection for demo
+      // Check if this is Harvest or QuickBooks - these require OAuth implementation
+      if (connectorType === 'harvest' || connectorType === 'quickbooks') {
+        return res.status(501).json({
+          error: `${connectorType} OAuth integration is not yet implemented`,
+          message: `Please wait for the OAuth implementation for ${connectorType} to be completed.`,
+          requiresOAuth: true
+        });
+      }
+
+      // For other connector types, return mock connection (temporary)
       const mockConnectionId = `demo_${connectorType}_${Date.now()}`;
       
       console.log(`✅ DEMO: Created mock connection: ${connectorType} for company ${company.name}`);
