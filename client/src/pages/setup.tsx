@@ -1246,6 +1246,86 @@ export default function Setup() {
     }
   };
 
+  // Initiate QuickBooks OAuth flow
+  const initiateQuickBooksOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`🔄 Starting QuickBooks OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/quickbooks/authorize?companyId=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start QuickBooks OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start QuickBooks OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Initiate Harvest OAuth flow
+  const initiateHarvestOAuth = async () => {
+    try {
+      const selectedCompanyString = localStorage.getItem("selectedCompany");
+      console.log('🔍 Selected company from localStorage:', selectedCompanyString);
+      
+      if (!selectedCompanyString) {
+        toast({
+          title: "Error",
+          description: "No company selected. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const selectedCompany = JSON.parse(selectedCompanyString);
+      console.log('🔍 Parsed selected company:', selectedCompany);
+      
+      if (!selectedCompany?.id) {
+        toast({
+          title: "Error",
+          description: "Invalid company selection. Please select a company first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`🔄 Starting Harvest OAuth flow for company ${selectedCompany.id}`);
+      
+      // Go directly to OAuth without storing setup type
+      window.location.href = `/api/auth/harvest/authorize?companyId=${selectedCompany.id}`;
+    } catch (error) {
+      console.error('Failed to start Harvest OAuth:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to start Harvest OAuth flow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle Odoo setup form submission
   const handleOdooSetupSubmit = async () => {
     try {
@@ -2495,6 +2575,10 @@ export default function Setup() {
                             initiateZohoOAuth();
                           } else if (toolId === 'asana') {
                             initiateAsanaOAuth();
+                          } else if (toolId === 'quickbooks') {
+                            initiateQuickBooksOAuth();
+                          } else if (toolId === 'harvest') {
+                            initiateHarvestOAuth();
                           } else if (toolId === 'activecampaign') {
                             initiateActiveCampaignSetup();
                           } else {
