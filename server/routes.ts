@@ -14,6 +14,7 @@ import { mondayOAuthService } from "./services/monday-oauth";
 import { odooOAuthService } from "./services/odoo-oauth";
 import { odooApiService } from "./services/odoo-api";
 import { zohoOAuthService } from "./services/zoho-oauth";
+import { asanaOAuthService } from "./services/asana-oauth";
 import { spawn } from 'child_process';
 import multer from 'multer';
 import path from 'path';
@@ -339,6 +340,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Zoho OAuth service initialized');
     } catch (error) {
       console.warn('Failed to initialize Zoho OAuth service:', error);
+    }
+  })();
+  // Initialize Asana OAuth service
+  (async () => {
+    try {
+      await asanaOAuthService.initialize();
+      console.log('Asana OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Asana OAuth service:', error);
     }
   })();
 
@@ -1939,6 +1949,215 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false,
         error: "Failed to sync Zoho data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Asana OAuth2 Routes
+  app.get("/api/auth/asana/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+      
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+      
+      const authUrl = asanaOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Asana OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/asana/callback", async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      
+      if (error) {
+        console.error('Asana OAuth error:', error);
+        return res.redirect(`${frontendUrl}/setup?error=asana_auth_denied`);
+      }
+      
+      if (!code || !state) {
+        return res.redirect(`${frontendUrl}/setup?error=missing_params`);
+      }
+      
+      // Parse state to get company context
+      const stateData = asanaOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+      
+      console.log(`🔄 Asana OAuth callback for company ${companyId}`);
+      
+      // Exchange code for tokens
+      const tokens = await asanaOAuthService.exchangeCodeForTokens(code as string, state as string);
+      
+      // Get user info
+      const userInfo = await asanaOAuthService.getUserInfo(tokens.access_token);
+      console.log(`✅ Asana OAuth successful for user ${userInfo.name}`);
+      
+      // Store tokens in database
+      const asanaConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)).toISOString(),
+        userInfo: userInfo,
+        connectedAt: new Date().toISOString(),
+      };
+      
+      // Check if Asana data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingAsana = dataSources.find(ds => ds.type === 'asana');
+      
+      if (existingAsana) {
+        // Update existing data source
+        await storage.updateDataSource(existingAsana.id, {
+          status: 'connected',
+          config: asanaConfig,
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Asana (${userInfo.name})`,
+          type: 'asana',
+          status: 'connected',
+          config: asanaConfig,
+        });
+      }
+      
+      console.log(`✅ Asana OAuth connection established for company ${companyId}`);
+      
+      // Redirect back to setup page with success
+      res.redirect(`${frontendUrl}/setup?asana=connected`);
+      
+    } catch (error) {
+      console.error('Asana OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  app.get("/api/auth/asana/discover-tables/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get stored OAuth tokens
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const asanaSource = dataSources.find(ds => ds.type === 'asana');
+      
+      if (!asanaSource || !asanaSource.config) {
+        return res.status(404).json({ error: "Asana OAuth connection not found" });
+      }
+      
+      const config = typeof asanaSource.config === 'string' 
+        ? JSON.parse(asanaSource.config) 
+        : asanaSource.config;
+      
+      // Discover available tables
+      const tables = await asanaOAuthService.discoverAsanaTables(config.accessToken);
+      
+      // Group tables by category for better UX
+      const categorizedTables = {
+        core: tables.filter(t => ['tasks', 'projects', 'users', 'teams'].includes(t.name)),
+        extended: tables.filter(t => !['tasks', 'projects', 'users', 'teams'].includes(t.name))
+      };
+      
+      res.json({
+        success: true,
+        tables: categorizedTables,
+        totalTables: tables.length,
+        workspace: config.userInfo?.workspaces?.[0]?.name || 'Unknown Workspace'
+      });
+      
+    } catch (error) {
+      console.error('Error discovering Asana tables:', error);
+      res.status(500).json({ error: "Failed to discover Asana tables" });
+    }
+  });
+
+  app.get("/api/auth/asana/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get stored OAuth status
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const asanaSource = dataSources.find(ds => ds.type === 'asana');
+      
+      if (!asanaSource || !asanaSource.config) {
+        return res.json({ 
+          connected: false,
+          message: "No Asana OAuth connection found" 
+        });
+      }
+      
+      const config = typeof asanaSource.config === 'string' 
+        ? JSON.parse(asanaSource.config) 
+        : asanaSource.config;
+      
+      // Build status response
+      const status = {
+        connected: true,
+        user: config.userInfo?.name || 'Unknown User',
+        email: config.userInfo?.email,
+        workspace: config.userInfo?.workspaces?.[0]?.name || 'Unknown Workspace',
+        connectedAt: config.connectedAt,
+        expiresAt: config.expiresAt,
+        expired: false
+      };
+      
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await asanaOAuthService.testApiAccess(config.accessToken);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+      
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Asana OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  // OAuth-based Asana sync endpoint
+  app.post("/api/auth/asana/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based Asana sync for company ${companyId}`);
+      
+      // Use the Asana OAuth service to sync data
+      const result = await asanaOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth Asana sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Asana`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Asana sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Asana data",
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth Asana sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync Asana data via OAuth",
         method: 'oauth'
       });
     }
@@ -6567,6 +6786,16 @@ CRITICAL REQUIREMENTS:
       if (!connectorType || !companyId) {
         return res.status(400).json({ 
           error: "Missing required fields: connectorType and companyId" 
+        });
+      }
+
+      // Reject OAuth-enabled services - they should use OAuth flow instead
+      const oauthServices = ['jira', 'hubspot', 'odoo', 'zoho', 'asana', 'mailchimp', 'monday'];
+      if (oauthServices.includes(connectorType.toLowerCase())) {
+        return res.status(400).json({ 
+          error: `${connectorType} requires OAuth authentication. Please use the OAuth connection flow instead.`,
+          useOAuth: true,
+          connectorType
         });
       }
 
