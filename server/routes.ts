@@ -15,6 +15,8 @@ import { odooOAuthService } from "./services/odoo-oauth";
 import { odooApiService } from "./services/odoo-api";
 import { zohoOAuthService } from "./services/zoho-oauth";
 import { asanaOAuthService } from "./services/asana-oauth";
+import { quickbooksOAuthService } from "./services/quickbooks-oauth";
+import { harvestOAuthService } from "./services/harvest-oauth";
 import { spawn } from 'child_process';
 import multer from 'multer';
 import path from 'path';
@@ -349,6 +351,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Asana OAuth service initialized');
     } catch (error) {
       console.warn('Failed to initialize Asana OAuth service:', error);
+    }
+  })();
+  
+  // Initialize QuickBooks OAuth service
+  (async () => {
+    try {
+      await quickbooksOAuthService.initialize();
+      console.log('QuickBooks OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize QuickBooks OAuth service:', error);
+    }
+  })();
+  
+  // Initialize Harvest OAuth service
+  (async () => {
+    try {
+      await harvestOAuthService.initialize();
+      console.log('Harvest OAuth service initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Harvest OAuth service:', error);
     }
   })();
 
@@ -2158,6 +2180,350 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false,
         error: "Failed to sync Asana data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // QuickBooks OAuth2 Routes
+  app.get("/api/auth/quickbooks/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+      
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+      
+      const authUrl = quickbooksOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('QuickBooks OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/quickbooks/callback", async (req, res) => {
+    try {
+      const { code, state, error, realmId } = req.query;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      
+      if (error) {
+        console.error('QuickBooks OAuth error:', error);
+        return res.redirect(`${frontendUrl}/setup?error=quickbooks_auth_denied`);
+      }
+      
+      if (!code || !state) {
+        return res.redirect(`${frontendUrl}/setup?error=missing_params`);
+      }
+      
+      // Parse state to get company context
+      const stateData = quickbooksOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+      
+      console.log(`🔄 QuickBooks OAuth callback for company ${companyId}`);
+      
+      // Exchange code for tokens
+      const tokens = await quickbooksOAuthService.exchangeCodeForTokens(code as string, state as string);
+      
+      // Get company info
+      const companyInfo = await quickbooksOAuthService.getUserInfo(tokens.access_token, realmId as string || tokens.realmId);
+      console.log(`✅ QuickBooks OAuth successful for company ${companyInfo.companyName}`);
+      
+      // Store tokens in database
+      const quickbooksConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)).toISOString(),
+        refreshExpiresIn: tokens.x_refresh_token_expires_in,
+        realmId: realmId || tokens.realmId,
+        companyInfo: companyInfo,
+        connectedAt: new Date().toISOString(),
+      };
+      
+      // Check if QuickBooks data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingQuickBooks = dataSources.find(ds => ds.type === 'quickbooks');
+      
+      if (existingQuickBooks) {
+        // Update existing data source
+        await storage.updateDataSource(existingQuickBooks.id, {
+          status: 'connected',
+          config: quickbooksConfig,
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `QuickBooks (${companyInfo.companyName})`,
+          type: 'quickbooks',
+          status: 'connected',
+          config: quickbooksConfig,
+        });
+      }
+      
+      console.log(`✅ QuickBooks OAuth connection established for company ${companyId}`);
+      
+      // Redirect back to setup page with success
+      res.redirect(`${frontendUrl}/setup?quickbooks=connected`);
+      
+    } catch (error) {
+      console.error('QuickBooks OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  app.get("/api/auth/quickbooks/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get stored OAuth status
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const quickbooksSource = dataSources.find(ds => ds.type === 'quickbooks');
+      
+      if (!quickbooksSource || !quickbooksSource.config) {
+        return res.json({ 
+          connected: false,
+          message: "No QuickBooks OAuth connection found" 
+        });
+      }
+      
+      const config = typeof quickbooksSource.config === 'string' 
+        ? JSON.parse(quickbooksSource.config) 
+        : quickbooksSource.config;
+      
+      // Build status response
+      const status = {
+        connected: true,
+        companyName: config.companyInfo?.companyName || 'Unknown Company',
+        realmId: config.realmId,
+        connectedAt: config.connectedAt,
+        expiresAt: config.expiresAt,
+        expired: false
+      };
+      
+      // Test if token is still valid
+      if (config.accessToken && config.realmId) {
+        const isValid = await quickbooksOAuthService.testApiAccess(config.accessToken, config.realmId);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+      
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking QuickBooks OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  app.post("/api/auth/quickbooks/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based QuickBooks sync for company ${companyId}`);
+      
+      // Use the QuickBooks OAuth service to sync data
+      const result = await quickbooksOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth QuickBooks sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from QuickBooks`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth QuickBooks sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync QuickBooks data",
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth QuickBooks sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync QuickBooks data via OAuth",
+        method: 'oauth'
+      });
+    }
+  });
+
+  // Harvest OAuth2 Routes
+  app.get("/api/auth/harvest/authorize", async (req, res) => {
+    try {
+      // Accept companyId from query parameter or session
+      const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : req.session?.companyId;
+      const userId = req.session?.user?.id;
+      
+      if (!companyId) {
+        return res.status(400).json({ error: "Company context required" });
+      }
+      
+      const authUrl = harvestOAuthService.getAuthorizationUrl(companyId, userId);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error('Harvest OAuth authorize error:', error);
+      res.status(500).json({ error: "Failed to generate authorization URL" });
+    }
+  });
+
+  app.get("/api/auth/harvest/callback", async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      
+      if (error) {
+        console.error('Harvest OAuth error:', error);
+        return res.redirect(`${frontendUrl}/setup?error=harvest_auth_denied`);
+      }
+      
+      if (!code || !state) {
+        return res.redirect(`${frontendUrl}/setup?error=missing_params`);
+      }
+      
+      // Parse state to get company context
+      const stateData = harvestOAuthService.parseState(state as string);
+      const { companyId } = stateData;
+      
+      console.log(`🔄 Harvest OAuth callback for company ${companyId}`);
+      
+      // Exchange code for tokens
+      const tokens = await harvestOAuthService.exchangeCodeForTokens(code as string, state as string);
+      
+      // Get user info
+      const userInfo = await harvestOAuthService.getUserInfo(tokens.access_token);
+      console.log(`✅ Harvest OAuth successful for user ${userInfo.first_name} ${userInfo.last_name}`);
+      
+      // Store tokens in database
+      const harvestConfig = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        expiresAt: new Date(Date.now() + (tokens.expires_in * 1000)).toISOString(),
+        scope: tokens.scope,
+        userInfo: userInfo,
+        connectedAt: new Date().toISOString(),
+      };
+      
+      // Check if Harvest data source already exists
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const existingHarvest = dataSources.find(ds => ds.type === 'harvest');
+      
+      if (existingHarvest) {
+        // Update existing data source
+        await storage.updateDataSource(existingHarvest.id, {
+          status: 'connected',
+          config: harvestConfig,
+        });
+      } else {
+        // Create new data source
+        await storage.createDataSource({
+          companyId,
+          name: `Harvest (${userInfo.first_name} ${userInfo.last_name})`,
+          type: 'harvest',
+          status: 'connected',
+          config: harvestConfig,
+        });
+      }
+      
+      console.log(`✅ Harvest OAuth connection established for company ${companyId}`);
+      
+      // Redirect back to setup page with success
+      res.redirect(`${frontendUrl}/setup?harvest=connected`);
+      
+    } catch (error) {
+      console.error('Harvest OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5000';
+      res.redirect(`${frontendUrl}/setup?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  app.get("/api/auth/harvest/status/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      // Get stored OAuth status
+      const dataSources = await storage.getDataSourcesByCompany(companyId);
+      const harvestSource = dataSources.find(ds => ds.type === 'harvest');
+      
+      if (!harvestSource || !harvestSource.config) {
+        return res.json({ 
+          connected: false,
+          message: "No Harvest OAuth connection found" 
+        });
+      }
+      
+      const config = typeof harvestSource.config === 'string' 
+        ? JSON.parse(harvestSource.config) 
+        : harvestSource.config;
+      
+      // Build status response
+      const status = {
+        connected: true,
+        user: `${config.userInfo?.first_name} ${config.userInfo?.last_name}` || 'Unknown User',
+        email: config.userInfo?.email,
+        accounts: config.userInfo?.accounts?.length || 0,
+        connectedAt: config.connectedAt,
+        expiresAt: config.expiresAt,
+        expired: false
+      };
+      
+      // Test if token is still valid
+      if (config.accessToken) {
+        const isValid = await harvestOAuthService.testApiAccess(config.accessToken);
+        if (!isValid) {
+          status.expired = true;
+        }
+      }
+      
+      res.json(status);
+    } catch (error) {
+      console.error('Error checking Harvest OAuth status:', error);
+      res.status(500).json({ error: "Failed to check OAuth status" });
+    }
+  });
+
+  app.post("/api/auth/harvest/sync/:companyId", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.companyId);
+      
+      console.log(`🔄 Starting OAuth-based Harvest sync for company ${companyId}`);
+      
+      // Use the Harvest OAuth service to sync data
+      const result = await harvestOAuthService.syncDataToSchema(companyId);
+      
+      if (result.success) {
+        console.log(`✅ OAuth Harvest sync completed for company ${companyId}: ${result.recordsSynced} records`);
+        res.json({
+          success: true,
+          message: `Successfully synced ${result.recordsSynced} records from Harvest`,
+          recordsSynced: result.recordsSynced,
+          tablesCreated: result.tablesCreated,
+          method: 'oauth'
+        });
+      } else {
+        console.error(`❌ OAuth Harvest sync failed for company ${companyId}: ${result.error}`);
+        res.status(500).json({
+          success: false,
+          error: result.error || "Failed to sync Harvest data",
+          method: 'oauth'
+        });
+      }
+      
+    } catch (error) {
+      console.error('OAuth Harvest sync endpoint error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to sync Harvest data via OAuth",
         method: 'oauth'
       });
     }
