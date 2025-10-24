@@ -838,11 +838,16 @@ export class HarvestOAuthService extends OAuthServiceBase {
       const clients = await this.executeWithTokenRefresh(companyId,
         (token) => this.fetchClients(token, accountId, 500)
       );
+      
+      // Always create the table even if empty to support transformations
+      const clientsLoaded = await this.insertDataToSchema(companyId, 'harvest_clients', clients, 'harvest_oauth');
+      totalRecords += clientsLoaded;
+      tablesCreated.push('raw_harvest_clients');
+      
       if (clients.length > 0) {
-        const recordsLoaded = await this.insertDataToSchema(companyId, 'harvest_clients', clients, 'harvest_oauth');
-        totalRecords += recordsLoaded;
-        tablesCreated.push('raw_harvest_clients');
-        console.log(`✅ Synced ${recordsLoaded} clients`);
+        console.log(`✅ Synced ${clientsLoaded} clients`);
+      } else {
+        console.log(`⚠️ No clients found - created empty table for transformations`);
       }
 
       // Fetch and sync projects with automatic token refresh
@@ -850,11 +855,16 @@ export class HarvestOAuthService extends OAuthServiceBase {
       const projects = await this.executeWithTokenRefresh(companyId,
         (token) => this.fetchProjects(token, accountId, 200)
       );
+      
+      // Always create the table even if empty to support transformations
+      const projectsLoaded = await this.insertDataToSchema(companyId, 'harvest_projects', projects, 'harvest_oauth');
+      totalRecords += projectsLoaded;
+      tablesCreated.push('raw_harvest_projects');
+      
       if (projects.length > 0) {
-        const recordsLoaded = await this.insertDataToSchema(companyId, 'harvest_projects', projects, 'harvest_oauth');
-        totalRecords += recordsLoaded;
-        tablesCreated.push('raw_harvest_projects');
-        console.log(`✅ Synced ${recordsLoaded} projects`);
+        console.log(`✅ Synced ${projectsLoaded} projects`);
+      } else {
+        console.log(`⚠️ No projects found - created empty table for transformations`);
       }
 
       // Fetch and sync time entries with automatic token refresh
@@ -862,11 +872,16 @@ export class HarvestOAuthService extends OAuthServiceBase {
       const timeEntries = await this.executeWithTokenRefresh(companyId,
         (token) => this.fetchTimeEntries(token, accountId, 1000)
       );
+      
+      // Always create the table even if empty to support transformations
+      const timeEntriesLoaded = await this.insertDataToSchema(companyId, 'harvest_time_entries', timeEntries, 'harvest_oauth');
+      totalRecords += timeEntriesLoaded;
+      tablesCreated.push('raw_harvest_time_entries');
+      
       if (timeEntries.length > 0) {
-        const recordsLoaded = await this.insertDataToSchema(companyId, 'harvest_time_entries', timeEntries, 'harvest_oauth');
-        totalRecords += recordsLoaded;
-        tablesCreated.push('raw_harvest_time_entries');
-        console.log(`✅ Synced ${recordsLoaded} time entries`);
+        console.log(`✅ Synced ${timeEntriesLoaded} time entries`);
+      } else {
+        console.log(`⚠️ No time entries found - created empty table for transformations`);
       }
 
       // Fetch and sync invoices with automatic token refresh
@@ -874,11 +889,16 @@ export class HarvestOAuthService extends OAuthServiceBase {
       const invoices = await this.executeWithTokenRefresh(companyId,
         (token) => this.fetchInvoices(token, accountId, 200)
       );
+      
+      // Always create the table even if empty to support transformations
+      const recordsLoaded = await this.insertDataToSchema(companyId, 'harvest_invoices', invoices, 'harvest_oauth');
+      totalRecords += recordsLoaded;
+      tablesCreated.push('raw_harvest_invoices');
+      
       if (invoices.length > 0) {
-        const recordsLoaded = await this.insertDataToSchema(companyId, 'harvest_invoices', invoices, 'harvest_oauth');
-        totalRecords += recordsLoaded;
-        tablesCreated.push('raw_harvest_invoices');
         console.log(`✅ Synced ${recordsLoaded} invoices`);
+      } else {
+        console.log(`⚠️ No invoices found - created empty table for transformations`);
       }
       
       // Run automatic dbt-style transformations

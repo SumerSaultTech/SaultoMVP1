@@ -292,8 +292,6 @@ export abstract class OAuthServiceBase {
     data: any[],
     sourceSystem: string
   ): Promise<number> {
-    if (data.length === 0) return 0;
-
     const postgres = (await import('postgres')).default;
     const databaseUrl = process.env.DATABASE_URL;
     
@@ -310,7 +308,7 @@ export abstract class OAuthServiceBase {
       // Create schema if not exists
       await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
       
-      // Create table if not exists
+      // Create table if not exists - ALWAYS create even if no data
       await sql.unsafe(`
         CREATE TABLE IF NOT EXISTS ${fullTableName} (
           id SERIAL PRIMARY KEY,
@@ -323,6 +321,11 @@ export abstract class OAuthServiceBase {
       
       // Clear existing data for fresh sync
       await sql.unsafe(`DELETE FROM ${fullTableName} WHERE source_system = $1`, [sourceSystem]);
+      
+      // Only insert if there's data
+      if (data.length === 0) {
+        return 0; // Return 0 records inserted but table was created
+      }
       
       // Insert data in batches
       let inserted = 0;
