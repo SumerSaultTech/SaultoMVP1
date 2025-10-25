@@ -4,6 +4,9 @@
 
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
+import net from 'net';
 
 const execAsync = promisify(exec);
 
@@ -36,12 +39,26 @@ async function detectPythonCommand(): Promise<string | null> {
  * Check if a port is in use
  */
 async function isPortInUse(port: number): Promise<boolean> {
-  try {
-    const { stdout } = await execAsync(`lsof -Pi :${port} -sTCP:LISTEN -t`);
-    return stdout.trim().length > 0;
-  } catch (error) {
-    return false;
-  }
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(1000);
+
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+
+    socket.once('error', () => {
+      resolve(false);
+    });
+
+    socket.connect(port, '127.0.0.1');
+  });
 }
 
 /**
@@ -62,8 +79,18 @@ async function startConnectorService(pythonCmd: string): Promise<boolean> {
     try {
       console.log('🔧 Setting up Python virtual environment...');
       await execAsync(`${pythonCmd} -m venv venv`);
-      await execAsync(`source venv/bin/activate && pip install -q -r requirements_simple_connectors.txt`);
-      console.log('✅ Virtual environment ready with dependencies');
+
+      const pipPath = process.platform === 'win32'
+        ? path.join('venv', 'Scripts', 'pip.exe')
+        : path.join('venv', 'bin', 'pip');
+
+      if (fs.existsSync(pipPath)) {
+        await execAsync(`"${pipPath}" install -q -r requirements_simple_connectors.txt`);
+        console.log('✅ Virtual environment ready with dependencies');
+      } else {
+        // Fallback to system pip
+        await execAsync(`${pythonCmd} -m pip install -q -r requirements_simple_connectors.txt`);
+      }
     } catch (error) {
       console.warn('⚠️ Warning: Could not setup virtual environment, trying system Python');
       try {
@@ -73,11 +100,27 @@ async function startConnectorService(pythonCmd: string): Promise<boolean> {
       }
     }
 
-    // Start the simplified connector service with virtual environment
-    const connectorProcess = spawn('bash', ['-c', `source venv/bin/activate && ${pythonCmd} python_services/start_simple_connector_service.py`], {
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+    // Start the simplified connector service using venv Python if available
+    const venvPython = process.platform === 'win32'
+      ? path.join('venv', 'Scripts', 'python.exe')
+      : path.join('venv', 'bin', 'python');
+
+    let connectorProcess;
+    if (process.platform === 'win32') {
+      const pythonExec = fs.existsSync(venvPython) ? `"${venvPython}"` : pythonCmd;
+      connectorProcess = spawn(pythonExec, ['python_services/start_simple_connector_service.py'], {
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false
+      });
+    } else {
+      const pythonExec = fs.existsSync(venvPython) ? `"${venvPython}"` : pythonCmd;
+      connectorProcess = spawn(pythonExec, ['python_services/start_simple_connector_service.py'], {
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false
+      });
+    }
 
     // Log output for debugging
     connectorProcess.stdout?.on('data', (data) => {
