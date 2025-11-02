@@ -1025,27 +1025,75 @@ export class DatabaseStorage implements IStorage {
   async getKpiMetrics(companyId: number): Promise<Metric[]> {
     try {
       const schemaName = `analytics_company_${companyId}`;
-      
-      // Query the company-specific metrics table using raw SQL
-      const result = await this.sql.unsafe(`
+      console.log('skeema name', schemaName);
+
+      const queryString = `
         SELECT 
-          id, company_id as "companyId", metric_key as "metricKey", name, description,
-          source_table as "sourceTable", expr_sql as "exprSql", filters, date_column as "dateColumn",
-          category, format, unit, yearly_goal as "yearlyGoal", quarterly_goals as "quarterlyGoals", 
-          monthly_goals as "monthlyGoals", goal_type as "goalType", is_increasing as "isIncreasing", 
-          is_north_star as "isNorthStar", use_calculated_field as "useCalculatedField",
-          calculation_type as "calculationType", date_from_column as "dateFromColumn", 
-          date_to_column as "dateToColumn", time_unit as "timeUnit", conditional_field as "conditionalField",
-          conditional_operator as "conditionalOperator", conditional_value as "conditionalValue",
-          convert_to_number as "convertToNumber", handle_nulls as "handleNulls", tags, priority,
-          is_active as "isActive", last_calculated_at as "lastCalculatedAt", 
-          created_at as "createdAt", updated_at as "updatedAt"
+          id,
+          metric_key,
+          name,
+          description,
+          source_table,
+          expr_sql,
+          date_column,
+          category,
+          format,
+          unit,
+          yearly_goal,
+          goal_type,
+          is_increasing,
+          is_north_star,
+          priority,
+          is_active,
+          created_at,
+          updated_at
         FROM ${schemaName}.metrics 
-        WHERE company_id = ${companyId} AND is_active = true
+        WHERE is_active = true
         ORDER BY priority, id
-      `);
+      `;
+
+      console.log('query string', queryString);
       
-      return result as Metric[];
+      // Query the company-specific metrics table using raw SQL (only core columns to avoid schema drift issues)
+      const result = await this.sql.unsafe(queryString);
+
+      // Map to Metric shape, providing safe defaults for optional/newer fields
+      return (result as any[]).map(r => ({
+        id: r.id,
+        companyId,
+        metricKey: r.metric_key,
+        name: r.name,
+        description: r.description ?? null,
+        sourceTable: r.source_table ?? null,
+        exprSql: r.expr_sql ?? null,
+        filters: r.filters ?? null,
+        dateColumn: r.date_column ?? null,
+        category: r.category ?? null,
+        format: r.format ?? 'number',
+        unit: r.unit ?? null,
+        yearlyGoal: r.yearly_goal ?? null,
+        quarterlyGoals: r.quarterly_goals ?? null,
+        monthlyGoals: r.monthly_goals ?? null,
+        goalType: r.goal_type ?? 'yearly',
+        isIncreasing: r.is_increasing ?? true,
+        isNorthStar: r.is_north_star ?? false,
+        useCalculatedField: r.use_calculated_field ?? false,
+        calculationType: r.calculation_type ?? null,
+        dateFromColumn: r.date_from_column ?? null,
+        dateToColumn: r.date_to_column ?? null,
+        timeUnit: r.time_unit ?? null,
+        conditionalField: r.conditional_field ?? null,
+        conditionalOperator: r.conditional_operator ?? null,
+        conditionalValue: r.conditional_value ?? null,
+        convertToNumber: r.convert_to_number ?? false,
+        handleNulls: r.handle_nulls ?? true,
+        tags: r.tags ?? null,
+        priority: r.priority ?? null,
+        isActive: r.is_active ?? true,
+        lastCalculatedAt: r.last_calculated_at ?? null,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })) as Metric[];
     } catch (error) {
       console.error(`Error fetching metrics from analytics_company_${companyId}:`, error);
       throw new Error(`Metrics table not found for company ${companyId}. Analytics schema not properly initialized. Please run metric registry setup.`);

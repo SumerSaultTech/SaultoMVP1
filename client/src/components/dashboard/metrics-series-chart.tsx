@@ -8,13 +8,20 @@ import { Calendar, TrendingUp } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
 import { formatNumber } from "@/lib/format-utils";
 
-export type TimePeriod = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+export type TimePeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 interface MetricsSeriesChartProps {
   className?: string;
 }
 
 const TIME_PERIOD_CONFIGS = {
+  daily: {
+    label: 'Today',
+    formatDate: (date: string) => format(new Date(date), 'HH:mm'),
+    formatTooltip: (date: string) => format(new Date(date), 'MMM dd'),
+    dotRadius: 2,
+    strokeDashArray: undefined,
+  },
   weekly: {
     label: 'Last 7 Days',
     formatDate: (date: string) => format(new Date(date), 'EEE'), // Mon, Tue, Wed

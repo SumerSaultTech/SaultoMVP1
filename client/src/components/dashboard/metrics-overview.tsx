@@ -195,6 +195,14 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
       const response = await fetch(`/api/dashboard/metrics-data?timePeriod=${encodeURIComponent(timePeriod)}`);
       const data = await response.json();
 
+      console.log('📥 [/api/dashboard/metrics-data] raw response:', {
+        ok: response.ok,
+        status: response.status,
+        type: Array.isArray(data) ? 'array' : typeof data,
+        length: Array.isArray(data) ? data.length : undefined,
+        sample: Array.isArray(data) ? (data[0] ?? null) : data,
+      });
+
       // Check if response indicates company selection is required
       if (data.requiresCompanySelection || data.error?.includes('company selected')) {
         throw new Error('COMPANY_SELECTION_REQUIRED');
@@ -221,6 +229,14 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
     queryFn: async () => {
       const response = await fetch('/api/kpi-metrics');
       const data = await response.json();
+
+      console.log('📥 [/api/kpi-metrics] raw response:', {
+        ok: response.ok,
+        status: response.status,
+        type: Array.isArray(data) ? 'array' : typeof data,
+        length: Array.isArray(data) ? data.length : undefined,
+        sample: Array.isArray(data) ? (data[0] ?? null) : data,
+      });
 
       // Check if response indicates company selection is required
       if (data.requiresCompanySelection || data.error?.includes('company selected')) {
@@ -373,6 +389,7 @@ export default function MetricsOverview({ onRefresh }: MetricsOverviewProps) {
 
   // Time period options matching Snowflake service
   const timePeriodOptions = [
+    { value: "Daily View", label: "Daily" },
     { value: "Weekly View", label: "Weekly" },
     { value: "Monthly View", label: "Monthly" },
     { value: "Quarterly View", label: "Quarterly" }, 

@@ -258,8 +258,9 @@ export default function NorthStarMetrics() {
 
   // Time period options matching Snowflake service
   const northStarTimePeriodOptions = [
+    { value: "Daily View", label: "Daily" },
     { value: "Weekly View", label: "Weekly" },
-    { value: "Monthly View", label: "Monthly" },
+    { value: "Monthly View", label: "Monthly" }, 
     { value: "Quarterly View", label: "Quarterly" }, 
     { value: "Yearly View", label: "Yearly" }
   ];
@@ -670,11 +671,12 @@ export default function NorthStarMetrics() {
                         connectNulls={false}
                         dot={(props: any) => {
                           const { cx, cy, payload } = props;
-                          if (!payload || payload.actual === null) return <g />;
+                          if (!payload || payload.actual === null) return <g key={`dot-empty-${payload?.period ?? `${cx}-${cy}`}`} />;
+                          const key = `dot-${payload?.period ?? `${cx}-${cy}`}`;
                           return payload?.isCurrent ? (
-                            <circle cx={cx} cy={cy} r={6} fill="#8b5cf6" stroke="#fff" strokeWidth={2} />
+                            <circle key={key} cx={cx} cy={cy} r={6} fill="#8b5cf6" stroke="#fff" strokeWidth={2} />
                           ) : (
-                            <circle cx={cx} cy={cy} r={3} fill="#8b5cf6" />
+                            <circle key={key} cx={cx} cy={cy} r={3} fill="#8b5cf6" />
                           );
                         }}
                         name="actual"
@@ -682,8 +684,6 @@ export default function NorthStarMetrics() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-
-
               </CardContent>
             </Card>
             );
