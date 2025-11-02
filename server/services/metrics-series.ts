@@ -4,7 +4,7 @@ import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOf
 
 export interface MetricsSeriesQuery {
   companyId: number;
-  periodType: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  periodType: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   metricKeys?: string[];
 }
 
@@ -76,10 +76,18 @@ export class MetricsSeriesService {
     // }
   }
 
-  private calculateDateRanges(periodType: 'weekly' | 'monthly' | 'quarterly' | 'yearly') {
+  private calculateDateRanges(periodType: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly') {
     const now = new Date();
     
     switch (periodType) {
+      case 'daily':
+        // Today only
+        return {
+          actualStart: now,
+          actualEnd: now,
+          goalStart: now,
+          goalEnd: now
+        };
       case 'weekly':
         // Last 7 days (both actual and goal end today)
         return {
@@ -331,7 +339,7 @@ export class MetricsSeriesService {
     }
     
     // Validate period type
-    const validPeriodTypes = ['weekly', 'monthly', 'quarterly', 'yearly'];
+    const validPeriodTypes = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
     if (!validPeriodTypes.includes(periodType)) {
       return { valid: false, error: `Period type must be one of: ${validPeriodTypes.join(', ')}` };
     }
@@ -365,153 +373,80 @@ export class MetricsSeriesService {
     // return this.etl.validateTimeSeriesData(companyId, periodType, limit);
   }
 
-  // Query real metrics data from database
+  // Query real metrics data from database (metrics_time_series)
   private async getMetricsFromDatabase(query: MetricsSeriesQuery): Promise<{
     series: MetricsSeries[];
     progress: ProgressMetrics;
   }> {
     const { companyId, periodType, metricKeys } = query;
-    
-    console.log(`🔍 Querying real metrics data for company ${companyId}, period ${periodType}`);
-    
+
+    console.log(`🔍 Querying metrics_time_series for company ${companyId}, period ${periodType}`);
+
     try {
-      // Query metrics_time_series table for real data
       const schemaName = `analytics_company_${companyId}`;
-      let whereClause = '';
-      
-      if (metricKeys && metricKeys.length > 0) {
-        const keyFilters = metricKeys.map(key => `'${key}'`).join(',');
-        whereClause = `AND series_label IN (${keyFilters})`;
-      }
-      
-      // For yearly views, restrict to current year only (2025)
-      let dateFilter = '';
-      if (periodType === 'yearly') {
-        const currentYear = new Date().getFullYear();
-        dateFilter = `AND EXTRACT(YEAR FROM ts) = ${currentYear}`;
-      }
-      
+
+      // Build filters
+      const keyFilter = metricKeys && metricKeys.length > 0
+        ? `AND metric_key IN (${metricKeys.map(k => `'${k}'`).join(',')})`
+        : '';
+
+      // For yearly views, restrict to current year only
+      const currentYear = new Date().getFullYear();
+      const dateFilter = periodType === 'yearly' ? `AND EXTRACT(YEAR FROM ts) = ${currentYear}` : '';
+
+      // Pull both actual and goal rows directly from time series
       const result = await this.postgres.executeQuery(`
         SELECT
-          mh.date::timestamp with time zone as ts,
-          m.name as series,
-          mh.actual_value::numeric as value,
-          SUM(mh.actual_value::numeric) OVER (
-            PARTITION BY mh.metric_id
-            ORDER BY mh.date
-            ROWS UNBOUNDED PRECEDING
-          ) as running_sum,
-          false as is_goal,
-          mh.actual_value::numeric as period_relative_value,
-          SUM(mh.actual_value::numeric) OVER (
-            PARTITION BY mh.metric_id
-            ORDER BY mh.date
-            ROWS UNBOUNDED PRECEDING
-          ) as period_relative_running_sum,
+          ts,
+          series_label as series,
+          metric_key,
+          value::numeric as value,
+          running_sum::numeric as running_sum,
+          is_goal,
+          period_relative_value::numeric as period_relative_value,
+          period_relative_running_sum::numeric as period_relative_running_sum,
           0 as period_baseline_value
-        FROM ${schemaName}.metric_history mh
-        JOIN ${schemaName}.metrics m ON m.id = mh.metric_id
-        WHERE mh.period = '${periodType.replace('ly', '')}'
-          ${whereClause.replace('series_label', 'm.name')}
-          ${dateFilter.replace('ts', 'mh.date')}
-
-        UNION ALL
-
-        SELECT
-          mh.date::timestamp with time zone as ts,
-          m.name as series,
-          mh.goal_value::numeric as value,
-          SUM(mh.goal_value::numeric) OVER (
-            PARTITION BY mh.metric_id
-            ORDER BY mh.date
-            ROWS UNBOUNDED PRECEDING
-          ) as running_sum,
-          true as is_goal,
-          mh.goal_value::numeric as period_relative_value,
-          SUM(mh.goal_value::numeric) OVER (
-            PARTITION BY mh.metric_id
-            ORDER BY mh.date
-            ROWS UNBOUNDED PRECEDING
-          ) as period_relative_running_sum,
-          0 as period_baseline_value
-        FROM ${schemaName}.metric_history mh
-        JOIN ${schemaName}.metrics m ON m.id = mh.metric_id
-        WHERE mh.period = '${periodType.replace('ly', '')}'
-          ${whereClause.replace('series_label', 'm.name')}
-          ${dateFilter.replace('ts', 'mh.date')}
-
-        ORDER BY ts ASC, series, is_goal
+        FROM ${schemaName}.metrics_time_series
+        WHERE period_type = '${periodType}'
+          ${keyFilter}
+          ${dateFilter}
+        ORDER BY ts ASC, series_label, is_goal
       `);
-      
-      if (!result.success) {
-        console.error('Failed to query metrics time series:', result.error);
+
+      if (!result.success || !Array.isArray(result.data)) {
+        console.error('Failed to query metrics_time_series:', result.error);
         return {
           series: [],
           progress: { onPace: 0, progress: 0, todayActual: 0, todayGoal: 0, periodEndGoal: 0 }
         };
       }
-      
-      // Convert database results to MetricsSeries format - filter only actual data (not goals)
-      let actualSeries: MetricsSeries[] = result.data
-        .filter((row: any) => !row.is_goal) // Only get actual data, ignore stored goals
-        .map((row: any) => ({
-          ts: format(new Date(row.ts), 'yyyy-MM-dd'),
-          series: row.series, // Don't prefix actual data
-          value: parseFloat(row.value) || 0,
-          running_sum: parseFloat(row.running_sum) || 0,
-          period_relative_value: parseFloat(row.period_relative_value) || 0,
-          period_relative_running_sum: parseFloat(row.period_relative_running_sum) || 0,
-          baseline_value: parseFloat(row.period_baseline_value) || 0,
-          is_goal: false
-        }));
-      
-      // For yearly views, aggregate daily data into monthly points for better UX
+
+      // Map rows to MetricsSeries format
+      let allSeries: MetricsSeries[] = result.data.map((row: any) => ({
+        ts: format(new Date(row.ts), 'yyyy-MM-dd'),
+        series: row.series,
+        value: parseFloat(row.value) || 0,
+        running_sum: parseFloat(row.running_sum) || 0,
+        period_relative_value: parseFloat(row.period_relative_value) || 0,
+        period_relative_running_sum: parseFloat(row.period_relative_running_sum) || 0,
+        baseline_value: parseFloat(row.period_baseline_value) || 0,
+        is_goal: row.is_goal === true
+      }));
+
+      // Aggregate monthly for yearly views (for readability)
       if (periodType === 'yearly') {
-        console.log(`📊 Before aggregation: ${actualSeries.length} daily data points`);
-        actualSeries = this.aggregateToMonthlyPoints(actualSeries);
-        console.log(`📊 After aggregation: ${actualSeries.length} monthly points`);
-        
-        // Debug: Log the exact months included
-        const uniqueMonths = Array.from(new Set(actualSeries.map(point => point.ts.substring(0, 7)))).sort();
-        console.log(`📅 Monthly points included: ${uniqueMonths.join(', ')}`);
-        
-        // Debug: Log first and last points
-        if (actualSeries.length > 0) {
-          const firstPoint = actualSeries[0];
-          const lastPoint = actualSeries[actualSeries.length - 1];
-          console.log(`🗓️ First monthly point: ${firstPoint.ts} (${firstPoint.series})`);
-          console.log(`🗓️ Last monthly point: ${lastPoint.ts} (${lastPoint.series})`);
-        }
+        const actual = this.aggregateToMonthlyPoints(allSeries.filter(s => !s.is_goal));
+        const goals = this.aggregateToMonthlyPoints(allSeries.filter(s => s.is_goal));
+        allSeries = [...actual, ...goals];
       }
-      
-      // Check feature flags for goal generation method
-      const useDatabaseGoals = process.env.USE_DATABASE_GOALS === 'true';
-      const useETLGoals = process.env.USE_ETL_GOALS === 'true';
-      let goalSeries: MetricsSeries[] = [];
-      
-      if (useDatabaseGoals && useETLGoals) {
-        console.log('🎯 Using pre-stored ETL goals (fastest)');
-        goalSeries = await this.getETLGoalsFromDatabase(companyId, periodType, actualSeries);
-      } else if (useDatabaseGoals) {
-        console.log('🎯 Using PostgreSQL view for goal generation');
-        goalSeries = await this.getGoalsFromDatabase(companyId, periodType, actualSeries);
-      } else {
-        console.log('🎯 Using TypeScript service for goal generation');
-        goalSeries = await this.generateGoalSeries(companyId, actualSeries, periodType);
-      }
-      
-      // Combine actual and generated goal series
-      const allSeries = [...actualSeries, ...goalSeries];
-      
-      // Calculate progress metrics from all series data (both actual and goal)
+
+      // Calculate progress
       const progress = await this.calculateProgress(companyId, periodType, allSeries);
-      
-      console.log(`✅ Retrieved ${actualSeries.length} actual data points and generated ${goalSeries.length} goal data points`);
-      
+
+      console.log(`✅ Retrieved ${allSeries.length} time series points from metrics_time_series`);
       return { series: allSeries, progress };
-      
     } catch (error) {
-      console.error('Error querying metrics from database:', error);
+      console.error('Error querying metrics_time_series:', error);
       return {
         series: [],
         progress: { onPace: 0, progress: 0, todayActual: 0, todayGoal: 0, periodEndGoal: 0 }

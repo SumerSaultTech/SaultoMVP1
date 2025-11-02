@@ -258,8 +258,9 @@ export default function NorthStarMetrics() {
 
   // Time period options matching Snowflake service
   const northStarTimePeriodOptions = [
+    { value: "Daily View", label: "Daily" },
     { value: "Weekly View", label: "Weekly" },
-    { value: "Monthly View", label: "Monthly" },
+    { value: "Monthly View", label: "Monthly" }, 
     { value: "Quarterly View", label: "Quarterly" }, 
     { value: "Yearly View", label: "Yearly" }
   ];

@@ -3966,7 +3966,7 @@ The Saulto Analytics Team
       const companyId = getValidatedCompanyId(req);
 
       const { period_type = 'monthly', metric_keys } = req.query as { 
-        period_type?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+        period_type?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
         metric_keys?: string;
       };
 

@@ -52,6 +52,8 @@ function getDotConfig(granularity: string) {
 // Map time period to backend period type and granularity
 function getPeriodMapping(timePeriod: string) {
   const periodTypeMap = {
+    'daily view': 'daily',
+    'daily': 'daily',
     'weekly view': 'weekly',
     'weekly': 'weekly',
     'monthly view': 'monthly', 
@@ -68,56 +70,55 @@ function getPeriodMapping(timePeriod: string) {
 export default function MetricProgressChart({ metric, timePeriod = "Monthly View" }: MetricProgressChartProps) {
   console.log('🔍 Chart Rendering for:', metric.name);
   console.log('🔍 MetricProgressChart component loaded and executing');
-  // Get the metric key for API calls
-  const metricKey = getMetricKey(metric.name || '');
+  // Prefer canonical metricKey from config; also support snake_case 'metric_key'; fallback to legacy name mapping
+  const metricKey = (metric as any)?.metricKey || (metric as any)?.metric_key || getMetricKey(metric.name || '');
   console.log('🔍 Metric key mapping result:', { name: metric.name, metricKey });
   const periodType = getPeriodMapping(timePeriod);
   console.log('🔍 Period type mapping result:', { timePeriod, periodType });
   // Fetch chart data from original working API
   const { data: chartDataResponse, isLoading, error } = useQuery({
-    queryKey: ['chart-data', metricKey, periodType],
+    queryKey: ['metrics-series', metricKey, periodType],
     queryFn: async () => {
       if (!metricKey) {
         console.warn('No metric key found for:', metric.name);
-        return []; 
+        return { success: true, data: [], progress: null };
       }
-      
-      console.log('📊 Fetching chart data:', { metricKey, timePeriod });
-      console.log('📊 Making API call to:', `/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`);
-      
-      const url = `/api/company/chart-data?metric_keys=${metricKey}&period_type=${periodType}`;
+
+      console.log('📊 Fetching metrics series:', { metricKey, timePeriod });
+      const url = `/api/company/metrics-series?metric_keys=${encodeURIComponent(metricKey)}&period_type=${encodeURIComponent(periodType)}`;
+      console.log('📊 Making API call to:', url);
+
       const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) {
-        // Log error body for better diagnostics
         let errorBody: any = null;
         try {
           errorBody = await response.text();
         } catch (e) {
           errorBody = '[unreadable error body]';
         }
-        console.error('❌ Chart data fetch failed', {
+        console.error('❌ Metrics series fetch failed', {
           url,
           status: response.status,
           statusText: response.statusText,
           body: errorBody,
         });
-        throw new Error(`Failed to fetch chart data: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch metrics series: ${response.status} ${response.statusText}`);
       }
       const result = await response.json();
-      console.log('📦 chart-data raw result summary:', {
+      console.log('📦 metrics-series raw result summary:', {
         url,
         hasDataArray: Array.isArray(result?.data),
         length: Array.isArray(result?.data) ? result.data.length : null,
         sampleKeys: result?.data?.[0] ? Object.keys(result.data[0]) : [],
         sample: result?.data?.[0] ?? null,
       });
-      return result.data || [];
+      return result;
     },
     enabled: !!metricKey,
   });
 
   // Chart data is directly from the API response
-  const rawChartData = chartDataResponse || [];
+  const rawChartData = chartDataResponse?.data || [];
   console.log('📈 rawChartData count:', Array.isArray(rawChartData) ? rawChartData.length : null, {
     metricKey,
     periodType,
@@ -130,16 +131,14 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
       return [];
     }
 
-    // Process real data points
-    const uniqueKeys = Array.from(new Set((rawChartData || []).map((item: any) => item?.metric_key)));
-    console.log('🧪 Unique metric_key values in payload:', uniqueKeys);
-
+    // Process data points from metrics-series endpoint
     const processedPoints = rawChartData
-      .filter((item: any) => item.metric_key === metricKey)
+      // When server is filtered by metric_key, dataset will already be narrowed. Keep a safety check by name.
+      .filter((item: any) => !metric?.name || item.series === metric.name || true)
       .map((item: any) => ({
         ts: item.ts,
         value: parseFloat(item.value) || 0,
-        is_goal: item.is_goal
+        is_goal: !!item.is_goal
       }))
       .sort((a: any, b: any) => a.ts.localeCompare(b.ts));
 
@@ -190,7 +189,7 @@ export default function MetricProgressChart({ metric, timePeriod = "Monthly View
           isCurrent: true
         };
       });
-  }, [rawChartData, metricKey]);
+  }, [rawChartData, metricKey, metric?.name, periodType]);
 
   // Show loading state
   if (isLoading) {
